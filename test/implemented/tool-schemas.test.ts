@@ -92,7 +92,7 @@ test("DOM patch schema requires expected match counts and one mutation mode", ()
       },
       {
         op: "set-text",
-        targetRef: "new-title",
+        targetRef: "new-image",
         expectedMatches: 1,
         text: "New title"
       },
@@ -145,6 +145,69 @@ test("DOM patch schema requires expected match counts and one mutation mode", ()
   }).success, false);
 });
 
+test("DOM patch schema makes single targets and client references unambiguous", () => {
+  const base = {
+    projectId: "project-1",
+    packageId: "pkg00001",
+    componentId: "cmp01"
+  };
+  const newText = {
+    type: "text" as const,
+    name: "title",
+    style: {},
+    content: { text: "" },
+    relations: []
+  };
+
+  assert.equal(ApplyDomPatchInputSchema.safeParse({
+    ...base,
+    operations: [{
+      op: "insert",
+      parentSelector: "component-root",
+      expectedMatches: 2,
+      clientRef: "title",
+      node: newText
+    }]
+  }).success, false);
+  assert.equal(ApplyDomPatchInputSchema.safeParse({
+    ...base,
+    operations: [{
+      op: "move",
+      selector: "text",
+      expectedMatches: 2,
+      toIndex: 0
+    }]
+  }).success, false);
+  assert.equal(ApplyDomPatchInputSchema.safeParse({
+    ...base,
+    operations: [
+      {
+        op: "insert",
+        parentSelector: "component-root",
+        expectedMatches: 1,
+        clientRef: "duplicate",
+        node: newText
+      },
+      {
+        op: "insert",
+        parentSelector: "component-root",
+        expectedMatches: 1,
+        clientRef: "duplicate",
+        node: newText
+      }
+    ]
+  }).success, false);
+  assert.equal(ApplyDomPatchInputSchema.safeParse({
+    ...base,
+    operations: [{
+      op: "set-text",
+      targetRef: "not-declared-in-this-batch",
+      expectedMatches: 1,
+      text: "No target"
+    }]
+  }).success, false);
+});
+
 test("replace mode permits one explicit content domain per call", () => {
   const base = {
     projectId: "project-1",
@@ -162,11 +225,20 @@ test("replace mode permits one explicit content domain per call", () => {
     ...base,
     replace: {
       domain: "relations",
-      targetRef: "new-node",
+      selector: "#n0",
       expectedMatches: 1,
       value: []
     }
   }).success, true);
+  assert.equal(ApplyDomPatchInputSchema.safeParse({
+    ...base,
+    replace: {
+      domain: "relations",
+      targetRef: "transient-reference",
+      expectedMatches: 1,
+      value: []
+    }
+  }).success, false);
   assert.equal(ApplyDomPatchInputSchema.safeParse({
     ...base,
     replace: [

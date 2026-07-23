@@ -21,6 +21,7 @@ export type FairyGuiToolName = typeof FAIRYGUI_TOOL_NAMES[number];
 
 const nonEmptyId = z.string().min(1);
 const expectedMatches = z.number().int().min(1).max(10_000);
+const singleExpectedMatch = z.literal(1);
 const selector = z.string().min(1);
 const clientRef = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
 
@@ -140,7 +141,7 @@ export const DomPatchOperationSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("insert"),
     parentSelector: selector,
-    expectedMatches,
+    expectedMatches: singleExpectedMatch,
     clientRef,
     index: z.number().int().nonnegative().optional(),
     node: FairyDomNewNodeSchema
@@ -152,6 +153,7 @@ export const DomPatchOperationSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("move"),
     ...patchTargetShape,
+    expectedMatches: singleExpectedMatch,
     toIndex: z.number().int().nonnegative()
   }).strict(),
   z.object({
@@ -187,6 +189,7 @@ export const DomPatchOperationSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("replace-node"),
     ...patchTargetShape,
+    expectedMatches: singleExpectedMatch,
     node: FairyDomNewNodeSchema
   }).strict()
 ]);
@@ -224,6 +227,11 @@ const rootPropertiesSchema = FairyDomComponentRootSchema.pick({
   content: true
 });
 
+const replacementTargetShape = {
+  selector,
+  expectedMatches
+} as const;
+
 export const DomContentReplacementSchema = z.discriminatedUnion("domain", [
   z.object({
     domain: z.literal("displayTree"),
@@ -235,12 +243,12 @@ export const DomContentReplacementSchema = z.discriminatedUnion("domain", [
   }).strict(),
   z.object({
     domain: z.literal("relations"),
-    ...patchTargetShape,
+    ...replacementTargetShape,
     value: z.array(FairyDomRelationSchema)
   }).strict(),
   z.object({
     domain: z.literal("listItems"),
-    ...patchTargetShape,
+    ...replacementTargetShape,
     value: z.array(FairyDomListItemSchema)
   }).strict(),
   z.object({
@@ -269,23 +277,40 @@ export const ApplyDomPatchInputSchema = z.union([
     ...domPatchBaseShape,
     operations: z.array(DomPatchOperationSchema).min(1).max(200)
   }).strict().superRefine((value, context) => {
+    const declaredClientRefs = new Set<string>();
+    value.operations.forEach((operation, index) => {
+      if (operation.op !== "insert") return;
+      if (declaredClientRefs.has(operation.clientRef)) {
+        context.addIssue({
+          code: "custom",
+          path: ["operations", index, "clientRef"],
+          message: `同一批次不能重复声明 clientRef：${operation.clientRef}`
+        });
+      }
+      declaredClientRefs.add(operation.clientRef);
+    });
     value.operations.forEach((operation, index) => {
       if (operation.op !== "insert") {
         validatePatchTarget(operation, context, ["operations", index]);
+        if (
+          operation.targetRef !== undefined
+          && !declaredClientRefs.has(operation.targetRef)
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["operations", index, "targetRef"],
+            message: `targetRef 必须引用同一批次声明的插入节点：${
+              operation.targetRef
+            }`
+          });
+        }
       }
     });
   }),
   z.object({
     ...domPatchBaseShape,
     replace: DomContentReplacementSchema
-  }).strict().superRefine((value, context) => {
-    if (
-      value.replace.domain === "relations"
-      || value.replace.domain === "listItems"
-    ) {
-      validatePatchTarget(value.replace, context, ["replace"]);
-    }
-  })
+  }).strict()
 ]);
 export type ApplyDomPatchInput = z.infer<typeof ApplyDomPatchInputSchema>;
 

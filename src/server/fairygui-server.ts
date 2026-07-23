@@ -24,10 +24,13 @@ import {
   fail,
   type ResultEnvelope
 } from "../contracts/result.js";
+import { DomPatchService } from "../dom/dom-patch-service.js";
 import { ProjectRegistry } from "../project/project-registry.js";
 import { QueryService } from "../query/query-service.js";
 import { RenderService } from "../render/render-service.js";
 import { ValidationService } from "../validation/validation-service.js";
+import { ProjectCommitCoordinator } from "../write/commit-coordinator.js";
+import { FileTransactionManager } from "../write/file-transaction.js";
 import {
   PACKAGE_VERSION,
   SERVER_NAME
@@ -57,6 +60,8 @@ export interface FairyGuiMcpServerOptions {
   validator?: ValidationService;
   domPatch?: DomPatchHandler;
   resources?: ResourceOperationsHandler;
+  transactions?: FileTransactionManager;
+  coordinator?: ProjectCommitCoordinator;
 }
 
 const OUTPUT_SCHEMA: Tool["outputSchema"] = {
@@ -282,18 +287,25 @@ export class FairyGuiMcpServer {
   public readonly query: QueryService;
   public readonly renderer: RenderService;
   public readonly validator: ValidationService;
+  public readonly transactions: FileTransactionManager;
+  public readonly coordinator: ProjectCommitCoordinator;
   private readonly domPatch: DomPatchHandler;
   private readonly resources: ResourceOperationsHandler;
   private closed = false;
 
   public constructor(options: FairyGuiMcpServerOptions = {}) {
-    this.projects = options.projects ?? new ProjectRegistry();
+    this.transactions = options.transactions ?? new FileTransactionManager();
+    this.coordinator = options.coordinator ?? new ProjectCommitCoordinator();
+    this.projects = options.projects ?? new ProjectRegistry({
+      recovery: this.transactions
+    });
     this.query = options.query ?? new QueryService(this.projects);
     this.renderer = options.renderer ?? new RenderService(this.projects);
     this.validator = options.validator ?? new ValidationService(this.projects);
-    this.domPatch = options.domPatch ?? {
-      apply: () => unimplementedWrite("dom.patch")
-    };
+    this.domPatch = options.domPatch ?? new DomPatchService(this.projects, {
+      transactions: this.transactions,
+      coordinator: this.coordinator
+    });
     this.resources = options.resources ?? {
       apply: () => unimplementedWrite("resource.operations")
     };

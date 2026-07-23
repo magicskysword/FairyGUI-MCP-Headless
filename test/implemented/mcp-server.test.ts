@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
@@ -185,19 +191,98 @@ test("stdio-facing handlers complete the M1 open-query-render-validate loop", as
   }
 });
 
-test("unimplemented write handlers fail explicitly during the M1 milestone", async () => {
+test("stdio-facing DOM patch handler atomically writes and immediately re-queries", async () => {
+  const projectDirectory = await createProject();
   const { app, client } = await connectServer();
   try {
+    const opened = structured(await client.callTool({
+      name: "fairygui.project",
+      arguments: { action: "open", path: projectDirectory }
+    }));
+    assert.equal(opened.ok, true);
+    const projectId = String(opened.data?.projectId);
+
     const result = await client.callTool({
       name: "fairygui.apply_dom_patch",
       arguments: {
+        projectId,
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        operations: [
+          {
+            op: "set-text",
+            selector: "#n0",
+            expectedMatches: 1,
+            text: "Written through MCP"
+          },
+          {
+            op: "set-style",
+            selector: "#n0",
+            expectedMatches: 1,
+            changes: { opacity: 0.4 }
+          }
+        ]
+      }
+    });
+    assert.equal("isError" in result && result.isError, false);
+    const patched = structured(result);
+    assert.equal(patched.ok, true);
+    assert.deepEqual(patched.data?.affectedFiles, ["assets/Demo/Main.xml"]);
+    assert.equal(patched.data?.appliedOperations, 2);
+
+    const componentXml = await readFile(
+      path.join(projectDirectory, "assets", "Demo", "Main.xml"),
+      "utf8"
+    );
+    assert.match(componentXml, /text="Written through MCP"/);
+    assert.match(componentXml, /\balpha="0\.4"/);
+
+    const queried = structured(await client.callTool({
+      name: "fairygui.query",
+      arguments: {
+        projectId,
+        queries: {
+          dom: {
+            kind: "dom",
+            packageId: "pkg00001",
+            componentId: "cmp01",
+            selector: "#n0"
+          }
+        }
+      }
+    }));
+    assert.equal(queried.ok, true);
+    const queries = queried.data?.results as Record<string, {
+      ok: boolean;
+      data: { matches: Array<{
+        style: { opacity?: number };
+        content: { text?: string };
+      }> };
+    }>;
+    assert.ok(queries.dom);
+    assert.equal(
+      queries.dom?.data.matches[0]?.content.text,
+      "Written through MCP"
+    );
+    assert.equal(queries.dom?.data.matches[0]?.style.opacity, 0.4);
+  }
+  finally {
+    await client.close();
+    await app.close();
+  }
+});
+
+test("resource operations remain an explicit capability error before M3", async () => {
+  const { app, client } = await connectServer();
+  try {
+    const result = await client.callTool({
+      name: "fairygui.apply_resource_operations",
+      arguments: {
         projectId: "p",
-        packageId: "pkg",
-        componentId: "cmp",
         operations: [{
-          op: "remove",
-          selector: "#n0",
-          expectedMatches: 1
+          op: "create-package",
+          clientRef: "demo",
+          name: "Demo"
         }]
       }
     });

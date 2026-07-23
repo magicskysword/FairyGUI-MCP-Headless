@@ -782,6 +782,73 @@ test("failed package deletion restores XML and binary files", async () => {
   }
 });
 
+test("a late external resource edit is never overwritten", async () => {
+  class LateExternalEditManager extends FileTransactionManager {
+    private injected = false;
+
+    public override async commit(
+      ...args: Parameters<FileTransactionManager["commit"]>
+    ): ReturnType<FileTransactionManager["commit"]> {
+      if (!this.injected) {
+        this.injected = true;
+        const packageFile = path.join(
+          args[0],
+          "assets",
+          "Demo",
+          "package.xml"
+        );
+        const current = await readFile(packageFile, "utf8");
+        await writeFile(
+          packageFile,
+          current.replace(
+            'vendorPackage="keep"',
+            'vendorPackage="external"'
+          ),
+          "utf8"
+        );
+      }
+      return super.commit(...args);
+    }
+  }
+
+  const logDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "fgui-resource-late-edit-")
+  );
+  temporaryDirectories.push(logDirectory);
+  const context = await setup({
+    transactions: new LateExternalEditManager({
+      baseDirectory: logDirectory
+    })
+  });
+  try {
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "rename-resource",
+          packageId: "pkg00001",
+          resourceId: "img01",
+          name: "ShouldNotWin"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "WRITE_FAILED");
+    assert.match(
+      await readFile(context.project.packageFile, "utf8"),
+      /vendorPackage="external"/
+    );
+    assert.deepEqual(
+      [...await readFile(context.project.imageFile)],
+      [10, 20, 30]
+    );
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
 test("same-project concurrent resource writes commit in submission order", async () => {
   const context = await setup();
   try {

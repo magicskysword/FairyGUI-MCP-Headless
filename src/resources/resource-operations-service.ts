@@ -27,7 +27,8 @@ import type {
 import { ProjectCommitCoordinator } from "../write/commit-coordinator.js";
 import {
   FileTransactionManager,
-  type FileTransactionData
+  type FileTransactionData,
+  type TransactionFileChange
 } from "../write/file-transaction.js";
 import {
   readImportInboxFile,
@@ -299,21 +300,38 @@ export class ResourceOperationsService {
       );
       if (!unchanged) continue;
 
+      const changes: TransactionFileChange[] = [
+        ...prepared.data.files.map((file) => ({
+          relativePath: file.relativePath,
+          content: file.content
+        })),
+        ...prepared.data.assetWrites,
+        ...prepared.data.deletedFiles.map((relativePath) => ({
+          relativePath,
+          content: null
+        }))
+      ].sort((left, right) =>
+        left.relativePath.localeCompare(right.relativePath)
+      );
+      for (const change of changes) {
+        const source = prepared.data.sourceStates.find((item) =>
+          item.relativePath === change.relativePath
+        );
+        if (!source) {
+          return fail(
+            "SERIALIZATION_FAILED",
+            "资源事务缺少目标文件的预期源状态",
+            { path: change.relativePath }
+          );
+        }
+        change.expectedContent = source.content === undefined
+          ? null
+          : source.content;
+      }
+
       const transaction = await this.#transactions.commit(
         project.projectDirectory,
-        [
-          ...prepared.data.files.map((file) => ({
-            relativePath: file.relativePath,
-            content: file.content
-          })),
-          ...prepared.data.assetWrites,
-          ...prepared.data.deletedFiles.map((relativePath) => ({
-            relativePath,
-            content: null
-          }))
-        ].sort((left, right) =>
-          left.relativePath.localeCompare(right.relativePath)
-        )
+        changes
       );
       if (!transaction.ok) return transaction;
 

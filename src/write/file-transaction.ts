@@ -83,6 +83,11 @@ export interface TransactionFileChange {
   relativePath: string;
   /** `null` atomically deletes an existing regular file. */
   content: string | Uint8Array | null;
+  /**
+   * Optional optimistic source guard. `null` requires the target to be absent;
+   * bytes or text require exact content before the transaction may commit.
+   */
+  expectedContent?: string | Uint8Array | null;
 }
 
 export interface FileTransactionData {
@@ -148,11 +153,18 @@ export class TransactionRecoveryError extends Error {
 
 class TransactionInputError extends Error {
   public readonly pathValue?: string;
+  public readonly resultCode: "TRANSACTION_FAILED" | "WRITE_FAILED";
 
-  public constructor(message: string, pathValue?: string) {
+  public constructor(
+    message: string,
+    pathValue?: string,
+    resultCode: "TRANSACTION_FAILED" | "WRITE_FAILED" =
+      "TRANSACTION_FAILED"
+  ) {
     super(message);
     this.name = "TransactionInputError";
     if (pathValue !== undefined) this.pathValue = pathValue;
+    this.resultCode = resultCode;
   }
 }
 
@@ -607,7 +619,15 @@ export class FileTransactionManager {
           }
         );
       }
-      return fail("TRANSACTION_FAILED", "事务提交失败，磁盘内容已回滚", {
+      return fail(
+        error instanceof TransactionInputError
+          ? error.resultCode
+          : "TRANSACTION_FAILED",
+        error instanceof TransactionInputError
+          && error.resultCode === "WRITE_FAILED"
+          ? "事务源文件已被外部修改，未覆盖较新的磁盘内容"
+          : "事务提交失败，磁盘内容已回滚",
+        {
         ...(error instanceof TransactionInputError
           && error.pathValue !== undefined
           ? { path: error.pathValue }
@@ -616,7 +636,8 @@ export class FileTransactionManager {
         transactionId,
         logPath,
         suggestedFix: "根据错误信息修正写入内容后重试"
-      });
+        }
+      );
     }
   }
 
@@ -745,15 +766,32 @@ export class FileTransactionManager {
     if (changes.length === 0) {
       throw new TransactionInputError("事务至少需要一个受影响文件");
     }
-    const normalized = changes.map((change) => ({
-      relativePath: normalizeRelativePath(change.relativePath),
-      delete: change.content === null,
-      content: change.content === null
-        ? Buffer.alloc(0)
-        : typeof change.content === "string"
-          ? Buffer.from(change.content, "utf8")
-          : Buffer.from(change.content)
-    }));
+    const normalized = changes.map((change) => {
+      const base = {
+        relativePath: normalizeRelativePath(change.relativePath),
+        delete: change.content === null,
+        content: change.content === null
+          ? Buffer.alloc(0)
+          : typeof change.content === "string"
+            ? Buffer.from(change.content, "utf8")
+            : Buffer.from(change.content)
+      };
+      if (!Object.hasOwn(change, "expectedContent")) return base;
+      if (change.expectedContent === undefined) {
+        throw new TransactionInputError(
+          "expectedContent 不能显式设为 undefined",
+          change.relativePath
+        );
+      }
+      return {
+        ...base,
+        expectedContent: change.expectedContent === null
+          ? null
+          : typeof change.expectedContent === "string"
+            ? Buffer.from(change.expectedContent, "utf8")
+            : Buffer.from(change.expectedContent)
+      };
+    });
     const uniquePaths = new Set(normalized.map((change) => change.relativePath));
     if (uniquePaths.size !== normalized.length) {
       throw new TransactionInputError("事务目标路径规范化后不能重复");
@@ -782,6 +820,20 @@ export class FileTransactionManager {
         );
       }
       const before = entry ? await readFile(target) : undefined;
+      if ("expectedContent" in change) {
+        const expected = change.expectedContent;
+        const sourceMatches = expected === null
+          ? before === undefined
+          : before !== undefined
+            && hashBytes(before) === hashBytes(expected);
+        if (!sourceMatches) {
+          throw new TransactionInputError(
+            "事务目标与预期源内容不一致",
+            change.relativePath,
+            "WRITE_FAILED"
+          );
+        }
+      }
       beforeContents.push(before);
       const parentRelative = path.posix.dirname(change.relativePath);
       const temporaryName = `${
@@ -869,6 +921,7 @@ export class FileTransactionManager {
       await assertNoSymbolicLink(journal.projectDirectory, target);
       if (file.delete) {
         await this.inject("before-replace", journal, logPath, index);
+        await this.assertSourceUnchanged(journal, file);
         await rm(target);
         file.committed = true;
         await writeJournal(logPath, journal);
@@ -881,6 +934,7 @@ export class FileTransactionManager {
         true
       );
       await this.inject("before-replace", journal, logPath, index);
+      await this.assertSourceUnchanged(journal, file);
       await rename(adjacentTemporary, target);
       file.committed = true;
       await writeJournal(logPath, journal);
@@ -913,6 +967,10 @@ export class FileTransactionManager {
       );
       await rm(adjacentTemporary, { force: true });
       const currentHash = await fileHash(target);
+
+      if (!recovering && !file.committed) {
+        continue;
+      }
 
       if (file.existed) {
         if (file.delete) {
@@ -986,6 +1044,27 @@ export class FileTransactionManager {
     journal.state = "rolled-back";
     journal.completedAt = this.#now().toISOString();
     await writeJournal(logPath, journal);
+  }
+
+  private async assertSourceUnchanged(
+    journal: TransactionJournal,
+    file: TransactionJournalFile
+  ): Promise<void> {
+    const target = resolveProjectTarget(
+      journal.projectDirectory,
+      file.relativePath
+    );
+    const currentHash = await fileHash(target);
+    const unchanged = file.existed
+      ? currentHash === file.beforeHash
+      : currentHash === undefined;
+    if (!unchanged) {
+      throw new TransactionInputError(
+        "事务原子替换前检测到外部源文件修改",
+        file.relativePath,
+        "WRITE_FAILED"
+      );
+    }
   }
 
   private async inject(

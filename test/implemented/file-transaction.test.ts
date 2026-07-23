@@ -106,6 +106,50 @@ test("a file transaction commits all affected files and a terminal journal", asy
   assert.deepEqual(diagnostics.diagnostics, []);
 });
 
+test("an expected source mismatch fails without overwriting newer bytes", async () => {
+  const fixture = await createFilesFixture();
+  const manager = new FileTransactionManager({
+    baseDirectory: fixture.logDirectory,
+    idFactory: () => "tx_source_conflict"
+  });
+
+  const result = await manager.commit(fixture.projectDirectory, [{
+    relativePath: "assets/first.xml",
+    content: "first-after",
+    expectedContent: "stale-before"
+  }]);
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "WRITE_FAILED");
+    assert.equal(result.error.path, "assets/first.xml");
+  }
+  assert.equal(await readFile(fixture.first, "utf8"), "first-before");
+});
+
+test("a last-moment external edit is preserved before atomic replace", async () => {
+  const fixture = await createFilesFixture();
+  const manager = new FileTransactionManager({
+    baseDirectory: fixture.logDirectory,
+    idFactory: () => "tx_late_conflict",
+    async faultInjector(point, context) {
+      if (point === "before-replace" && context.fileIndex === 0) {
+        await writeFile(fixture.first, "external-newer", "utf8");
+      }
+    }
+  });
+
+  const result = await manager.commit(fixture.projectDirectory, [{
+    relativePath: "assets/first.xml",
+    content: "first-after",
+    expectedContent: "first-before"
+  }]);
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.error.code, "WRITE_FAILED");
+  assert.equal(await readFile(fixture.first, "utf8"), "external-newer");
+});
+
 test("an ordinary commit failure rolls every changed file back", async () => {
   const fixture = await createFilesFixture();
   const manager = new FileTransactionManager({

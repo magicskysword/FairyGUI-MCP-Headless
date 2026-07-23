@@ -362,6 +362,60 @@ test("a valid external edit before commit causes a fresh reparse and retry", asy
   }
 });
 
+test("an external edit after the service comparison is never overwritten", async () => {
+  class LateExternalEditManager extends FileTransactionManager {
+    private injected = false;
+
+    public override async commit(
+      ...args: Parameters<FileTransactionManager["commit"]>
+    ): ReturnType<FileTransactionManager["commit"]> {
+      if (!this.injected) {
+        this.injected = true;
+        const componentFile = path.join(
+          args[0],
+          "assets",
+          "Demo",
+          "Main.xml"
+        );
+        const current = await readFile(componentFile, "utf8");
+        await writeFile(
+          componentFile,
+          current.replace('text="Before"', 'text="External"'),
+          "utf8"
+        );
+      }
+      return super.commit(...args);
+    }
+  }
+
+  const logDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "fgui-patch-late-edit-")
+  );
+  temporaryDirectories.push(logDirectory);
+  const context = await setup("late-edit", {
+    transactionManager: new LateExternalEditManager({
+      baseDirectory: logDirectory
+    })
+  });
+  try {
+    const result = await context.service.apply(patch(context.projectId, [{
+      op: "set-style",
+      selector: "#n0",
+      expectedMatches: 1,
+      changes: { left: 44 }
+    }]));
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "WRITE_FAILED");
+    const output = await readFile(context.project.componentFile, "utf8");
+    assert.match(output, /text="External"/);
+    assert.match(output, /xy="10,20"/);
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
 test("same-project concurrent patches commit in call order and later fields win", async () => {
   const context = await setup("queue");
   try {

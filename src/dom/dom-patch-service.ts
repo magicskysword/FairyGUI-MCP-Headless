@@ -278,7 +278,8 @@ export class DomPatchService {
         project.projectDirectory,
         [{
           relativePath: prepared.data.serialized.relativePath,
-          content: prepared.data.serialized.content
+          content: prepared.data.serialized.content,
+          expectedContent: prepared.data.sourceContent
         }]
       );
       if (!transaction.ok) return transaction;

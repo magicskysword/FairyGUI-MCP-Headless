@@ -1,0 +1,81 @@
+---
+name: fairygui-headless
+description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染并校验本地 FairyGUI 工程。适用于 AI 直接创作 FairyGUI UI、批量修改组件 DOM、导入资源以及通过 PNG 结构预览循环调整。
+---
+
+# FairyGUI Headless
+
+把 FairyGUI 工程视为磁盘上的强类型 UI 文档。复用 HTML/CSS 中关于树、选择器、样式和批处理的知识，但只使用工具 Schema 明确支持的字段；这里不是浏览器 DOM，也不是完整 CSS。
+
+## 标准工作流
+
+1. 用 `fairygui.project` 的 `open` 打开工程并保存返回的 `projectId`。同一路径重复打开会复用会话。
+2. 用一次 `fairygui.query` 放入多个命名查询，批量查询包、组件、目标 DOM、资源引用和能力矩阵。不要为每个字段单独调用工具。
+3. 编辑前检查 `capabilities`。`implemented` 才可写；`planned` 或 `read-only` 不要尝试绕过。
+4. 组件内容修改使用一次 `fairygui.apply_dom_patch` 批量提交相关操作；包和资源修改使用一次 `fairygui.apply_resource_operations`。
+5. 写入成功后顺序调用 `fairygui.render_component` 查看 PNG 结构预览，再根据视觉反馈批量调整。
+6. 完成局部修改后用 `fairygui.validate` 的 `quick` 校验；交付前使用 `roundtrip`、`publish` 或 `full` 校验。
+
+磁盘是唯一事实来源。工具会在读取、写入和渲染前刷新外部修改；没有草稿、Undo/Redo、revision、文件锁或 Git 操作。不要假设并发渲染能观察到尚未完成的写入。
+
+## 高效查询
+
+`fairygui.query` 的 `queries` 是命名批次。一次请求可以同时查询：
+
+- `packages`：工程包；
+- `resources` 与 `components`：资源和组件；
+- `dom`：强类型 DOM，可选受限选择器和只读实例投影；
+- `references`：资源引用来源；
+- `capabilities`：implemented、planned 与 read-only 边界；
+- `audit`：未知 XML 结构的只读审计。
+
+批量查询发生部分失败时，顶层返回 `PARTIAL_QUERY_FAILURE`，成功兄弟仍保留在每个查询键下。只重试失败项，不要丢弃已经取得的数据。
+
+## DOM 与选择器
+
+公共样式采用规范名称，例如 `left`、`top`、`width`、`height`、`opacity`、`rotation`、`scaleX` 和 `scaleY`。数值直接使用 JSON number；不要传 `px`、`calc()`、`vw`、`vh` 或运行时别名 `x/y/alpha`。
+
+选择器只支持：
+
+- 类型：`text`
+- ID：`#n3`
+- 名称属性：`[name="title"]`
+- 复合：`text[name="title"]`
+- 后代与直接子代：`component-root text`、`component-root > text`
+
+不支持伪类、逗号组和通用 CSS。所有写目标都必须给出 `expectedMatches`；匹配数量不同属于失败，不会猜测目标。
+
+同一批新增节点通过 `clientRef` 相互引用。组件实例默认是边界节点；`resolvedPreview:true` 只提供来源投影，不能跨边界写入。Group 成员仍是兄弟节点并通过 `groupId` 关联；List/Tree 项目不是普通子节点。
+
+## 原子写入
+
+`fairygui.apply_dom_patch` 支持：
+
+- `operations`：把插入、删除、移动、改名、样式、文本、资源、Relations 和静态 List 项目合成一个原子批次；
+- `replace`：每次只替换一个内容域。
+
+优先使用 operations 做局部编辑。只有确实要完整接管一个内容域时才使用 replace；若未知 XML 无法安全保留，会返回 `OPAQUE_CONTENT_CONFLICT` 且不写磁盘。
+
+`fairygui.apply_resource_operations` 把创建包/组件、收件箱导入、替换、重命名、包内移动和删除合成一个原子批次。导入文件必须预先放入工程的 `.fairygui-mcp/import-inbox/`，并传规范相对路径。不要传绝对路径或 `..`。
+
+资源冲突使用 `reject|rename|replace`；默认 `reject`。`replace` 必须指定已有 `resourceId`，以保留 ID 和引用。删除默认 `reject`；只有明确理解引用影响时才使用 `cascade` 或 `force`。
+
+## 反馈与校验
+
+`fairygui.render_component` 返回：
+
+- `backend: "fairygui-dom"`
+- `fidelity: "structural-preview"`
+- PNG、边界、诊断和渲染器版本
+
+这是布局与结构反馈，不是 Unity 像素真值。遇到外部资源、计划能力或渲染差异时先阅读 diagnostics，再决定修改。浏览器缺失时按 `BROWSER_NOT_INSTALLED.suggestedFix` 安装 Playwright Chromium；工具不会静默下载或回退到系统浏览器。
+
+`fairygui.validate` 发现工程问题时仍是合法成功结果：检查 `data.valid`，不要只看 MCP `isError`。非法参数、找不到目标、能力越界或基础设施故障会返回 `{ ok:false, error }` 并设置 `isError:true`。
+
+## 调用纪律
+
+- 先查询再写，先能力检查再选择操作。
+- 同一意图尽量一次批量调用，避免琐碎的逐字段工具往返。
+- 每次写入后等待成功结果，再顺序渲染。
+- 根据明确错误码和 `suggestedFix` 修正调用，不要通过猜测字段、修改 XML 文本或跨越实例边界来绕过契约。
+- 完成后关闭不再使用的工程会话：`fairygui.project` 的 `close`。

@@ -214,6 +214,47 @@ test("render_component reuses Chromium while isolating every render context", as
   }
 });
 
+test("render_component relaunches Chromium after a disconnected browser", async () => {
+  let launchCount = 0;
+  let launchedBrowser: Browser | undefined;
+  const reconnectingBrowser: RenderBrowserType = {
+    executablePath: () => chromium.executablePath(),
+    launch: async (options?: LaunchOptions): Promise<Browser> => {
+      launchCount++;
+      launchedBrowser = await chromium.launch(options);
+      return launchedBrowser;
+    }
+  };
+  const { registry, renderer, projectId } = await openRenderer({
+    browserType: reconnectingBrowser
+  });
+  try {
+    const input = RenderComponentInputSchema.parse({
+      projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01"
+    });
+    const first = await renderer.render(input);
+    assert.equal(first.ok, true, JSON.stringify(first));
+    assert.equal(launchCount, 1);
+
+    await launchedBrowser!.close();
+    const second = await renderer.render(input);
+    assert.equal(second.ok, true, JSON.stringify(second));
+    assert.equal(launchCount, 2);
+    if (first.ok && second.ok) {
+      assert.equal(
+        second.data.image.data,
+        first.data.image.data
+      );
+    }
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
 test("render_component reports a missing browser without downloading or fallback", async () => {
   let launchCount = 0;
   const missingBrowser: RenderBrowserType = {

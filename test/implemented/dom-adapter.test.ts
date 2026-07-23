@@ -158,6 +158,21 @@ test("OpenFairyGUI adapter emits strict CSS-style DOM without runtime aliases", 
   assert.equal("alpha" in dom.root.children[0]!.style, false);
 });
 
+test("empty enabled component background is normalized as unset", () => {
+  const { document, packageId, componentId } = createDocument();
+  const component = document.getRoot()
+    .getPackageById(packageId)
+    ?.listComponents()
+    .find((candidate) => candidate.getId() === componentId);
+  assert.ok(component);
+  component.setBgColorEnabled(true).setBgColor("");
+
+  const dom = toFairyDomDocument(document, packageId, componentId);
+
+  assert.equal(dom.root.content.backgroundColor, undefined);
+  assert.deepEqual(FairyDomDocumentSchema.parse(dom), dom);
+});
+
 test("Group members stay siblings and static List items are content", () => {
   const { document, packageId, componentId } = createDocument();
   const dom = toFairyDomDocument(document, packageId, componentId);

@@ -666,15 +666,16 @@ export function toFairyDomDocument(
 ): FairyDomDocument {
   const { component } = findComponent(document, packageId, componentId);
   const overflow = overflowName(component.getOverflow());
+  const backgroundColor = component.getBgColorEnabled()
+    ? component.getBgColor()
+    : undefined;
   const content = {
     overflow,
     scrollAxis: overflow === "scroll"
       ? scrollAxisName(component.getScrollType())
       : undefined,
     opaque: component.getOpaque(),
-    backgroundColor: component.getBgColorEnabled()
-      ? component.getBgColor()
-      : undefined,
+    backgroundColor: backgroundColor || undefined,
     maskId: component.getMask() || undefined,
     reversedMask: component.getReversedMask() || undefined
   };

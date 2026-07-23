@@ -505,6 +505,18 @@ function nodeFor(
           y: Number(points[index * 2 + 1] ?? 0)
         }))
         : undefined;
+      const rawCornerRadius = getter(owner, "getCornerRadius");
+      const cornerRadius = Array.isArray(rawCornerRadius)
+        && rawCornerRadius.length === 4
+        && rawCornerRadius.every((value) =>
+          typeof value === "number" && Number.isFinite(value) && value >= 0
+        )
+        ? rawCornerRadius as [number, number, number, number]
+        : undefined;
+      const rawSides = numberGetter(owner, "getSides");
+      const sides = rawSides !== undefined && rawSides >= 3
+        ? Math.floor(rawSides)
+        : undefined;
       return {
         ...base,
         type: "graph",
@@ -513,10 +525,8 @@ function nodeFor(
           fillColor: stringGetter(owner, "getFillColor"),
           lineColor: stringGetter(owner, "getLineColor"),
           lineSize: numberGetter(owner, "getLineSize"),
-          cornerRadius: getter(owner, "getCornerRadius") as
-            | [number, number, number, number]
-            | undefined,
-          sides: numberGetter(owner, "getSides"),
+          cornerRadius,
+          sides,
           points: pointPairs
         }
       };

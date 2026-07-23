@@ -1,0 +1,283 @@
+import assert from "node:assert/strict";
+import {
+  access,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, test } from "node:test";
+import {
+  chromium,
+  type Browser,
+  type BrowserContextOptions,
+  type LaunchOptions
+} from "playwright";
+import { RenderComponentInputSchema } from "../../src/contracts/tools.js";
+import { ProjectRegistry } from "../../src/project/project-registry.js";
+import {
+  RenderService,
+  type RenderBrowserType
+} from "../../src/render/render-service.js";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories.splice(0).map((directory) =>
+      rm(directory, { recursive: true, force: true })
+    )
+  );
+});
+
+async function createProject(): Promise<string> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-render-"));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(
+    path.join(directory, "Demo.fairy"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="render-project" type="DOM" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "package.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "Main.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="320,180" overflow="hidden" bgColor="#102030">
+  <displayList>
+    <graph id="n0" name="panel" xy="8,8" size="304,164" type="rect"
+      fillColor="#335577" lineColor="#88aacc" lineSize="2"/>
+    <text id="n1" name="title" xy="20,20" size="240,48"
+      text="Hello FairyGUI" fontSize="24" color="#ffffff"/>
+    <loader id="n2" name="remote" xy="20,80" size="100,40"
+      url="https://example.invalid/blocked.png"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  return directory;
+}
+
+async function openRenderer(options: {
+  browserType?: RenderBrowserType;
+} = {}): Promise<{
+  registry: ProjectRegistry;
+  renderer: RenderService;
+  projectId: string;
+}> {
+  const directory = await createProject();
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  return {
+    registry,
+    renderer: new RenderService(registry, options),
+    projectId: opened.data.projectId
+  };
+}
+
+test("render_component returns a FairyGUI-dom structural PNG preview", async () => {
+  const { registry, renderer, projectId } = await openRenderer();
+  try {
+    const result = await renderer.render(RenderComponentInputSchema.parse({
+      projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01"
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    assert.equal(result.data.backend, "fairygui-dom");
+    assert.equal(result.data.fidelity, "structural-preview");
+    assert.equal(result.data.packageId, "pkg00001");
+    assert.equal(result.data.componentId, "cmp01");
+    assert.deepEqual(result.data.bounds, {
+      x: 0,
+      y: 0,
+      width: 320,
+      height: 180
+    });
+    assert.equal(result.data.image.mediaType, "image/png");
+    assert.equal(result.data.image.width, 320);
+    assert.equal(result.data.image.height, 180);
+    assert.equal(result.data.image.filePath, undefined);
+    assert.equal(
+      Buffer.from(result.data.image.data, "base64")
+        .subarray(0, 8)
+        .toString("hex"),
+      "89504e470d0a1a0a"
+    );
+    assert.ok(
+      result.data.diagnostics.some((diagnostic) =>
+        diagnostic.code === "EXTERNAL_RESOURCE_BLOCKED"
+      )
+    );
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component applies explicit viewport scale and only saves on request", async () => {
+  const { registry, renderer, projectId } = await openRenderer();
+  try {
+    const result = await renderer.render(RenderComponentInputSchema.parse({
+      projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      width: 200,
+      height: 100,
+      scale: 2,
+      background: "#ffffff",
+      saveToFile: true
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    assert.equal(result.data.image.width, 400);
+    assert.equal(result.data.image.height, 200);
+    assert.ok(result.data.image.filePath);
+    assert.equal(
+      path.relative(os.tmpdir(), result.data.image.filePath!).startsWith(".."),
+      false
+    );
+    await access(result.data.image.filePath!);
+    assert.deepEqual(
+      await readFile(result.data.image.filePath!),
+      Buffer.from(result.data.image.data, "base64")
+    );
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component reuses Chromium while isolating every render context", async () => {
+  let launchCount = 0;
+  let contextCount = 0;
+  let launchedBrowser: Browser | undefined;
+  const countingBrowser: RenderBrowserType = {
+    executablePath: () => chromium.executablePath(),
+    launch: async (options?: LaunchOptions): Promise<Browser> => {
+      launchCount++;
+      const browser = await chromium.launch(options);
+      launchedBrowser = browser;
+      return new Proxy(browser, {
+        get(target, property) {
+          if (property === "newContext") {
+            return async (contextOptions?: BrowserContextOptions) => {
+              contextCount++;
+              return target.newContext(contextOptions);
+            };
+          }
+          const value = Reflect.get(target, property, target) as unknown;
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+      });
+    }
+  };
+  const { registry, renderer, projectId } = await openRenderer({
+    browserType: countingBrowser
+  });
+  try {
+    for (let index = 0; index < 2; index++) {
+      const result = await renderer.render(RenderComponentInputSchema.parse({
+        projectId,
+        packageId: "pkg00001",
+        componentId: "cmp01"
+      }));
+      assert.equal(result.ok, true, JSON.stringify(result));
+    }
+    assert.equal(launchCount, 1);
+    assert.equal(contextCount, 2);
+    assert.equal(launchedBrowser?.contexts().length, 0);
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component reports a missing browser without downloading or fallback", async () => {
+  let launchCount = 0;
+  const missingBrowser: RenderBrowserType = {
+    executablePath: () =>
+      path.join(os.tmpdir(), "definitely-missing-fgui-chromium", "chrome"),
+    launch: async (): Promise<Browser> => {
+      launchCount++;
+      throw new Error("launch must not be attempted");
+    }
+  };
+  const { registry, renderer, projectId } = await openRenderer({
+    browserType: missingBrowser
+  });
+  try {
+    const result = await renderer.render(RenderComponentInputSchema.parse({
+      projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01"
+    }));
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "BROWSER_NOT_INSTALLED");
+    assert.match(
+      result.error.suggestedFix ?? "",
+      /pnpm exec playwright install chromium/
+    );
+    assert.equal(launchCount, 0);
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component preserves specific project and component errors", async () => {
+  const { registry, renderer, projectId } = await openRenderer();
+  try {
+    const missingSession = await renderer.render(
+      RenderComponentInputSchema.parse({
+        projectId: "missing",
+        packageId: "pkg00001",
+        componentId: "cmp01"
+      })
+    );
+    assert.equal(missingSession.ok, false);
+    if (!missingSession.ok) {
+      assert.equal(missingSession.error.code, "SESSION_NOT_FOUND");
+    }
+
+    const missingComponent = await renderer.render(
+      RenderComponentInputSchema.parse({
+        projectId,
+        packageId: "pkg00001",
+        componentId: "missing"
+      })
+    );
+    assert.equal(missingComponent.ok, false);
+    if (!missingComponent.ok) {
+      assert.equal(missingComponent.error.code, "COMPONENT_NOT_FOUND");
+    }
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});

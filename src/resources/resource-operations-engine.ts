@@ -1,6 +1,7 @@
 import {
   generatePackageId,
   generateResourceId,
+  PropertyType,
   type Document,
   type Package
 } from "@magicskysword/openfairygui-core";
@@ -34,6 +35,11 @@ export interface ResourceOperationsEngineData {
     packageId: string;
     componentId: string;
   }>;
+  fileMoves: Array<{
+    from: string;
+    to: string;
+  }>;
+  deletedFiles: string[];
 }
 
 class ResourceOperationError extends Error {
@@ -110,8 +116,117 @@ function normalizeResourcePath(value: string | undefined, path: string): string 
   return segments.length === 0 ? "/" : `/${segments.join("/")}/`;
 }
 
+function canonicalExistingResourcePath(value: string | undefined): string {
+  const segments = (value ?? "/")
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((segment) => segment.length > 0 && segment !== ".");
+  return segments.length === 0 ? "/" : `/${segments.join("/")}/`;
+}
+
 function samePortableName(left: string, right: string): boolean {
   return left.toLocaleLowerCase() === right.toLocaleLowerCase();
+}
+
+type PackageResource = ReturnType<Package["listResources"]>[number];
+
+function resourceBranch(resource: PackageResource): string {
+  return "getBranch" in resource
+    ? (resource as PackageResource & { getBranch(): string }).getBranch()
+    : "";
+}
+
+function modelFilePaths(document: Document): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const pkg of document.getRoot().listPackages()) {
+    const branches = new Set(
+      pkg.listResources().map((resource) => resourceBranch(resource))
+    );
+    branches.add("");
+    for (const branch of branches) {
+      files.set(
+        `package:${pkg.getId()}:${branch}`,
+        branch
+          ? `assets_${branch}/${pkg.getName()}/package_branch.xml`
+          : `assets/${pkg.getName()}/package.xml`
+      );
+    }
+    for (const component of pkg.listComponents()) {
+      const branch = component.getBranch();
+      const resourcePath = canonicalExistingResourcePath(
+        component.getPath()
+      ).replace(/^\/|\/$/g, "");
+      files.set(
+        `component:${pkg.getId()}:${component.getId()}`,
+        [
+          branch ? `assets_${branch}` : "assets",
+          pkg.getName(),
+          ...(resourcePath ? [resourcePath] : []),
+          `${component.getName()}.xml`
+        ].join("/")
+      );
+    }
+  }
+  return files;
+}
+
+function packageById(
+  document: Document,
+  packageId: string,
+  path: string
+): Package {
+  const pkg = document.getRoot().getPackageById(packageId);
+  if (!pkg) {
+    operationError("PACKAGE_NOT_FOUND", `包不存在：${packageId}`, {
+      path,
+      actual: packageId
+    });
+  }
+  return pkg;
+}
+
+function resourceById(
+  pkg: Package,
+  resourceId: string,
+  path: string
+): PackageResource {
+  const resource = pkg.getResourceById(resourceId);
+  if (!resource) {
+    operationError("RESOURCE_NOT_FOUND", `资源不存在：${resourceId}`, {
+      path,
+      actual: {
+        packageId: pkg.getId(),
+        resourceId
+      }
+    });
+  }
+  return resource;
+}
+
+function assertNoResourceNameConflict(
+  pkg: Package,
+  resource: PackageResource | undefined,
+  name: string,
+  resourcePath: string,
+  path: string
+): void {
+  const conflict = pkg.listResources().find((candidate) =>
+    candidate !== resource
+    && samePortableName(candidate.getName(), name)
+    && canonicalExistingResourcePath(candidate.getPath?.()) === resourcePath
+  );
+  if (conflict) {
+    operationError("RESOURCE_CONFLICT", "目标路径中已存在同名资源", {
+      path,
+      actual: {
+        packageId: pkg.getId(),
+        resourceId: conflict.getId(),
+        name,
+        resourcePath
+      },
+      suggestedFix: "选择其他名称或资源路径"
+    });
+  }
 }
 
 function assertUnusedClientRef(
@@ -222,10 +337,7 @@ function applyCreateComponent(
   if (
     pkg.listResources().some((resource) =>
       samePortableName(resource.getName(), operation.name)
-      && normalizeResourcePath(
-        resource.getPath?.() ?? "/",
-        `${operationPath}.path`
-      ) === resourcePath
+      && canonicalExistingResourcePath(resource.getPath?.()) === resourcePath
     )
   ) {
     operationError("RESOURCE_CONFLICT", "目标路径中已存在同名资源", {
@@ -258,16 +370,161 @@ function applyCreateComponent(
   });
 }
 
+function applyRenamePackage(
+  document: Document,
+  operation: Extract<ResourceOperation, { op: "rename-package" }>,
+  operationPath: string,
+  data: ResourceOperationsEngineData
+): void {
+  assertPortableName(operation.name, `${operationPath}.name`, "包");
+  const pkg = packageById(
+    document,
+    operation.packageId,
+    `${operationPath}.packageId`
+  );
+  if (pkg.getName() === operation.name) {
+    operationError("INVALID_ARGUMENT", "包名称没有发生变化", {
+      path: `${operationPath}.name`,
+      actual: operation.name
+    });
+  }
+  const conflict = document.getRoot().listPackages().find((candidate) =>
+    candidate !== pkg
+    && samePortableName(candidate.getName(), operation.name)
+  );
+  if (conflict) {
+    operationError("RESOURCE_CONFLICT", "包名称已存在", {
+      path: `${operationPath}.name`,
+      actual: operation.name
+    });
+  }
+  pkg.setName(operation.name);
+  data.affectedPackageIds.push(pkg.getId());
+  for (const component of pkg.listComponents()) {
+    data.affectedComponents.push({
+      packageId: pkg.getId(),
+      componentId: component.getId()
+    });
+  }
+}
+
+function applyRenameResource(
+  document: Document,
+  operation: Extract<ResourceOperation, { op: "rename-resource" }>,
+  operationPath: string,
+  data: ResourceOperationsEngineData
+): void {
+  const pkg = packageById(
+    document,
+    operation.packageId,
+    `${operationPath}.packageId`
+  );
+  const resource = resourceById(
+    pkg,
+    operation.resourceId,
+    `${operationPath}.resourceId`
+  );
+  if (resource.propertyType === PropertyType.COMPONENT) {
+    assertComponentName(operation.name, `${operationPath}.name`);
+  }
+  else {
+    assertPortableName(operation.name, `${operationPath}.name`, "组件");
+  }
+  if (resource.getName() === operation.name) {
+    operationError("INVALID_ARGUMENT", "资源名称没有发生变化", {
+      path: `${operationPath}.name`,
+      actual: operation.name
+    });
+  }
+  const resourcePath = canonicalExistingResourcePath(resource.getPath?.());
+  assertNoResourceNameConflict(
+    pkg,
+    resource,
+    operation.name,
+    resourcePath,
+    `${operationPath}.name`
+  );
+  resource.setName(operation.name);
+  data.affectedPackageIds.push(pkg.getId());
+  if (resource.propertyType === PropertyType.COMPONENT) {
+    data.affectedComponents.push({
+      packageId: pkg.getId(),
+      componentId: resource.getId()
+    });
+  }
+}
+
+function applyMoveResource(
+  document: Document,
+  operation: Extract<ResourceOperation, { op: "move-resource" }>,
+  operationPath: string,
+  data: ResourceOperationsEngineData
+): void {
+  if (
+    operation.targetPackageId !== undefined
+    && operation.targetPackageId !== operation.packageId
+  ) {
+    operationError(
+      "CROSS_PACKAGE_MOVE_UNSUPPORTED",
+      "V1 仅支持包内移动资源",
+      {
+        path: `${operationPath}.targetPackageId`,
+        actual: operation.targetPackageId,
+        allowed: [operation.packageId],
+        suggestedFix: "保留原 packageId，仅修改 path"
+      }
+    );
+  }
+  const pkg = packageById(
+    document,
+    operation.packageId,
+    `${operationPath}.packageId`
+  );
+  const resource = resourceById(
+    pkg,
+    operation.resourceId,
+    `${operationPath}.resourceId`
+  );
+  const resourcePath = normalizeResourcePath(
+    operation.path,
+    `${operationPath}.path`
+  );
+  if (canonicalExistingResourcePath(resource.getPath?.()) === resourcePath) {
+    operationError("INVALID_ARGUMENT", "资源路径没有发生变化", {
+      path: `${operationPath}.path`,
+      actual: operation.path
+    });
+  }
+  assertNoResourceNameConflict(
+    pkg,
+    resource,
+    resource.getName(),
+    resourcePath,
+    `${operationPath}.path`
+  );
+  resource.setPath(resourcePath);
+  data.affectedPackageIds.push(pkg.getId());
+  if (resource.propertyType === PropertyType.COMPONENT) {
+    data.affectedComponents.push({
+      packageId: pkg.getId(),
+      componentId: resource.getId()
+    });
+  }
+}
+
 export class ResourceOperationsEngine {
   public apply(
     document: Document,
     input: ApplyResourceOperationsInput
   ): ResultEnvelope<ResourceOperationsEngineData> {
+    const initialFilePaths = modelFilePaths(document);
     const data: ResourceOperationsEngineData = {
       appliedOperations: 0,
       clientRefs: {},
       affectedPackageIds: [],
-      affectedComponents: []
+      affectedComponents: [],
+      fileMoves: [],
+      deletedFiles: []
     };
     try {
       input.operations.forEach((operation, index) => {
@@ -278,6 +535,15 @@ export class ResourceOperationsEngine {
             break;
           case "create-component":
             applyCreateComponent(document, operation, operationPath, data);
+            break;
+          case "rename-package":
+            applyRenamePackage(document, operation, operationPath, data);
+            break;
+          case "rename-resource":
+            applyRenameResource(document, operation, operationPath, data);
+            break;
+          case "move-resource":
+            applyMoveResource(document, operation, operationPath, data);
             break;
           default:
             operationError(
@@ -296,6 +562,22 @@ export class ResourceOperationsEngine {
         left.packageId.localeCompare(right.packageId)
         || left.componentId.localeCompare(right.componentId)
       );
+      data.affectedComponents = data.affectedComponents.filter(
+        (value, index, values) =>
+          index === 0
+          || value.packageId !== values[index - 1]!.packageId
+          || value.componentId !== values[index - 1]!.componentId
+      );
+      const finalFilePaths = modelFilePaths(document);
+      for (const [key, from] of initialFilePaths) {
+        const to = finalFilePaths.get(key);
+        if (to === undefined) data.deletedFiles.push(from);
+        else if (to !== from) data.fileMoves.push({ from, to });
+      }
+      data.fileMoves.sort((left, right) =>
+        left.from.localeCompare(right.from)
+      );
+      data.deletedFiles.sort();
       return ok(data);
     }
     catch (error) {

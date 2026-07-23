@@ -363,6 +363,7 @@ export const ResourceOperationSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("move-resource"),
     packageId: nonEmptyId,
+    targetPackageId: nonEmptyId.optional(),
     resourceId: nonEmptyId,
     path: z.string()
   }).strict(),

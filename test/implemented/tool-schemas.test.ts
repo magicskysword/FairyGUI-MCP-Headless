@@ -288,6 +288,16 @@ test("resource operation schema fixes collision and deletion policies", () => {
     projectId: "project-1",
     operations: []
   }).success, false);
+  assert.equal(ApplyResourceOperationsInputSchema.safeParse({
+    projectId: "project-1",
+    operations: [{
+      op: "move-resource",
+      packageId: "pkg00001",
+      targetPackageId: "pkg00002",
+      resourceId: "item1",
+      path: "/shared/"
+    }]
+  }).success, true);
 });
 
 test("render and validation schemas apply deterministic defaults and limits", () => {

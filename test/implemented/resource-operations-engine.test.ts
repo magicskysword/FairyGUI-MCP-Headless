@@ -177,3 +177,87 @@ test("resource creation rejects invalid ids, names, paths and conflicts", () => 
     }
   }
 });
+
+test("resource operations collapse package, component rename and move paths", () => {
+  const document = fixture();
+  const result = new ResourceOperationsEngine().apply(document, input([
+    {
+      op: "rename-package",
+      packageId: PACKAGE_ID,
+      name: "Renamed"
+    },
+    {
+      op: "rename-resource",
+      packageId: PACKAGE_ID,
+      resourceId: "cmp01",
+      name: "Dashboard"
+    },
+    {
+      op: "move-resource",
+      packageId: PACKAGE_ID,
+      resourceId: "cmp01",
+      path: "/screens/"
+    }
+  ]));
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const pkg = document.getRoot().getPackageById(PACKAGE_ID)!;
+  const component = pkg.getResourceById("cmp01")!;
+  assert.equal(pkg.getName(), "Renamed");
+  assert.equal(component.getName(), "Dashboard");
+  assert.equal(component.getPath(), "/screens/");
+  assert.deepEqual(result.data.fileMoves, [
+    {
+      from: "assets/Demo/Main.xml",
+      to: "assets/Renamed/screens/Dashboard.xml"
+    },
+    {
+      from: "assets/Demo/package.xml",
+      to: "assets/Renamed/package.xml"
+    }
+  ]);
+  assert.deepEqual(result.data.deletedFiles, []);
+  assert.deepEqual(result.data.affectedComponents, [{
+    packageId: PACKAGE_ID,
+    componentId: "cmp01"
+  }]);
+});
+
+test("resource rename and move reject collisions and cross-package targets", () => {
+  {
+    const document = fixture();
+    const pkg = document.getRoot().getPackageById(PACKAGE_ID)!;
+    pkg.addResource(
+      document.createComponent("Other")
+        .setId("oth01")
+        .setPath("/")
+        .setSize(10, 10)
+    );
+    const result = new ResourceOperationsEngine().apply(document, input([{
+      op: "rename-resource",
+      packageId: PACKAGE_ID,
+      resourceId: "oth01",
+      name: "Main"
+    }]));
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "RESOURCE_CONFLICT");
+  }
+
+  {
+    const document = fixture();
+    document.createPackage("Other").setId("other001");
+    const result = new ResourceOperationsEngine().apply(document, input([{
+      op: "move-resource",
+      packageId: PACKAGE_ID,
+      targetPackageId: "other001",
+      resourceId: "cmp01",
+      path: "/"
+    }]));
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.code, "CROSS_PACKAGE_MOVE_UNSUPPORTED");
+      assert.equal(result.error.path, "operations[0].targetPackageId");
+    }
+  }
+});

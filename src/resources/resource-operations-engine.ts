@@ -1,9 +1,11 @@
 import {
+  buildResourceReferenceIndex,
   generatePackageId,
   generateResourceId,
   PropertyType,
   type Document,
-  type Package
+  type Package,
+  type ResourceReference
 } from "@magicskysword/openfairygui-core";
 import {
   fail,
@@ -45,12 +47,29 @@ export interface ResourceOperationsEngineData {
     from: string;
     to: string;
   }>;
+  deletedAssetFiles: string[];
   assetWrites: Array<{
     relativePath: string;
     content: Uint8Array;
     targetExisted: boolean;
   }>;
   consumedInboxPaths: string[];
+  deleteResults: ResourceDeleteResult[];
+  projectMayBeInvalid: boolean;
+}
+
+export interface ResourceDeleteResult {
+  kind: "resource" | "package";
+  packageId: string;
+  resourceId?: string;
+  requestedMode: "reject" | "cascade" | "force";
+  effectiveMode:
+    | "reject"
+    | "cascade"
+    | "cascade-with-force-fallback"
+    | "force";
+  removedReferences: number;
+  unsupportedReferences: number;
 }
 
 export interface ResourceOperationsEngineOptions {
@@ -888,6 +907,336 @@ function applyReplaceResource(
   data.affectedPackageIds.push(pkg.getId());
 }
 
+type MutableReferenceOwner = {
+  getId?: () => string;
+  getListItems?: () => Array<Record<string, unknown>>;
+  setListItems?: (items: Array<Record<string, unknown>>) => unknown;
+  getInstanceComboItems?: () => Array<Record<string, unknown>>;
+  setInstanceComboItems?: (
+    items: Array<Record<string, unknown>>
+  ) => unknown;
+};
+
+type MutableReferenceComponent = PackageResource & {
+  getChildById(id: string): MutableReferenceOwner | null;
+  removeChild(child: MutableReferenceOwner): unknown;
+};
+
+function sourceComponent(
+  document: Document,
+  reference: ResourceReference
+): MutableReferenceComponent {
+  const source = reference.source;
+  const pkg = document.getRoot().getPackageById(source.packageId);
+  const component = pkg?.getResourceById(source.componentId);
+  if (
+    !component
+    || component.propertyType !== PropertyType.COMPONENT
+    || !("getChildById" in component)
+  ) {
+    operationError(
+      "INTERNAL_ERROR",
+      "引用索引指向的来源组件已不存在",
+      {
+        actual: reference.source
+      }
+    );
+  }
+  return component as MutableReferenceComponent;
+}
+
+function referenceOwner(
+  component: MutableReferenceComponent,
+  reference: ResourceReference
+): MutableReferenceOwner {
+  if (reference.source.objectId === undefined) {
+    return component as unknown as MutableReferenceOwner;
+  }
+  const owner = component.getChildById(reference.source.objectId);
+  if (!owner) {
+    operationError(
+      "INTERNAL_ERROR",
+      "引用索引指向的来源节点已不存在",
+      {
+        actual: reference.source
+      }
+    );
+  }
+  return owner as unknown as MutableReferenceOwner;
+}
+
+function invokeReferenceSetter(
+  owner: MutableReferenceOwner,
+  field: string,
+  reference: ResourceReference
+): void {
+  const setterName = `set${field[0]!.toUpperCase()}${field.slice(1)}`;
+  const setter = (owner as unknown as Record<string, unknown>)[setterName];
+  if (typeof setter !== "function") {
+    operationError(
+      "INTERNAL_ERROR",
+      "引用索引将缺少写入接口的字段标记为可级联",
+      {
+        path: reference.source.field,
+        actual: {
+          ownerType: reference.source.ownerType,
+          setter: setterName
+        }
+      }
+    );
+  }
+  (setter as (value: string) => unknown).call(owner, "");
+}
+
+function clearIndexedReference(
+  document: Document,
+  reference: ResourceReference
+): void {
+  const component = sourceComponent(document, reference);
+  const owner = referenceOwner(component, reference);
+  const listItem = /^listItems\[(\d+)\]\.(icon|selectedIcon|url)$/u.exec(
+    reference.source.field
+  );
+  if (listItem) {
+    const index = Number(listItem[1]);
+    const field = listItem[2]!;
+    const items = owner.getListItems?.().map((item) => ({ ...item }));
+    if (!items || !items[index] || typeof owner.setListItems !== "function") {
+      operationError(
+        "INTERNAL_ERROR",
+        "引用索引中的 List 项目已不存在",
+        {
+          path: reference.source.field,
+          actual: reference.source
+        }
+      );
+    }
+    items[index]![field] = null;
+    owner.setListItems(items);
+    return;
+  }
+
+  const comboItem = /^instanceComboItems\[(\d+)\]\.icon$/u.exec(
+    reference.source.field
+  );
+  if (comboItem) {
+    const index = Number(comboItem[1]);
+    const items = owner.getInstanceComboItems?.()
+      .map((item) => ({ ...item }));
+    if (
+      !items
+      || !items[index]
+      || typeof owner.setInstanceComboItems !== "function"
+    ) {
+      operationError(
+        "INTERNAL_ERROR",
+        "引用索引中的组件实例下拉项目已不存在",
+        {
+          path: reference.source.field,
+          actual: reference.source
+        }
+      );
+    }
+    items[index]!.icon = null;
+    owner.setInstanceComboItems(items);
+    return;
+  }
+
+  invokeReferenceSetter(owner, reference.source.field, reference);
+}
+
+function cascadeReferences(
+  document: Document,
+  references: ResourceReference[],
+  data: ResourceOperationsEngineData
+): {
+  removedReferences: number;
+  unsupportedReferences: number;
+} {
+  const clearable = references.filter((reference) =>
+    reference.cascadeAction === "clear-field"
+  );
+  const removable = references.filter((reference) =>
+    reference.cascadeAction === "remove-owner"
+  );
+  const unsupportedReferences = references.filter((reference) =>
+    reference.cascadeAction === "unsupported"
+  ).length;
+
+  for (const reference of clearable) {
+    clearIndexedReference(document, reference);
+  }
+
+  const removedOwners = new Set<string>();
+  for (const reference of removable) {
+    const source = reference.source;
+    const ownerKey = [
+      source.packageId,
+      source.componentId,
+      source.objectId ?? ""
+    ].join("\0");
+    if (removedOwners.has(ownerKey)) continue;
+    removedOwners.add(ownerKey);
+    const component = sourceComponent(document, reference);
+    const owner = referenceOwner(component, reference);
+    component.removeChild(owner);
+  }
+
+  for (const reference of [...clearable, ...removable]) {
+    data.affectedPackageIds.push(reference.source.packageId);
+    data.affectedComponents.push({
+      packageId: reference.source.packageId,
+      componentId: reference.source.componentId
+    });
+  }
+  return {
+    removedReferences: clearable.length + removable.length,
+    unsupportedReferences
+  };
+}
+
+function relevantResourceReferences(
+  document: Document,
+  pkg: Package,
+  resource: PackageResource
+): ResourceReference[] {
+  return buildResourceReferenceIndex(document)
+    .find(pkg.getId(), resource.getId())
+    .filter((reference) =>
+      !(
+        resource.propertyType === PropertyType.COMPONENT
+        && reference.source.packageId === pkg.getId()
+        && reference.source.componentId === resource.getId()
+      )
+    );
+}
+
+function assertDeletionIsUnused(
+  references: ResourceReference[],
+  path: string
+): void {
+  if (references.length === 0) return;
+  operationError("RESOURCE_IN_USE", "删除目标仍被工程引用", {
+    path,
+    actual: references,
+    suggestedFix: "改用 mode: cascade 清理支持的引用，或明确使用 force"
+  });
+}
+
+function deletionResult(
+  kind: ResourceDeleteResult["kind"],
+  packageId: string,
+  resourceId: string | undefined,
+  requestedMode: ResourceDeleteResult["requestedMode"],
+  removedReferences: number,
+  unsupportedReferences: number
+): ResourceDeleteResult {
+  const effectiveMode = requestedMode === "cascade"
+    ? unsupportedReferences > 0
+      ? "cascade-with-force-fallback"
+      : "cascade"
+    : requestedMode;
+  return {
+    kind,
+    packageId,
+    ...(resourceId === undefined ? {} : { resourceId }),
+    requestedMode,
+    effectiveMode,
+    removedReferences,
+    unsupportedReferences
+  };
+}
+
+function applyDeleteResource(
+  document: Document,
+  operation: Extract<ResourceOperation, { op: "delete-resource" }>,
+  operationPath: string,
+  data: ResourceOperationsEngineData
+): void {
+  const pkg = packageById(
+    document,
+    operation.packageId,
+    `${operationPath}.packageId`
+  );
+  const resource = resourceById(
+    pkg,
+    operation.resourceId,
+    `${operationPath}.resourceId`
+  );
+  let removedReferences = 0;
+  let unsupportedReferences = 0;
+  if (operation.mode !== "force") {
+    const references = relevantResourceReferences(document, pkg, resource);
+    if (operation.mode === "reject") {
+      assertDeletionIsUnused(references, `${operationPath}.resourceId`);
+    }
+    else {
+      ({
+        removedReferences,
+        unsupportedReferences
+      } = cascadeReferences(document, references, data));
+    }
+  }
+  pkg.removeResource(resource);
+  data.affectedPackageIds.push(pkg.getId());
+  if (operation.mode === "force" || unsupportedReferences > 0) {
+    data.projectMayBeInvalid = true;
+  }
+  data.deleteResults.push(deletionResult(
+    "resource",
+    pkg.getId(),
+    resource.getId(),
+    operation.mode,
+    removedReferences,
+    unsupportedReferences
+  ));
+}
+
+function applyDeletePackage(
+  document: Document,
+  operation: Extract<ResourceOperation, { op: "delete-package" }>,
+  operationPath: string,
+  data: ResourceOperationsEngineData
+): void {
+  const pkg = packageById(
+    document,
+    operation.packageId,
+    `${operationPath}.packageId`
+  );
+  let removedReferences = 0;
+  let unsupportedReferences = 0;
+  if (operation.mode !== "force") {
+    const references = pkg.listResources().flatMap((resource) =>
+      buildResourceReferenceIndex(document)
+        .find(pkg.getId(), resource.getId())
+        .filter((reference) =>
+          reference.source.packageId !== pkg.getId()
+        )
+    );
+    if (operation.mode === "reject") {
+      assertDeletionIsUnused(references, `${operationPath}.packageId`);
+    }
+    else {
+      ({
+        removedReferences,
+        unsupportedReferences
+      } = cascadeReferences(document, references, data));
+    }
+  }
+  (pkg as Package & { dispose(): void }).dispose();
+  if (operation.mode === "force" || unsupportedReferences > 0) {
+    data.projectMayBeInvalid = true;
+  }
+  data.deleteResults.push(deletionResult(
+    "package",
+    pkg.getId(),
+    undefined,
+    operation.mode,
+    removedReferences,
+    unsupportedReferences
+  ));
+}
+
 export class ResourceOperationsEngine {
   public apply(
     document: Document,
@@ -904,8 +1253,11 @@ export class ResourceOperationsEngine {
       fileMoves: [],
       deletedFiles: [],
       assetMoves: [],
+      deletedAssetFiles: [],
       assetWrites: [],
-      consumedInboxPaths: []
+      consumedInboxPaths: [],
+      deleteResults: [],
+      projectMayBeInvalid: false
     };
     try {
       input.operations.forEach((operation, index) => {
@@ -946,28 +1298,55 @@ export class ResourceOperationsEngine {
               options
             );
             break;
+          case "delete-resource":
+            applyDeleteResource(
+              document,
+              operation,
+              operationPath,
+              data
+            );
+            break;
+          case "delete-package":
+            applyDeletePackage(
+              document,
+              operation,
+              operationPath,
+              data
+            );
+            break;
           default:
+            const unsupported = operation as { op: string };
             operationError(
               "CAPABILITY_NOT_IMPLEMENTED",
-              `资源操作 ${operation.op} 尚未实现`,
+              `资源操作 ${unsupported.op} 尚未实现`,
               {
                 path: `${operationPath}.op`,
-                actual: operation.op
+                actual: unsupported.op
               }
             );
         }
         data.appliedOperations++;
       });
-      data.affectedPackageIds = [...new Set(data.affectedPackageIds)].sort();
+      data.affectedPackageIds = [...new Set(data.affectedPackageIds)]
+        .filter((packageId) =>
+          document.getRoot().getPackageById(packageId) !== null
+        )
+        .sort();
       data.affectedComponents.sort((left, right) =>
         left.packageId.localeCompare(right.packageId)
         || left.componentId.localeCompare(right.componentId)
       );
       data.affectedComponents = data.affectedComponents.filter(
         (value, index, values) =>
-          index === 0
-          || value.packageId !== values[index - 1]!.packageId
-          || value.componentId !== values[index - 1]!.componentId
+          (
+            index === 0
+            || value.packageId !== values[index - 1]!.packageId
+            || value.componentId !== values[index - 1]!.componentId
+          )
+          && document.getRoot()
+            .getPackageById(value.packageId)
+            ?.getResourceById(value.componentId)
+            ?.propertyType === PropertyType.COMPONENT
       );
       const finalFilePaths = modelFilePaths(document);
       for (const [key, from] of initialFilePaths) {
@@ -982,12 +1361,18 @@ export class ResourceOperationsEngine {
       const finalAssetPaths = modelAssetPaths(document);
       for (const [key, from] of initialAssetPaths) {
         const to = finalAssetPaths.get(key);
-        if (to !== undefined && to !== from) {
+        if (to === undefined) data.deletedAssetFiles.push(from);
+        else if (to !== from) {
           data.assetMoves.push({ from, to });
         }
       }
       data.assetMoves.sort((left, right) =>
         left.from.localeCompare(right.from)
+      );
+      data.deletedAssetFiles.sort();
+      const finalAssetPathSet = new Set(finalAssetPaths.values());
+      data.assetWrites = data.assetWrites.filter((write) =>
+        finalAssetPathSet.has(write.relativePath)
       );
       data.assetWrites.sort((left, right) =>
         left.relativePath.localeCompare(right.relativePath)

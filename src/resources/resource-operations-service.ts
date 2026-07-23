@@ -32,6 +32,7 @@ import {
 } from "./import-inbox.js";
 import {
   ResourceOperationsEngine,
+  type ResourceDeleteResult,
   type ResourceOperationClientRef,
   type ResourceOperationsEngineData
 } from "./resource-operations-engine.js";
@@ -46,6 +47,7 @@ export interface ResourceOperationsData {
   clientRefs: Record<string, ResourceOperationClientRef>;
   affectedPackageIds: string[];
   consumedInboxPaths: string[];
+  deleteResults: ResourceDeleteResult[];
   projectMayBeInvalid?: boolean;
 }
 
@@ -479,6 +481,26 @@ export class ResourceOperationsService {
       }
     }
 
+    for (const relativePath of [
+      ...applied.data.deletedFiles,
+      ...applied.data.deletedAssetFiles
+    ]) {
+      const sourceContent = await fileContentOrUndefined(projectFilePath(
+        projectDirectory,
+        relativePath
+      ));
+      if (sourceContent === undefined) {
+        return fail("WRITE_FAILED", "待删除的工程文件不存在", {
+          path: relativePath,
+          suggestedFix: "修复 package.xml 与工程文件的一致性后重试"
+        });
+      }
+      addSourceState(sourceStates, {
+        relativePath,
+        content: sourceContent
+      });
+    }
+
     for (const inboxPath of applied.data.consumedInboxPaths) {
       const inboxFile = [...importFiles.values()].find((file) =>
         file.sourceRelativePath === inboxPath
@@ -508,6 +530,7 @@ export class ResourceOperationsService {
           ...applied.data.fileMoves.map((move) => move.from),
           ...applied.data.deletedFiles,
           ...applied.data.assetMoves.map((move) => move.from),
+          ...applied.data.deletedAssetFiles,
           ...applied.data.consumedInboxPaths
         ])
       ].sort(),
@@ -607,14 +630,50 @@ export class ResourceOperationsService {
     prepared: PreparedResourceOperations,
     transaction: FileTransactionData
   ): ResultEnvelope<ResourceOperationsData> {
-    return ok({
+    const data: ResourceOperationsData = {
       projectId: input.projectId,
       transactionId: transaction.transactionId,
       affectedFiles: transaction.affectedFiles,
       appliedOperations: prepared.engine.appliedOperations,
       clientRefs: prepared.engine.clientRefs,
       affectedPackageIds: prepared.engine.affectedPackageIds,
-      consumedInboxPaths: prepared.engine.consumedInboxPaths
+      consumedInboxPaths: prepared.engine.consumedInboxPaths,
+      deleteResults: prepared.engine.deleteResults,
+      ...(prepared.engine.projectMayBeInvalid
+        ? { projectMayBeInvalid: true }
+        : {})
+    };
+    const warnings = prepared.engine.deleteResults.flatMap((result) => {
+      if (result.effectiveMode === "cascade-with-force-fallback") {
+        return [{
+          severity: "warning" as const,
+          code: "CASCADE_FORCE_FALLBACK",
+          message:
+            "级联删除遇到只读引用并已保留该引用，工程可能处于无效状态",
+          details: {
+            packageId: result.packageId,
+            ...(result.resourceId === undefined
+              ? {}
+              : { resourceId: result.resourceId }),
+            unsupportedReferences: result.unsupportedReferences
+          }
+        }];
+      }
+      if (result.effectiveMode === "force") {
+        return [{
+          severity: "warning" as const,
+          code: "FORCE_DELETE_MAY_INVALIDATE_PROJECT",
+          message: "强制删除跳过了引用扫描，工程可能处于无效状态",
+          details: {
+            packageId: result.packageId,
+            ...(result.resourceId === undefined
+              ? {}
+              : { resourceId: result.resourceId })
+          }
+        }];
+      }
+      return [];
     });
+    return ok(data, warnings);
   }
 }

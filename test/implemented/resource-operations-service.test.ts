@@ -557,3 +557,185 @@ test("failed import transaction restores the consumed inbox file", async () => {
     await context.registry.closeAll();
   }
 });
+
+test("resource deletion reject leaves referenced files unchanged", async () => {
+  const context = await setup();
+  await writeFile(
+    context.project.mainFile,
+    `<component size="320,180">
+  <displayList>
+    <image id="n0" name="icon" src="img01" xy="0,0" size="32,32"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  try {
+    const packageBefore = await readFile(context.project.packageFile, "utf8");
+    const mainBefore = await readFile(context.project.mainFile, "utf8");
+    const imageBefore = await readFile(context.project.imageFile);
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "delete-resource",
+          packageId: "pkg00001",
+          resourceId: "img01",
+          mode: "reject"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "RESOURCE_IN_USE");
+    assert.equal(
+      await readFile(context.project.packageFile, "utf8"),
+      packageBefore
+    );
+    assert.equal(await readFile(context.project.mainFile, "utf8"), mainBefore);
+    assert.deepEqual(await readFile(context.project.imageFile), imageBefore);
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("resource cascade atomically updates references and deletes asset bytes", async () => {
+  const context = await setup();
+  await writeFile(
+    context.project.mainFile,
+    `<component size="320,180">
+  <displayList>
+    <image id="n0" name="icon" src="img01" xy="0,0" size="32,32"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  try {
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "delete-resource",
+          packageId: "pkg00001",
+          resourceId: "img01",
+          mode: "cascade"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.data.affectedFiles, [
+      "assets/Demo/icons/Icon.png",
+      "assets/Demo/Main.xml",
+      "assets/Demo/package.xml"
+    ]);
+    assert.deepEqual(result.data.deleteResults, [{
+      kind: "resource",
+      packageId: "pkg00001",
+      resourceId: "img01",
+      requestedMode: "cascade",
+      effectiveMode: "cascade",
+      removedReferences: 1,
+      unsupportedReferences: 0
+    }]);
+    assert.equal(result.data.projectMayBeInvalid, undefined);
+    assert.doesNotMatch(
+      await readFile(context.project.packageFile, "utf8"),
+      /id="img01"/
+    );
+    assert.doesNotMatch(
+      await readFile(context.project.mainFile, "utf8"),
+      /id="n0"/
+    );
+    await assert.rejects(readFile(context.project.imageFile), {
+      code: "ENOENT"
+    });
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("force package deletion commits every package file and declares risk", async () => {
+  const context = await setup();
+  try {
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "delete-package",
+          packageId: "pkg00001",
+          mode: "force"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.data.projectMayBeInvalid, true);
+    assert.equal(result.warnings?.[0]?.code, "FORCE_DELETE_MAY_INVALIDATE_PROJECT");
+    assert.deepEqual(result.data.affectedFiles, [
+      "assets/Demo/icons/Icon.png",
+      "assets/Demo/Main.xml",
+      "assets/Demo/package.xml"
+    ]);
+    await assert.rejects(readFile(context.project.packageFile), {
+      code: "ENOENT"
+    });
+    await assert.rejects(readFile(context.project.mainFile), {
+      code: "ENOENT"
+    });
+    await assert.rejects(readFile(context.project.imageFile), {
+      code: "ENOENT"
+    });
+    const reparsed = await context.registry.read(
+      context.projectId,
+      (document) => document.getRoot().listPackages().length
+    );
+    assert.deepEqual(reparsed, { ok: true, data: 0 });
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("failed package deletion restores XML and binary files", async () => {
+  let injected = false;
+  const logDirectory = await mkdtemp(path.join(os.tmpdir(), "fgui-delete-fail-"));
+  temporaryDirectories.push(logDirectory);
+  const transactions = new FileTransactionManager({
+    baseDirectory: logDirectory,
+    faultInjector(point) {
+      if (point === "after-replace" && !injected) {
+        injected = true;
+        throw new Error("injected deletion failure");
+      }
+    }
+  });
+  const context = await setup({ transactions });
+  try {
+    const packageBefore = await readFile(context.project.packageFile);
+    const mainBefore = await readFile(context.project.mainFile);
+    const imageBefore = await readFile(context.project.imageFile);
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "delete-package",
+          packageId: "pkg00001",
+          mode: "force"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "TRANSACTION_FAILED");
+    assert.deepEqual(await readFile(context.project.packageFile), packageBefore);
+    assert.deepEqual(await readFile(context.project.mainFile), mainBefore);
+    assert.deepEqual(await readFile(context.project.imageFile), imageBefore);
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});

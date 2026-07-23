@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document } from "@magicskysword/openfairygui-core";
+import {
+  Document,
+  GearType
+} from "@magicskysword/openfairygui-core";
 import {
   ApplyResourceOperationsInputSchema,
   type ApplyResourceOperationsInput
@@ -45,6 +48,64 @@ function input(
     projectId: PROJECT_ID,
     operations
   });
+}
+
+function deletionFixture(): {
+  document: Document;
+  sourcePackageId: string;
+  sourceComponentId: string;
+} {
+  const document = fixture();
+  const sourcePackageId = "source01";
+  const sourceComponentId = "host1";
+  const sourcePackage = document.createPackage("Source").setId(sourcePackageId);
+  const sourceComponent = document.createComponent("Host")
+    .setId(sourceComponentId)
+    .setPath("/")
+    .setSize(320, 180);
+  sourcePackage.addResource(sourceComponent);
+  sourceComponent.addChild(
+    document.createGImage("direct")
+      .setId("n0")
+      .setSrc("img01")
+      .setPackageId(PACKAGE_ID)
+  );
+  sourceComponent.addChild(
+    document.createGLoader("loader")
+      .setId("n1")
+      .setUrl(`ui://${PACKAGE_ID}img01`)
+  );
+  sourceComponent.addChild(
+    document.createGList("items")
+      .setId("n2")
+      .setDefaultItem(`ui://${PACKAGE_ID}cmp01`)
+      .setListItems([{
+        title: "Item",
+        icon: `ui://${PACKAGE_ID}img01`,
+        url: `ui://${PACKAGE_ID}cmp01`,
+        name: null,
+        selectedTitle: null,
+        selectedIcon: null,
+        level: 0,
+        isFolder: null
+      }])
+  );
+  const label = document.createGTextField("label")
+    .setId("n3")
+    .setFont(`ui://${PACKAGE_ID}img01`);
+  label.addGear(
+    document.createGear("icon")
+      .setGearType(GearType.Icon)
+      .setValues(`page0,ui://${PACKAGE_ID}img01`)
+  );
+  sourceComponent.addChild(label);
+  sourceComponent.addChild(
+    document.createGComponent("main")
+      .setId("n4")
+      .setSrc("cmp01")
+      .setPackageId(PACKAGE_ID)
+  );
+  return { document, sourcePackageId, sourceComponentId };
 }
 
 test("resource operations create packages and components with typed client refs", () => {
@@ -106,6 +167,172 @@ test("resource operations create packages and components with typed client refs"
     PACKAGE_ID,
     result.data.clientRefs.widgets!.packageId
   ].sort());
+});
+
+test("resource deletion reject reports references without mutating the model", () => {
+  const { document } = deletionFixture();
+  const result = new ResourceOperationsEngine().apply(document, input([{
+    op: "delete-resource",
+    packageId: PACKAGE_ID,
+    resourceId: "img01",
+    mode: "reject"
+  }]));
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error.code, "RESOURCE_IN_USE");
+  assert.equal(result.error.path, "operations[0].resourceId");
+  assert.equal(
+    document.getRoot().getPackageById(PACKAGE_ID)?.getResourceById("img01")
+      ?.getName(),
+    "Icon"
+  );
+  assert.equal(
+    Array.isArray(result.error.actual)
+      && result.error.actual.some((reference) =>
+        reference.source?.field === "gear.values"
+      ),
+    true
+  );
+});
+
+test("resource deletion cascade clears supported references and exposes fallback", () => {
+  const {
+    document,
+    sourcePackageId,
+    sourceComponentId
+  } = deletionFixture();
+  const result = new ResourceOperationsEngine().apply(document, input([{
+    op: "delete-resource",
+    packageId: PACKAGE_ID,
+    resourceId: "img01",
+    mode: "cascade"
+  }]));
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(
+    document.getRoot().getPackageById(PACKAGE_ID)?.getResourceById("img01"),
+    null
+  );
+  const host = document.getRoot().getPackageById(sourcePackageId)
+    ?.getResourceById(sourceComponentId) as unknown as {
+      listChildren(): Array<Record<string, unknown> & {
+        getId(): string;
+      }>;
+    };
+  assert.deepEqual(host.listChildren().map((child) => child.getId()), [
+    "n1",
+    "n2",
+    "n3",
+    "n4"
+  ]);
+  const loader = host.listChildren()[0] as unknown as { getUrl(): string };
+  const list = host.listChildren()[1] as unknown as {
+    getListItems(): Array<{ icon: string | null }>;
+  };
+  const label = host.listChildren()[2] as unknown as {
+    getFont(): string;
+    listGears(): Array<{ getValues(): string }>;
+  };
+  assert.equal(loader.getUrl(), "");
+  assert.equal(list.getListItems()[0]?.icon, null);
+  assert.equal(label.getFont(), "");
+  assert.equal(
+    label.listGears()[0]?.getValues(),
+    `page0,ui://${PACKAGE_ID}img01`
+  );
+  assert.equal(result.data.projectMayBeInvalid, true);
+  assert.deepEqual(result.data.deleteResults, [{
+    kind: "resource",
+    packageId: PACKAGE_ID,
+    resourceId: "img01",
+    requestedMode: "cascade",
+    effectiveMode: "cascade-with-force-fallback",
+    removedReferences: 4,
+    unsupportedReferences: 1
+  }]);
+  assert.deepEqual(result.data.affectedPackageIds, [
+    PACKAGE_ID,
+    sourcePackageId
+  ]);
+  assert.deepEqual(result.data.affectedComponents, [{
+    packageId: sourcePackageId,
+    componentId: sourceComponentId
+  }]);
+  assert.deepEqual(result.data.deletedAssetFiles, [
+    "assets/Demo/icons/Icon.png"
+  ]);
+});
+
+test("component cascade removes instances and clears list item references", () => {
+  const {
+    document,
+    sourcePackageId,
+    sourceComponentId
+  } = deletionFixture();
+  const result = new ResourceOperationsEngine().apply(document, input([{
+    op: "delete-resource",
+    packageId: PACKAGE_ID,
+    resourceId: "cmp01",
+    mode: "cascade"
+  }]));
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const host = document.getRoot().getPackageById(sourcePackageId)
+    ?.getResourceById(sourceComponentId) as unknown as {
+      listChildren(): Array<Record<string, unknown> & {
+        getId(): string;
+      }>;
+    };
+  assert.deepEqual(host.listChildren().map((child) => child.getId()), [
+    "n0",
+    "n1",
+    "n2",
+    "n3"
+  ]);
+  const list = host.listChildren()[2] as unknown as {
+    getDefaultItem(): string;
+    getListItems(): Array<{ url: string | null }>;
+  };
+  assert.equal(list.getDefaultItem(), "");
+  assert.equal(list.getListItems()[0]?.url, null);
+  assert.equal(result.data.projectMayBeInvalid, false);
+  assert.deepEqual(result.data.deletedFiles, [
+    "assets/Demo/Main.xml"
+  ]);
+  assert.equal(result.data.deleteResults[0]?.effectiveMode, "cascade");
+  assert.equal(result.data.deleteResults[0]?.removedReferences, 3);
+});
+
+test("force package deletion removes all package files and declares risk", () => {
+  const { document } = deletionFixture();
+  const result = new ResourceOperationsEngine().apply(document, input([{
+    op: "delete-package",
+    packageId: PACKAGE_ID,
+    mode: "force"
+  }]));
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(document.getRoot().getPackageById(PACKAGE_ID), null);
+  assert.equal(result.data.projectMayBeInvalid, true);
+  assert.deepEqual(result.data.deletedFiles, [
+    "assets/Demo/Main.xml",
+    "assets/Demo/package.xml"
+  ]);
+  assert.deepEqual(result.data.deletedAssetFiles, [
+    "assets/Demo/icons/Icon.png"
+  ]);
+  assert.deepEqual(result.data.deleteResults, [{
+    kind: "package",
+    packageId: PACKAGE_ID,
+    requestedMode: "force",
+    effectiveMode: "force",
+    removedReferences: 0,
+    unsupportedReferences: 0
+  }]);
 });
 
 test("resource creation rejects invalid ids, names, paths and conflicts", () => {

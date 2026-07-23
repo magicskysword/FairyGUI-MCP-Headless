@@ -9,7 +9,9 @@ export const FAIRY_DOM_SELECTOR_TYPES = [
   "movie-clip",
   "group",
   "list",
-  "instance"
+  "instance",
+  "tree",
+  "loader3d"
 ] as const;
 
 export type FairyDomSelectorType = typeof FAIRY_DOM_SELECTOR_TYPES[number];
@@ -285,4 +287,3 @@ export function matchFairyDomSelector(
     .filter((entry) => matchesStep(entry, parsed.steps, lastStep))
     .map((entry) => entry.node);
 }
-

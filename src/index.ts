@@ -8,4 +8,5 @@ export * from "./contracts/dom.js";
 export * from "./contracts/capabilities.js";
 export * from "./contracts/tools.js";
 export * from "./dom/selector.js";
+export * from "./dom/openfairygui-adapter.js";
 export * from "./project/project-registry.js";

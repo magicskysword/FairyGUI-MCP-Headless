@@ -271,6 +271,40 @@ export const FairyDomInstanceNodeSchema = z.object({
   }).strict()
 }).strict();
 
+export const FairyDomTreeNodeSchema = z.object({
+  ...nodeBaseShape,
+  type: z.literal("tree"),
+  readOnly: z.literal(true),
+  capability: z.literal("node.tree"),
+  content: z.object({
+    layout: z.enum([
+      "single-column",
+      "single-row",
+      "flow-horizontal",
+      "flow-vertical",
+      "pagination"
+    ]),
+    defaultItem: FairyDomResourceReferenceSchema.optional(),
+    lineGap: z.number().finite().optional(),
+    columnGap: z.number().finite().optional(),
+    items: z.array(FairyDomListItemSchema)
+  }).strict()
+}).strict();
+
+export const FairyDomLoader3DNodeSchema = z.object({
+  ...nodeBaseShape,
+  type: z.literal("loader3d"),
+  readOnly: z.literal(true),
+  capability: z.literal("node.loader3d"),
+  content: z.object({
+    resource: FairyDomResourceReferenceSchema.optional(),
+    externalUrl: z.string().min(1).optional(),
+    playing: z.boolean().optional(),
+    frame: z.number().int().nonnegative().optional(),
+    color: z.string().min(1).optional()
+  }).strict()
+}).strict();
+
 export const FairyDomNodeSchema = z.discriminatedUnion("type", [
   FairyDomImageNodeSchema,
   FairyDomTextNodeSchema,
@@ -281,7 +315,9 @@ export const FairyDomNodeSchema = z.discriminatedUnion("type", [
   FairyDomMovieClipNodeSchema,
   FairyDomGroupNodeSchema,
   FairyDomListNodeSchema,
-  FairyDomInstanceNodeSchema
+  FairyDomInstanceNodeSchema,
+  FairyDomTreeNodeSchema,
+  FairyDomLoader3DNodeSchema
 ]);
 export type FairyDomNode = z.infer<typeof FairyDomNodeSchema>;
 

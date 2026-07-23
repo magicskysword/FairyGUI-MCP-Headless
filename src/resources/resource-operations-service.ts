@@ -60,6 +60,7 @@ interface SourceFileState {
 interface PreparedResourceOperations {
   engine: ResourceOperationsEngineData;
   files: SerializedProjectFile[];
+  deletedFiles: string[];
   sourceStates: SourceFileState[];
 }
 
@@ -261,10 +262,18 @@ export class ResourceOperationsService {
 
       const transaction = await this.#transactions.commit(
         status.data.projectDirectory,
-        prepared.data.files.map((file) => ({
-          relativePath: file.relativePath,
-          content: file.content
-        }))
+        [
+          ...prepared.data.files.map((file) => ({
+            relativePath: file.relativePath,
+            content: file.content
+          })),
+          ...prepared.data.deletedFiles.map((relativePath) => ({
+            relativePath,
+            content: null
+          }))
+        ].sort((left, right) =>
+          left.relativePath.localeCompare(right.relativePath)
+        )
       );
       if (!transaction.ok) return transaction;
 
@@ -312,13 +321,43 @@ export class ResourceOperationsService {
     );
     if (!roundtrip.ok) return roundtrip;
     files = roundtrip.data;
+    const movedByDestination = new Map(
+      applied.data.fileMoves.map((move) => [move.to, move.from])
+    );
     const sourceStates = files.map((file) => ({
       relativePath: file.relativePath,
-      content: originalContentFor(document, file)
+      content: movedByDestination.has(file.relativePath)
+        ? undefined
+        : originalContentFor(document, file)
     }));
+    for (const move of applied.data.fileMoves) {
+      const destination = files.find((file) =>
+        file.relativePath === move.to
+      );
+      if (!destination) {
+        return fail(
+          "SERIALIZATION_FAILED",
+          "资源移动后缺少目标序列化文件",
+          {
+            path: move.to,
+            actual: move
+          }
+        );
+      }
+      sourceStates.push({
+        relativePath: move.from,
+        content: originalContentFor(document, destination)
+      });
+    }
     return ok({
       engine: applied.data,
       files,
+      deletedFiles: [
+        ...new Set([
+          ...applied.data.fileMoves.map((move) => move.from),
+          ...applied.data.deletedFiles
+        ])
+      ].sort(),
       sourceStates
     });
   }

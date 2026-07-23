@@ -229,3 +229,98 @@ test("resource creation transaction failure leaves all source files unchanged", 
     await context.registry.closeAll();
   }
 });
+
+test("package rename and component move commit old-path deletion with new files", async () => {
+  const context = await setup();
+  try {
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [
+          {
+            op: "rename-package",
+            packageId: "pkg00001",
+            name: "Renamed"
+          },
+          {
+            op: "rename-resource",
+            packageId: "pkg00001",
+            resourceId: "cmp01",
+            name: "Dashboard"
+          },
+          {
+            op: "move-resource",
+            packageId: "pkg00001",
+            resourceId: "cmp01",
+            path: "/screens/"
+          }
+        ]
+      })
+    );
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.data.affectedFiles, [
+      "assets/Demo/Main.xml",
+      "assets/Demo/package.xml",
+      "assets/Renamed/package.xml",
+      "assets/Renamed/screens/Dashboard.xml"
+    ]);
+    await assert.rejects(readFile(context.project.packageFile), {
+      code: "ENOENT"
+    });
+    await assert.rejects(readFile(context.project.mainFile), {
+      code: "ENOENT"
+    });
+    const renamedPackage = await readFile(
+      path.join(
+        context.project.directory,
+        "assets",
+        "Renamed",
+        "package.xml"
+      ),
+      "utf8"
+    );
+    assert.match(renamedPackage, /vendorPackage="keep"/);
+    assert.match(
+      renamedPackage,
+      /name="Dashboard\.xml" path="\/screens\/"/
+    );
+    assert.match(
+      await readFile(
+        path.join(
+          context.project.directory,
+          "assets",
+          "Renamed",
+          "screens",
+          "Dashboard.xml"
+        ),
+        "utf8"
+      ),
+      /<component size="320,180"\/>/
+    );
+    const reparsed = await context.registry.read(
+      context.projectId,
+      (document) => {
+        const pkg = document.getRoot().getPackageById("pkg00001");
+        const component = pkg?.getResourceById("cmp01");
+        return {
+          packageName: pkg?.getName(),
+          resourceName: component?.getName(),
+          resourcePath: component?.getPath()
+        };
+      }
+    );
+    assert.equal(reparsed.ok, true);
+    if (reparsed.ok) {
+      assert.deepEqual(reparsed.data, {
+        packageName: "Renamed",
+        resourceName: "Dashboard",
+        resourcePath: "/screens/"
+      });
+    }
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});

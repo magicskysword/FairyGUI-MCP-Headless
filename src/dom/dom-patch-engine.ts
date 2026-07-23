@@ -1060,6 +1060,14 @@ function createNode(
     }
   })();
   object.setId(id);
+  if (node.type === "group") {
+    invoke(
+      object as unknown as MutableObject,
+      "setAdvanced",
+      [true],
+      `${path}.type`
+    );
+  }
   applyStyleToNode(object, node.style, `${path}.style`);
   setNodeGroup(context, object, node.groupId, `${path}.groupId`);
   setNodeRelations(

@@ -164,6 +164,14 @@ test("DOM patch operations allocate stable ids and resolve forward client refere
     main.listChildren().map((child) => child.getId()),
     ["n11", "n3", "n7", "n8", "n9", "n10"]
   );
+  assert.equal(
+    (
+      main.getChildById("n11") as
+        | { getAdvanced(): boolean }
+        | null
+    )?.getAdvanced(),
+    true
+  );
   const label = data.dom.root.children.find((node) => node.id === "n10");
   assert.equal(label?.type, "text");
   assert.equal(label?.name, "created-label");

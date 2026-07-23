@@ -1,0 +1,206 @@
+import assert from "node:assert/strict";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, test } from "node:test";
+import { ValidateInputSchema } from "../../src/contracts/tools.js";
+import { ProjectRegistry } from "../../src/project/project-registry.js";
+import { ValidationService } from "../../src/validation/validation-service.js";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories.splice(0).map((directory) =>
+      rm(directory, { recursive: true, force: true })
+    )
+  );
+});
+
+async function createProject(options: {
+  brokenReference?: boolean;
+} = {}): Promise<{
+  directory: string;
+  componentFile: string;
+}> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-validate-"));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(
+    path.join(directory, "Demo.fairy"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="validation-project" type="Unity" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "package.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+    <image id="img01" name="hero.png" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  const componentFile = path.join(packageDirectory, "Main.xml");
+  await writeFile(
+    componentFile,
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="320,180">
+  <displayList>
+    <image id="n0" name="hero" src="${
+      options.brokenReference ? "missing" : "img01"
+    }" xy="8,8" size="64,64"/>
+    <text id="n1" name="title" xy="80,20" size="200,40" text="Validate"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  return { directory, componentFile };
+}
+
+async function openValidator(options: {
+  brokenReference?: boolean;
+} = {}): Promise<{
+  registry: ProjectRegistry;
+  validator: ValidationService;
+  projectId: string;
+  componentFile: string;
+}> {
+  const fixture = await createProject(options);
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(fixture.directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  return {
+    registry,
+    validator: new ValidationService(registry),
+    projectId: opened.data.projectId,
+    componentFile: fixture.componentFile
+  };
+}
+
+test("quick validation returns valid:false as a successful project finding", async () => {
+  const { registry, validator, projectId } = await openValidator({
+    brokenReference: true
+  });
+  try {
+    const result = await validator.validate(ValidateInputSchema.parse({
+      projectId,
+      mode: "quick"
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    assert.equal(result.data.valid, false);
+    assert.deepEqual(result.data.phases.map((phase) => phase.name), ["quick"]);
+    assert.ok(result.data.diagnostics.some((diagnostic) =>
+      diagnostic.code === "BROKEN_RESOURCE_REFERENCE"
+      && diagnostic.severity === "error"
+    ));
+    assert.equal(result.data.checked.packageCount, 1);
+    assert.equal(result.data.checked.componentCount, 1);
+  }
+  finally {
+    await registry.closeAll();
+  }
+});
+
+test("roundtrip validation semantically serializes and reparses without source writes", async () => {
+  const { registry, validator, projectId, componentFile } =
+    await openValidator();
+  const before = await readFile(componentFile, "utf8");
+  try {
+    const result = await validator.validate(ValidateInputSchema.parse({
+      projectId,
+      mode: "roundtrip",
+      packageIds: ["pkg00001"],
+      componentIds: ["cmp01"]
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    assert.equal(result.data.valid, true);
+    assert.deepEqual(
+      result.data.phases.map((phase) => phase.name),
+      ["quick", "roundtrip"]
+    );
+    assert.ok((result.data.phases[1]?.metrics?.fileCount ?? 0) >= 3);
+    assert.equal(await readFile(componentFile, "utf8"), before);
+  }
+  finally {
+    await registry.closeAll();
+  }
+});
+
+test("publish and full modes execute the documented validation phase sets", async () => {
+  const { registry, validator, projectId } = await openValidator();
+  try {
+    const published = await validator.validate(ValidateInputSchema.parse({
+      projectId,
+      mode: "publish"
+    }));
+    assert.equal(published.ok, true, JSON.stringify(published));
+    if (published.ok) {
+      assert.equal(published.data.valid, true);
+      assert.deepEqual(
+        published.data.phases.map((phase) => phase.name),
+        ["quick", "publish"]
+      );
+      assert.ok((published.data.phases[1]?.metrics?.artifactCount ?? 0) >= 1);
+    }
+
+    const full = await validator.validate(ValidateInputSchema.parse({
+      projectId,
+      mode: "full"
+    }));
+    assert.equal(full.ok, true, JSON.stringify(full));
+    if (full.ok) {
+      assert.equal(full.data.valid, true);
+      assert.deepEqual(
+        full.data.phases.map((phase) => phase.name),
+        ["quick", "roundtrip", "publish"]
+      );
+    }
+  }
+  finally {
+    await registry.closeAll();
+  }
+});
+
+test("validation rejects unknown requested scopes with specific errors", async () => {
+  const { registry, validator, projectId } = await openValidator();
+  try {
+    const missingPackage = await validator.validate(ValidateInputSchema.parse({
+      projectId,
+      mode: "quick",
+      packageIds: ["missing"]
+    }));
+    assert.equal(missingPackage.ok, false);
+    if (!missingPackage.ok) {
+      assert.equal(missingPackage.error.code, "PACKAGE_NOT_FOUND");
+    }
+
+    const missingComponent = await validator.validate(
+      ValidateInputSchema.parse({
+        projectId,
+        mode: "quick",
+        componentIds: ["missing"]
+      })
+    );
+    assert.equal(missingComponent.ok, false);
+    if (!missingComponent.ok) {
+      assert.equal(missingComponent.error.code, "COMPONENT_NOT_FOUND");
+    }
+  }
+  finally {
+    await registry.closeAll();
+  }
+});

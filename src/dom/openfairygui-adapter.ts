@@ -27,6 +27,7 @@ import {
   type FairyDomResourceReference,
   type FairyDomStyle
 } from "../contracts/dom.js";
+import { supportsInstanceOverlay } from "./instance-extension.js";
 
 type GetterOwner = {
   propertyType: string;
@@ -389,17 +390,22 @@ function instanceNode(
       componentId
     );
   }
+  const extensionType = stringGetter(owner, "getInstanceExtType") ?? "";
   const iconValue = stringGetter(owner, "getInstanceIcon");
   return {
     ...baseFor(child, componentId),
     type: "instance",
     content: {
       resource,
-      text: stringGetter(owner, "getInstanceTitle"),
-      icon: iconValue
+      text: supportsInstanceOverlay(extensionType, "text")
+        ? stringGetter(owner, "getInstanceTitle")
+        : undefined,
+      icon: supportsInstanceOverlay(extensionType, "icon") && iconValue
         ? resourceReference(iconValue, packageId)
         : undefined,
-      selected: booleanGetter(owner, "getInstanceChecked")
+      selected: supportsInstanceOverlay(extensionType, "selected")
+        ? booleanGetter(owner, "getInstanceChecked")
+        : undefined
     }
   };
 }

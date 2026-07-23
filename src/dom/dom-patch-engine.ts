@@ -46,6 +46,11 @@ import {
   toFairyDomDocument
 } from "./openfairygui-adapter.js";
 import {
+  INSTANCE_OVERLAY_EXTENSIONS,
+  supportsInstanceOverlay,
+  type InstanceOverlayField
+} from "./instance-extension.js";
+import {
   matchFairyDomSelector,
   parseFairyDomSelector,
   SelectorSyntaxError,
@@ -164,7 +169,7 @@ function assertResource(
   reference: FairyDomResourceReference,
   path: string,
   expectedType?: PropertyType
-): void {
+): { propertyType: PropertyType } {
   const pkg = document.getRoot().getPackageById(reference.packageId);
   const resource = pkg?.getResourceById(reference.resourceId);
   if (!pkg || !resource) {
@@ -182,6 +187,41 @@ function assertResource(
       suggestedFix: "选择与目标字段类型兼容的 FairyGUI 资源"
     });
   }
+  return resource;
+}
+
+function assertInstanceOverlay(
+  extensionType: string,
+  field: InstanceOverlayField,
+  path: string
+): void {
+  if (supportsInstanceOverlay(extensionType, field)) return;
+  patchError(
+    "INVALID_PATCH",
+    `来源组件类型不支持实例覆盖字段 ${field}`,
+    {
+      path,
+      actual: extensionType || "Component",
+      allowed: [...INSTANCE_OVERLAY_EXTENSIONS[field]],
+      suggestedFix:
+        "删除该覆盖字段，或改用支持此字段的 Button、Label 或 ComboBox 组件"
+    }
+  );
+}
+
+function clearUnsupportedInstanceOverlays(
+  owner: MutableObject,
+  extensionType: string
+): void {
+  if (!supportsInstanceOverlay(extensionType, "text")) {
+    optionalInvoke(owner, "setInstanceTitle", [""]);
+  }
+  if (!supportsInstanceOverlay(extensionType, "icon")) {
+    optionalInvoke(owner, "setInstanceIcon", [""]);
+  }
+  if (!supportsInstanceOverlay(extensionType, "selected")) {
+    optionalInvoke(owner, "setInstanceChecked", [false]);
+  }
 }
 
 function setPrimaryResource(
@@ -189,23 +229,23 @@ function setPrimaryResource(
   target: GObject,
   reference: FairyDomResourceReference | null,
   path: string
-): void {
+): string | undefined {
   const owner = target as MutableObject;
   switch (target.propertyType) {
     case PropertyType.G_IMAGE:
       if (reference) assertResource(context.document, reference, path);
       invoke(owner, "setSrc", [reference?.resourceId ?? ""], path);
       invoke(owner, "setPackageId", [reference?.packageId ?? ""], path);
-      return;
+      return undefined;
     case PropertyType.G_MOVIE_CLIP:
       if (reference) assertResource(context.document, reference, path);
       invoke(owner, "setSrc", [reference?.resourceId ?? ""], path);
       invoke(owner, "setPackageId", [reference?.packageId ?? ""], path);
-      return;
+      return undefined;
     case PropertyType.G_LOADER:
       if (reference) assertResource(context.document, reference, path);
       invoke(owner, "setUrl", [reference ? resourceUrl(reference) : ""], path);
-      return;
+      return undefined;
     case PropertyType.G_LIST:
       if (reference) {
         assertResource(
@@ -221,7 +261,7 @@ function setPrimaryResource(
         [reference ? resourceUrl(reference) : ""],
         path
       );
-      return;
+      return undefined;
     case PropertyType.G_COMPONENT:
     case PropertyType.G_BUTTON:
     case PropertyType.G_LABEL:
@@ -236,15 +276,18 @@ function setPrimaryResource(
           suggestedFix: "替换为另一个组件资源，或删除该实例节点"
         });
       }
-      assertResource(
+      const source = assertResource(
         context.document,
         reference,
         path,
         PropertyType.COMPONENT
       );
+      const extensionType = (source as Component).getExtensionType();
       invoke(owner, "setSrc", [reference.resourceId], path);
       invoke(owner, "setPackageId", [reference.packageId], path);
-      return;
+      invoke(owner, "setInstanceExtType", [extensionType], path);
+      clearUnsupportedInstanceOverlays(owner, extensionType);
+      return extensionType;
     default:
       patchError("INVALID_PATCH", "目标节点没有可设置的主资源字段", {
         path,
@@ -975,13 +1018,14 @@ function applyNodeContent(
       return;
     }
     case "instance":
-      setPrimaryResource(
+      const extensionType = setPrimaryResource(
         context,
         object,
         node.content.resource,
         `${path}.resource`
-      );
+      ) ?? "";
       if (node.content.text !== undefined) {
+        assertInstanceOverlay(extensionType, "text", `${path}.text`);
         invoke(
           owner,
           "setInstanceTitle",
@@ -990,6 +1034,7 @@ function applyNodeContent(
         );
       }
       if (node.content.icon !== undefined) {
+        assertInstanceOverlay(extensionType, "icon", `${path}.icon`);
         assertResource(
           context.document,
           node.content.icon,
@@ -1003,6 +1048,7 @@ function applyNodeContent(
         );
       }
       if (node.content.selected !== undefined) {
+        assertInstanceOverlay(extensionType, "selected", `${path}.selected`);
         invoke(
           owner,
           "setInstanceChecked",

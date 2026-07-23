@@ -34,6 +34,7 @@ async function createProject(label: string): Promise<{
   projectFile: string;
   packageFile: string;
   componentFile: string;
+  buttonFile: string;
 }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), `fgui-patch-${label}-`));
   temporaryDirectories.push(directory);
@@ -42,6 +43,7 @@ async function createProject(label: string): Promise<{
   const projectFile = path.join(directory, `${label}.fairy`);
   const packageFile = path.join(packageDirectory, "package.xml");
   const componentFile = path.join(packageDirectory, "Main.xml");
+  const buttonFile = path.join(packageDirectory, "Button.xml");
   await writeFile(
     projectFile,
     `<projectDescription id="${label}" type="DOM" version="5.0"/>`,
@@ -52,6 +54,7 @@ async function createProject(label: string): Promise<{
     `<packageDescription id="pkg00001" vendorPackage="keep">
   <resources>
     <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+    <component id="btn01" name="Button.xml" path="/" exported="true"/>
   </resources>
 </packageDescription>`,
     "utf8"
@@ -70,7 +73,21 @@ async function createProject(label: string): Promise<{
 </component>`,
     "utf8"
   );
-  return { directory, projectFile, packageFile, componentFile };
+  await writeFile(
+    buttonFile,
+    `<component size="80,30" extention="Button">
+  <displayList/>
+  <Button/>
+</component>`,
+    "utf8"
+  );
+  return {
+    directory,
+    projectFile,
+    packageFile,
+    componentFile,
+    buttonFile
+  };
 }
 
 function digest(value: string): string {
@@ -814,6 +831,52 @@ test("every V1 writable node, style, Group, Relation and List survives disk roun
     assert.equal(list?.type === "list" && list.content.lineCount, 2);
     assert.equal(list?.type === "list" && list.content.columnCount, 3);
     assert.equal(list?.type === "list" && list.content.items[0]?.title, "First");
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("Button instance overlays inherit source extension and survive disk round-trip", async () => {
+  const context = await setup("button-instance");
+  try {
+    const result = await context.service.apply(patch(context.projectId, [{
+      op: "insert",
+      parentSelector: "component-root",
+      expectedMatches: 1,
+      clientRef: "action",
+      node: {
+        type: "instance",
+        name: "action",
+        style: { left: 20, top: 100, width: 80, height: 30 },
+        relations: [],
+        content: {
+          resource: {
+            packageId: "pkg00001",
+            resourceId: "btn01"
+          },
+          text: "Action",
+          selected: true
+        }
+      }
+    }]));
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const instance = result.data.dom.root.children.find(
+      (node) => node.name === "action"
+    );
+    assert.equal(
+      instance?.type === "instance" ? instance.content.text : undefined,
+      "Action"
+    );
+    assert.equal(
+      instance?.type === "instance" ? instance.content.selected : undefined,
+      true
+    );
+    const output = await readFile(context.project.componentFile, "utf8");
+    assert.match(output, /src="btn01"/);
+    assert.match(output, /<Button[^>]*title="Action"[^>]*checked="1"/);
   }
   finally {
     await context.registry.closeAll();

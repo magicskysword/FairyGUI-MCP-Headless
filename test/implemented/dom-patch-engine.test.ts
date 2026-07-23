@@ -36,6 +36,7 @@ function fixture(): {
   const source = document.createComponent("Card")
     .setId("card1")
     .setPath("/")
+    .setExtensionType("Button")
     .setSize(80, 30);
   pkg.addResource(source);
   const image = document.createImageResource("Icon")
@@ -190,7 +191,7 @@ test("DOM patch operations allocate stable ids and resolve forward client refere
 });
 
 test("DOM patch creates every V1 writable node content shape", () => {
-  const { document } = fixture();
+  const { document, main } = fixture();
   const engine = new DomPatchEngine();
   const common = {
     parentSelector: "component-root",
@@ -369,6 +370,57 @@ test("DOM patch creates every V1 writable node content shape", () => {
       packageId: PACKAGE_ID,
       resourceId: "card1"
     });
+  }
+  const instanceId = data.clientRefs.instance!;
+  const instance = main.getChildById(instanceId) as GObject & {
+    getInstanceExtType(): string;
+  };
+  assert.equal(instance.getInstanceExtType(), "Button");
+  const instanceDom = data.dom.root.children.find(
+    (node) => node.name === "instance"
+  );
+  assert.equal(
+    instanceDom?.type === "instance" ? instanceDom.content.text : undefined,
+    "Card"
+  );
+  assert.equal(
+    instanceDom?.type === "instance"
+      ? instanceDom.content.selected
+      : undefined,
+    true
+  );
+});
+
+test("instance overlays reject fields unsupported by the source component", () => {
+  const { document } = fixture();
+  const engine = new DomPatchEngine();
+  const result = engine.apply(document, parsePatch({
+    operations: [{
+      op: "insert",
+      parentSelector: "component-root",
+      expectedMatches: 1,
+      clientRef: "generic-instance",
+      node: {
+        type: "instance",
+        name: "generic-instance",
+        style: {},
+        relations: [],
+        content: {
+          resource: {
+            packageId: PACKAGE_ID,
+            resourceId: COMPONENT_ID
+          },
+          text: "Not supported"
+        }
+      }
+    }]
+  }));
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "INVALID_PATCH");
+    assert.equal(result.error.path, "operations[0].node.content.text");
+    assert.deepEqual(result.error.allowed, ["Button", "Label", "ComboBox"]);
   }
 });
 

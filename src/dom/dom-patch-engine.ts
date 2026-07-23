@@ -233,12 +233,26 @@ function setPrimaryResource(
   const owner = target as MutableObject;
   switch (target.propertyType) {
     case PropertyType.G_IMAGE:
-      if (reference) assertResource(context.document, reference, path);
+      if (reference) {
+        assertResource(
+          context.document,
+          reference,
+          path,
+          PropertyType.IMAGE_RESOURCE
+        );
+      }
       invoke(owner, "setSrc", [reference?.resourceId ?? ""], path);
       invoke(owner, "setPackageId", [reference?.packageId ?? ""], path);
       return undefined;
     case PropertyType.G_MOVIE_CLIP:
-      if (reference) assertResource(context.document, reference, path);
+      if (reference) {
+        assertResource(
+          context.document,
+          reference,
+          path,
+          PropertyType.MOVIE_CLIP_RESOURCE
+        );
+      }
       invoke(owner, "setSrc", [reference?.resourceId ?? ""], path);
       invoke(owner, "setPackageId", [reference?.packageId ?? ""], path);
       return undefined;
@@ -543,7 +557,12 @@ function applyTextContent(
 ): void {
   invoke(owner, "setText", [content.text], `${path}.text`);
   if (content.font !== undefined) {
-    assertResource(context.document, content.font, `${path}.font`);
+    assertResource(
+      context.document,
+      content.font,
+      `${path}.font`,
+      PropertyType.FONT_RESOURCE
+    );
     invoke(owner, "setFont", [resourceUrl(content.font)], `${path}.font`);
   }
   const scalars = [

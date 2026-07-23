@@ -424,6 +424,79 @@ test("instance overlays reject fields unsupported by the source component", () =
   }
 });
 
+test("typed resource fields reject incompatible FairyGUI resource kinds", () => {
+  const cases = [
+    {
+      node: {
+        type: "image",
+        name: "wrong-image",
+        style: {},
+        relations: [],
+        content: {
+          resource: {
+            packageId: PACKAGE_ID,
+            resourceId: "card1"
+          }
+        }
+      },
+      path: "operations[0].node.content.resource",
+      allowed: ["ImageResource"]
+    },
+    {
+      node: {
+        type: "movie-clip",
+        name: "wrong-movie",
+        style: {},
+        relations: [],
+        content: {
+          resource: {
+            packageId: PACKAGE_ID,
+            resourceId: "img01"
+          }
+        }
+      },
+      path: "operations[0].node.content.resource",
+      allowed: ["MovieClipResource"]
+    },
+    {
+      node: {
+        type: "text",
+        name: "wrong-font",
+        style: {},
+        relations: [],
+        content: {
+          text: "Text",
+          font: {
+            packageId: PACKAGE_ID,
+            resourceId: "img01"
+          }
+        }
+      },
+      path: "operations[0].node.content.font",
+      allowed: ["FontResource"]
+    }
+  ] as const;
+
+  for (const resourceCase of cases) {
+    const { document } = fixture();
+    const result = new DomPatchEngine().apply(document, parsePatch({
+      operations: [{
+        op: "insert",
+        parentSelector: "component-root",
+        expectedMatches: 1,
+        clientRef: resourceCase.node.name,
+        node: resourceCase.node
+      }]
+    }));
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.code, "INVALID_PATCH");
+      assert.equal(result.error.path, resourceCase.path);
+      assert.deepEqual(result.error.allowed, resourceCase.allowed);
+    }
+  }
+});
+
 test("set, move, remove and replace-node enforce compatible writable targets", () => {
   const { document } = fixture();
   const engine = new DomPatchEngine();

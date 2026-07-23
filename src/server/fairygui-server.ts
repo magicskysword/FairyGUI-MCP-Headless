@@ -28,6 +28,7 @@ import { DomPatchService } from "../dom/dom-patch-service.js";
 import { ProjectRegistry } from "../project/project-registry.js";
 import { QueryService } from "../query/query-service.js";
 import { RenderService } from "../render/render-service.js";
+import { ResourceOperationsService } from "../resources/resource-operations-service.js";
 import { ValidationService } from "../validation/validation-service.js";
 import { ProjectCommitCoordinator } from "../write/commit-coordinator.js";
 import { FileTransactionManager } from "../write/file-transaction.js";
@@ -268,19 +269,6 @@ function toCallToolResult(
   };
 }
 
-async function unimplementedWrite(
-  capability: string
-): Promise<ResultEnvelope<never>> {
-  return fail(
-    "CAPABILITY_NOT_IMPLEMENTED",
-    `${capability} 尚未在当前里程碑实现`,
-    {
-      path: capability,
-      suggestedFix: "查询 fairygui.query 的 capabilities 结果确认当前可用能力"
-    }
-  );
-}
-
 export class FairyGuiMcpServer {
   public readonly server: Server;
   public readonly projects: ProjectRegistry;
@@ -306,9 +294,13 @@ export class FairyGuiMcpServer {
       transactions: this.transactions,
       coordinator: this.coordinator
     });
-    this.resources = options.resources ?? {
-      apply: () => unimplementedWrite("resource.operations")
-    };
+    this.resources = options.resources ?? new ResourceOperationsService(
+      this.projects,
+      {
+        transactions: this.transactions,
+        coordinator: this.coordinator
+      }
+    );
     this.server = new Server(
       { name: SERVER_NAME, version: PACKAGE_VERSION },
       {

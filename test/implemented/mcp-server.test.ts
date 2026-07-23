@@ -308,24 +308,91 @@ test("stdio-facing DOM patch handler atomically writes and immediately re-querie
   }
 });
 
-test("resource operations remain an explicit capability error before M3", async () => {
+test("stdio-facing resource operations create a package and component atomically", async () => {
+  const projectDirectory = await createProject();
   const { app, client } = await connectServer();
   try {
+    const opened = structured(await client.callTool({
+      name: "fairygui.project",
+      arguments: { action: "open", path: projectDirectory }
+    }));
+    assert.equal(opened.ok, true);
+    const projectId = String(opened.data?.projectId);
+
     const result = await client.callTool({
       name: "fairygui.apply_resource_operations",
       arguments: {
-        projectId: "p",
-        operations: [{
-          op: "create-package",
-          clientRef: "demo",
-          name: "Demo"
-        }]
+        projectId,
+        operations: [
+          {
+            op: "create-package",
+            clientRef: "widgets",
+            name: "Widgets"
+          },
+          {
+            op: "create-component",
+            packageRef: "widgets",
+            clientRef: "dialog",
+            name: "Dialog",
+            width: 640,
+            height: 360
+          }
+        ]
       }
     });
-    assert.equal("isError" in result && result.isError, true);
-    assert.equal(
-      structured(result).error?.code,
-      "CAPABILITY_NOT_IMPLEMENTED"
+    assert.equal("isError" in result && result.isError, false);
+    const applied = structured(result);
+    assert.equal(applied.ok, true);
+    assert.equal(applied.data?.appliedOperations, 2);
+    const clientRefs = applied.data?.clientRefs as Record<string, {
+      packageId: string;
+      resourceId?: string;
+    }>;
+    const packageId = clientRefs.widgets!.packageId;
+    const componentId = clientRefs.dialog!.resourceId!;
+    assert.deepEqual(applied.data?.affectedFiles, [
+      "assets/Widgets/Dialog.xml",
+      "assets/Widgets/package.xml"
+    ]);
+
+    const queried = structured(await client.callTool({
+      name: "fairygui.query",
+      arguments: {
+        projectId,
+        queries: {
+          components: {
+            kind: "components",
+            packageId
+          }
+        }
+      }
+    }));
+    assert.equal(queried.ok, true);
+    const results = queried.data?.results as Record<string, {
+      ok: boolean;
+      data: { items: Array<{ componentId: string; name: string }> };
+    }>;
+    assert.equal(results.components?.ok, true);
+    assert.deepEqual(results.components?.data.items, [{
+      packageId,
+      componentId,
+      name: "Dialog",
+      path: "/",
+      width: 640,
+      height: 360,
+      exported: false
+    }]);
+    assert.match(
+      await readFile(
+        path.join(
+          projectDirectory,
+          "assets",
+          "Widgets",
+          "Dialog.xml"
+        ),
+        "utf8"
+      ),
+      /size="640,360"/
     );
   }
   finally {

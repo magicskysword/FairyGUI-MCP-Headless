@@ -5,4 +5,5 @@ export {
 } from "./version.js";
 export * from "./contracts/result.js";
 export * from "./contracts/dom.js";
+export * from "./contracts/tools.js";
 export * from "./dom/selector.js";

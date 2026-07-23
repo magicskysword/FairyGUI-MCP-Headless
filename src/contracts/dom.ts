@@ -285,6 +285,20 @@ export const FairyDomNodeSchema = z.discriminatedUnion("type", [
 ]);
 export type FairyDomNode = z.infer<typeof FairyDomNodeSchema>;
 
+export const FairyDomNewNodeSchema = z.discriminatedUnion("type", [
+  FairyDomImageNodeSchema.omit({ id: true }),
+  FairyDomTextNodeSchema.omit({ id: true }),
+  FairyDomRichTextNodeSchema.omit({ id: true }),
+  FairyDomInputTextNodeSchema.omit({ id: true }),
+  FairyDomLoaderNodeSchema.omit({ id: true }),
+  FairyDomGraphNodeSchema.omit({ id: true }),
+  FairyDomMovieClipNodeSchema.omit({ id: true }),
+  FairyDomGroupNodeSchema.omit({ id: true }),
+  FairyDomListNodeSchema.omit({ id: true }),
+  FairyDomInstanceNodeSchema.omit({ id: true })
+]);
+export type FairyDomNewNode = z.infer<typeof FairyDomNewNodeSchema>;
+
 export const FairyDomComponentRootSchema = z.object({
   type: z.literal("component-root"),
   id: z.string().min(1),
@@ -310,4 +324,3 @@ export const FairyDomDocumentSchema = z.object({
   root: FairyDomComponentRootSchema
 }).strict();
 export type FairyDomDocument = z.infer<typeof FairyDomDocumentSchema>;
-

@@ -48,6 +48,7 @@ export interface ResourceOperationsEngineData {
   assetWrites: Array<{
     relativePath: string;
     content: Uint8Array;
+    targetExisted: boolean;
   }>;
   consumedInboxPaths: string[];
 }
@@ -699,6 +700,7 @@ function addAssetWrite(
   data: ResourceOperationsEngineData,
   relativePath: string,
   content: Uint8Array,
+  targetExisted: boolean,
   operationPath: string
 ): void {
   if (data.assetWrites.some((write) => write.relativePath === relativePath)) {
@@ -709,7 +711,8 @@ function addAssetWrite(
   }
   data.assetWrites.push({
     relativePath,
-    content: new Uint8Array(content)
+    content: new Uint8Array(content),
+    targetExisted
   });
 }
 
@@ -765,6 +768,7 @@ function applyImport(
 
   let name = operation.name;
   let resource: PackageResource;
+  let previousAssetPath: string | undefined;
   if (operation.conflict === "reject" && existingAtTarget) {
     operationError("RESOURCE_CONFLICT", "目标路径中已存在同名资源", {
       path: `${operationPath}.name`,
@@ -806,6 +810,7 @@ function applyImport(
         allowed: [resource.propertyType]
       });
     }
+    previousAssetPath = assetRelativePath(pkg, resource);
     resource.setName(name);
     resource.setPath(resourcePath);
   }
@@ -828,6 +833,7 @@ function applyImport(
     data,
     assetRelativePath(pkg, resource)!,
     file.content,
+    previousAssetPath === assetRelativePath(pkg, resource),
     operationPath
   );
   data.clientRefs[operation.clientRef] = {
@@ -866,6 +872,7 @@ function applyReplaceResource(
       allowed: [resource.propertyType]
     });
   }
+  const previousAssetPath = assetRelativePath(pkg, resource);
   setResourceFileName(
     resource,
     `${resource.getName()}${importedExtension(file.fileName)}`,
@@ -875,6 +882,7 @@ function applyReplaceResource(
     data,
     assetRelativePath(pkg, resource)!,
     file.content,
+    previousAssetPath === assetRelativePath(pkg, resource),
     operationPath
   );
   data.affectedPackageIds.push(pkg.getId());

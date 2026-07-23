@@ -27,6 +27,10 @@ import {
   type FileTransactionData
 } from "../write/file-transaction.js";
 import {
+  readImportInboxFile,
+  type ImportInboxFile
+} from "./import-inbox.js";
+import {
   ResourceOperationsEngine,
   type ResourceOperationClientRef,
   type ResourceOperationsEngineData
@@ -41,6 +45,7 @@ export interface ResourceOperationsData {
   appliedOperations: number;
   clientRefs: Record<string, ResourceOperationClientRef>;
   affectedPackageIds: string[];
+  consumedInboxPaths: string[];
   projectMayBeInvalid?: boolean;
 }
 
@@ -54,12 +59,16 @@ export interface ResourceOperationsServiceOptions {
 
 interface SourceFileState {
   relativePath: string;
-  content: string | undefined;
+  content: string | Uint8Array | undefined;
 }
 
 interface PreparedResourceOperations {
   engine: ResourceOperationsEngineData;
   files: SerializedProjectFile[];
+  assetWrites: Array<{
+    relativePath: string;
+    content: Uint8Array;
+  }>;
   deletedFiles: string[];
   sourceStates: SourceFileState[];
 }
@@ -133,14 +142,14 @@ function sameSerializedDescriptor(
 }
 
 async function fileContentOrUndefined(filePath: string): Promise<
-  string | undefined
+  Uint8Array | undefined
 > {
   try {
     const entry = await lstat(filePath);
     if (!entry.isFile() || entry.isSymbolicLink()) {
       throw new Error("目标存在但不是普通文件");
     }
-    return await readFile(filePath, "utf8");
+    return await readFile(filePath);
   }
   catch (error) {
     if (
@@ -152,6 +161,38 @@ async function fileContentOrUndefined(filePath: string): Promise<
       return undefined;
     }
     throw error;
+  }
+}
+
+function contentBytes(value: string | Uint8Array): Uint8Array {
+  return typeof value === "string" ? Buffer.from(value, "utf8") : value;
+}
+
+function sameSourceContent(
+  expected: string | Uint8Array | undefined,
+  actual: string | Uint8Array | undefined
+): boolean {
+  if (expected === undefined || actual === undefined) {
+    return expected === actual;
+  }
+  return Buffer.from(contentBytes(expected)).equals(
+    Buffer.from(contentBytes(actual))
+  );
+}
+
+function addSourceState(
+  states: SourceFileState[],
+  state: SourceFileState
+): void {
+  const existing = states.find((item) =>
+    item.relativePath === state.relativePath
+  );
+  if (!existing) {
+    states.push(state);
+    return;
+  }
+  if (!sameSourceContent(existing.content, state.content)) {
+    throw new Error(`资源事务源状态冲突：${state.relativePath}`);
   }
 }
 
@@ -207,12 +248,23 @@ export class ResourceOperationsService {
       const fresh = await this.#projects.read(input.projectId, () => true);
       if (!fresh.ok) return fresh;
 
+      const importFiles = await this.loadImportFiles(
+        status.data.projectDirectory,
+        input
+      );
+      if (!importFiles.ok) return importFiles;
+
       let prepared: ResultEnvelope<PreparedResourceOperations>;
       try {
         const document = await new NodeIO().readProject(
           status.data.projectFile
         );
-        prepared = await this.prepare(document, input);
+        prepared = await this.prepare(
+          document,
+          input,
+          status.data.projectDirectory,
+          importFiles.data
+        );
       }
       catch (error) {
         if (attempt + 1 < this.#maxFreshRetries) continue;
@@ -249,14 +301,11 @@ export class ResourceOperationsService {
           actual: error instanceof Error ? error.message : String(error)
         });
       }
-      const sourceMap = new Map(
-        prepared.data.sourceStates.map((source) => [
-          source.relativePath,
+      const unchanged = current.every((source, index) =>
+        sameSourceContent(
+          prepared.data.sourceStates[index]?.content,
           source.content
-        ])
-      );
-      const unchanged = current.every((source) =>
-        sourceMap.get(source.relativePath) === source.content
+        )
       );
       if (!unchanged) continue;
 
@@ -267,6 +316,7 @@ export class ResourceOperationsService {
             relativePath: file.relativePath,
             content: file.content
           })),
+          ...prepared.data.assetWrites,
           ...prepared.data.deletedFiles.map((relativePath) => ({
             relativePath,
             content: null
@@ -292,11 +342,34 @@ export class ResourceOperationsService {
     );
   }
 
+  private async loadImportFiles(
+    projectDirectory: string,
+    input: ApplyResourceOperationsInput
+  ): Promise<ResultEnvelope<ReadonlyMap<number, ImportInboxFile>>> {
+    const files = new Map<number, ImportInboxFile>();
+    for (let index = 0; index < input.operations.length; index++) {
+      const operation = input.operations[index]!;
+      if (operation.op !== "import" && operation.op !== "replace-resource") {
+        continue;
+      }
+      const file = await readImportInboxFile(
+        projectDirectory,
+        operation.inboxPath,
+        `operations[${index}].inboxPath`
+      );
+      if (!file.ok) return file;
+      files.set(index, file.data);
+    }
+    return ok(files);
+  }
+
   private async prepare(
     document: Document,
-    input: ApplyResourceOperationsInput
+    input: ApplyResourceOperationsInput,
+    projectDirectory: string,
+    importFiles: ReadonlyMap<number, ImportInboxFile>
   ): Promise<ResultEnvelope<PreparedResourceOperations>> {
-    const applied = this.#engine.apply(document, input);
+    const applied = this.#engine.apply(document, input, { importFiles });
     if (!applied.ok) return applied;
 
     let files: SerializedProjectFile[];
@@ -324,12 +397,15 @@ export class ResourceOperationsService {
     const movedByDestination = new Map(
       applied.data.fileMoves.map((move) => [move.to, move.from])
     );
-    const sourceStates = files.map((file) => ({
-      relativePath: file.relativePath,
-      content: movedByDestination.has(file.relativePath)
-        ? undefined
-        : originalContentFor(document, file)
-    }));
+    const sourceStates: SourceFileState[] = [];
+    for (const file of files) {
+      addSourceState(sourceStates, {
+        relativePath: file.relativePath,
+        content: movedByDestination.has(file.relativePath)
+          ? undefined
+          : originalContentFor(document, file)
+      });
+    }
     for (const move of applied.data.fileMoves) {
       const destination = files.find((file) =>
         file.relativePath === move.to
@@ -344,18 +420,95 @@ export class ResourceOperationsService {
           }
         );
       }
-      sourceStates.push({
+      addSourceState(sourceStates, {
         relativePath: move.from,
         content: originalContentFor(document, destination)
       });
     }
+
+    const assetWrites = applied.data.assetWrites.map((write) => ({
+      relativePath: write.relativePath,
+      content: new Uint8Array(write.content)
+    }));
+    for (const write of applied.data.assetWrites) {
+      const expected = write.targetExisted
+        ? await fileContentOrUndefined(projectFilePath(
+            projectDirectory,
+            write.relativePath
+          ))
+        : undefined;
+      if (write.targetExisted && expected === undefined) {
+        return fail("WRITE_FAILED", "待替换资源文件不存在", {
+          path: write.relativePath,
+          suggestedFix: "修复 package.xml 与资源文件的一致性后重试"
+        });
+      }
+      addSourceState(sourceStates, {
+        relativePath: write.relativePath,
+        content: expected
+      });
+    }
+
+    for (const move of applied.data.assetMoves) {
+      const sourceContent = await fileContentOrUndefined(projectFilePath(
+        projectDirectory,
+        move.from
+      ));
+      if (sourceContent === undefined) {
+        return fail("WRITE_FAILED", "待移动资源文件不存在", {
+          path: move.from,
+          suggestedFix: "修复 package.xml 与资源文件的一致性后重试"
+        });
+      }
+      addSourceState(sourceStates, {
+        relativePath: move.from,
+        content: sourceContent
+      });
+      const replacement = applied.data.assetWrites.some((write) =>
+        write.relativePath === move.to
+      );
+      if (!replacement) {
+        assetWrites.push({
+          relativePath: move.to,
+          content: new Uint8Array(sourceContent)
+        });
+        addSourceState(sourceStates, {
+          relativePath: move.to,
+          content: undefined
+        });
+      }
+    }
+
+    for (const inboxPath of applied.data.consumedInboxPaths) {
+      const inboxFile = [...importFiles.values()].find((file) =>
+        file.sourceRelativePath === inboxPath
+      );
+      if (!inboxFile) {
+        return fail("IMPORT_NOT_REGULAR_FILE", "缺少待消费收件箱文件", {
+          path: inboxPath
+        });
+      }
+      addSourceState(sourceStates, {
+        relativePath: inboxPath,
+        content: inboxFile.content
+      });
+    }
+    sourceStates.sort((left, right) =>
+      left.relativePath.localeCompare(right.relativePath)
+    );
+
     return ok({
       engine: applied.data,
       files,
+      assetWrites: assetWrites.sort((left, right) =>
+        left.relativePath.localeCompare(right.relativePath)
+      ),
       deletedFiles: [
         ...new Set([
           ...applied.data.fileMoves.map((move) => move.from),
-          ...applied.data.deletedFiles
+          ...applied.data.deletedFiles,
+          ...applied.data.assetMoves.map((move) => move.from),
+          ...applied.data.consumedInboxPaths
         ])
       ].sort(),
       sourceStates
@@ -460,7 +613,8 @@ export class ResourceOperationsService {
       affectedFiles: transaction.affectedFiles,
       appliedOperations: prepared.engine.appliedOperations,
       clientRefs: prepared.engine.clientRefs,
-      affectedPackageIds: prepared.engine.affectedPackageIds
+      affectedPackageIds: prepared.engine.affectedPackageIds,
+      consumedInboxPaths: prepared.engine.consumedInboxPaths
     });
   }
 }

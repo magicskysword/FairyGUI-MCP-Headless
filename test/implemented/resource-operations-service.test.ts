@@ -29,6 +29,7 @@ async function createProject(): Promise<{
   projectFile: string;
   packageFile: string;
   mainFile: string;
+  imageFile: string;
 }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-resources-"));
   temporaryDirectories.push(directory);
@@ -37,6 +38,8 @@ async function createProject(): Promise<{
   const projectFile = path.join(directory, "Demo.fairy");
   const packageFile = path.join(packageDirectory, "package.xml");
   const mainFile = path.join(packageDirectory, "Main.xml");
+  const imageFile = path.join(packageDirectory, "icons", "Icon.png");
+  await mkdir(path.dirname(imageFile), { recursive: true });
   await writeFile(
     projectFile,
     '<projectDescription id="resources" type="DOM" version="5.0"/>',
@@ -47,6 +50,7 @@ async function createProject(): Promise<{
     `<packageDescription id="pkg00001" vendorPackage="keep">
   <resources>
     <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+    <image id="img01" name="Icon.png" path="/icons/" exported="true"/>
   </resources>
 </packageDescription>`,
     "utf8"
@@ -56,7 +60,24 @@ async function createProject(): Promise<{
     '<component size="320,180"><displayList/></component>',
     "utf8"
   );
-  return { directory, projectFile, packageFile, mainFile };
+  await writeFile(imageFile, new Uint8Array([10, 20, 30]));
+  return { directory, projectFile, packageFile, mainFile, imageFile };
+}
+
+async function writeInboxFile(
+  projectDirectory: string,
+  relativePath: string,
+  content: number[]
+): Promise<string> {
+  const filePath = path.join(
+    projectDirectory,
+    ".fairygui-mcp",
+    "import-inbox",
+    ...relativePath.split("/")
+  );
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, new Uint8Array(content));
+  return filePath;
 }
 
 async function setup(options: {
@@ -261,8 +282,10 @@ test("package rename and component move commit old-path deletion with new files"
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.deepEqual(result.data.affectedFiles, [
+      "assets/Demo/icons/Icon.png",
       "assets/Demo/Main.xml",
       "assets/Demo/package.xml",
+      "assets/Renamed/icons/Icon.png",
       "assets/Renamed/package.xml",
       "assets/Renamed/screens/Dashboard.xml"
     ]);
@@ -272,6 +295,19 @@ test("package rename and component move commit old-path deletion with new files"
     await assert.rejects(readFile(context.project.mainFile), {
       code: "ENOENT"
     });
+    await assert.rejects(readFile(context.project.imageFile), {
+      code: "ENOENT"
+    });
+    assert.deepEqual(
+      [...await readFile(path.join(
+        context.project.directory,
+        "assets",
+        "Renamed",
+        "icons",
+        "Icon.png"
+      ))],
+      [10, 20, 30]
+    );
     const renamedPackage = await readFile(
       path.join(
         context.project.directory,
@@ -319,6 +355,203 @@ test("package rename and component move commit old-path deletion with new files"
         resourcePath: "/screens/"
       });
     }
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("resource import writes bytes, updates package metadata and consumes inbox", async () => {
+  const context = await setup();
+  const inboxFile = await writeInboxFile(
+    context.project.directory,
+    "weapons/sword.png",
+    [1, 2, 3, 4]
+  );
+  try {
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "import",
+          packageId: "pkg00001",
+          clientRef: "sword",
+          inboxPath: "weapons/sword.png",
+          name: "Sword",
+          path: "/items/",
+          conflict: "reject"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const resourceId = result.data.clientRefs.sword!.resourceId!;
+    assert.deepEqual(result.data.consumedInboxPaths, [
+      ".fairygui-mcp/import-inbox/weapons/sword.png"
+    ]);
+    assert.deepEqual(result.data.affectedFiles, [
+      ".fairygui-mcp/import-inbox/weapons/sword.png",
+      "assets/Demo/items/Sword.png",
+      "assets/Demo/package.xml"
+    ]);
+    assert.deepEqual(
+      [...await readFile(path.join(
+        context.project.directory,
+        "assets",
+        "Demo",
+        "items",
+        "Sword.png"
+      ))],
+      [1, 2, 3, 4]
+    );
+    await assert.rejects(readFile(inboxFile), { code: "ENOENT" });
+    assert.match(
+      await readFile(context.project.packageFile, "utf8"),
+      new RegExp(
+        `<image id="${resourceId}" name="Sword\\.png" path="/items/"`
+      )
+    );
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("replace-resource preserves id and atomically changes the asset extension", async () => {
+  const context = await setup();
+  const inboxFile = await writeInboxFile(
+    context.project.directory,
+    "replacement.jpg",
+    [90, 91]
+  );
+  try {
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "replace-resource",
+          packageId: "pkg00001",
+          resourceId: "img01",
+          inboxPath: "replacement.jpg"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    await assert.rejects(readFile(context.project.imageFile), {
+      code: "ENOENT"
+    });
+    const replacementPath = path.join(
+      context.project.directory,
+      "assets",
+      "Demo",
+      "icons",
+      "Icon.jpg"
+    );
+    assert.deepEqual([...await readFile(replacementPath)], [90, 91]);
+    await assert.rejects(readFile(inboxFile), { code: "ENOENT" });
+    const packageXml = await readFile(context.project.packageFile, "utf8");
+    assert.match(packageXml, /<image id="img01" name="Icon\.jpg"/);
+    assert.doesNotMatch(packageXml, /id="img01" name="Icon\.png"/);
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("rejected import preserves inbox bytes and all existing resources", async () => {
+  const context = await setup();
+  const inboxFile = await writeInboxFile(
+    context.project.directory,
+    "conflict.png",
+    [7, 8, 9]
+  );
+  try {
+    const packageBefore = await readFile(context.project.packageFile, "utf8");
+    const imageBefore = await readFile(context.project.imageFile);
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "import",
+          packageId: "pkg00001",
+          clientRef: "conflict",
+          inboxPath: "conflict.png",
+          name: "Icon",
+          path: "/icons/",
+          conflict: "reject"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "RESOURCE_CONFLICT");
+    assert.equal(
+      await readFile(context.project.packageFile, "utf8"),
+      packageBefore
+    );
+    assert.deepEqual(await readFile(context.project.imageFile), imageBefore);
+    assert.deepEqual([...await readFile(inboxFile)], [7, 8, 9]);
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("failed import transaction restores the consumed inbox file", async () => {
+  let injected = false;
+  const logDirectory = await mkdtemp(path.join(os.tmpdir(), "fgui-import-fail-"));
+  temporaryDirectories.push(logDirectory);
+  const transactions = new FileTransactionManager({
+    baseDirectory: logDirectory,
+    faultInjector(point) {
+      if (point === "after-replace" && !injected) {
+        injected = true;
+        throw new Error("injected import failure");
+      }
+    }
+  });
+  const context = await setup({ transactions });
+  const inboxFile = await writeInboxFile(
+    context.project.directory,
+    "failed.png",
+    [4, 5, 6]
+  );
+  try {
+    const packageBefore = await readFile(context.project.packageFile, "utf8");
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "import",
+          packageId: "pkg00001",
+          clientRef: "failed",
+          inboxPath: "failed.png",
+          name: "Failed",
+          path: "/",
+          conflict: "reject"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "TRANSACTION_FAILED");
+    assert.deepEqual([...await readFile(inboxFile)], [4, 5, 6]);
+    assert.equal(
+      await readFile(context.project.packageFile, "utf8"),
+      packageBefore
+    );
+    await assert.rejects(
+      readFile(path.join(
+        context.project.directory,
+        "assets",
+        "Demo",
+        "Failed.png"
+      )),
+      { code: "ENOENT" }
+    );
   }
   finally {
     await context.registry.closeAll();

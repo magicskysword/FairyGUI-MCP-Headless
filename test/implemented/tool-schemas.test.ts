@@ -260,6 +260,7 @@ test("resource operation schema fixes collision and deletion policies", () => {
       {
         op: "import",
         packageId: "pkg00001",
+        clientRef: "sword",
         inboxPath: "icons/sword.png",
         name: "Sword",
         conflict: "reject"
@@ -279,6 +280,7 @@ test("resource operation schema fixes collision and deletion policies", () => {
     operations: [{
       op: "import",
       packageId: "pkg00001",
+      clientRef: "icon",
       inboxPath: "icon.png",
       name: "Icon",
       conflict: "replace"

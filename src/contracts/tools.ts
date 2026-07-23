@@ -337,6 +337,7 @@ export const ResourceOperationSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("import"),
     packageId: nonEmptyId,
+    clientRef,
     inboxPath: z.string().min(1),
     name: z.string().min(1),
     path: z.string().optional(),

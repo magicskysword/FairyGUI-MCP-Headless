@@ -16,13 +16,14 @@ import type {
   ApplyResourceOperationsInput,
   ResourceOperation
 } from "../contracts/tools.js";
+import type { ImportInboxFile } from "./import-inbox.js";
 
 const PACKAGE_ID_PATTERN = /^[a-z0-9]{8}$/;
 const INVALID_FILE_NAME_CHARACTERS = /[\u0000-\u001f<>:"/\\|?*]/u;
 const RESERVED_FILE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
 
 export interface ResourceOperationClientRef {
-  kind: "package" | "component";
+  kind: "package" | "component" | "resource";
   packageId: string;
   resourceId?: string;
 }
@@ -40,6 +41,19 @@ export interface ResourceOperationsEngineData {
     to: string;
   }>;
   deletedFiles: string[];
+  assetMoves: Array<{
+    from: string;
+    to: string;
+  }>;
+  assetWrites: Array<{
+    relativePath: string;
+    content: Uint8Array;
+  }>;
+  consumedInboxPaths: string[];
+}
+
+export interface ResourceOperationsEngineOptions {
+  importFiles?: ReadonlyMap<number, ImportInboxFile>;
 }
 
 class ResourceOperationError extends Error {
@@ -64,7 +78,7 @@ function operationError(
 function assertPortableName(
   name: string,
   path: string,
-  kind: "包" | "组件"
+  kind: "包" | "组件" | "资源"
 ): void {
   if (
     name === "."
@@ -129,6 +143,7 @@ function samePortableName(left: string, right: string): boolean {
 }
 
 type PackageResource = ReturnType<Package["listResources"]>[number];
+type MutablePackageResource = PackageResource & Record<string, unknown>;
 
 function resourceBranch(resource: PackageResource): string {
   return "getBranch" in resource
@@ -168,6 +183,131 @@ function modelFilePaths(document: Document): Map<string, string> {
     }
   }
   return files;
+}
+
+function resourceFileName(resource: PackageResource): string | undefined {
+  const owner = resource as MutablePackageResource;
+  for (const getter of ["getFileName", "getFile"] as const) {
+    const candidate = owner[getter];
+    if (typeof candidate !== "function") continue;
+    const value = (candidate as () => unknown).call(owner);
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+function assetRelativePath(
+  pkg: Package,
+  resource: PackageResource,
+  fileName = resourceFileName(resource)
+): string | undefined {
+  if (!fileName || resource.propertyType === PropertyType.COMPONENT) {
+    return undefined;
+  }
+  const branch = resourceBranch(resource);
+  const resourcePath = canonicalExistingResourcePath(
+    resource.getPath?.()
+  ).replace(/^\/|\/$/g, "");
+  return [
+    branch ? `assets_${branch}` : "assets",
+    pkg.getName(),
+    ...(resourcePath ? [resourcePath] : []),
+    fileName
+  ].join("/");
+}
+
+function modelAssetPaths(document: Document): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const pkg of document.getRoot().listPackages()) {
+    for (const resource of pkg.listResources()) {
+      const relativePath = assetRelativePath(pkg, resource);
+      if (relativePath) {
+        files.set(
+          `asset:${pkg.getId()}:${resource.getId()}`,
+          relativePath
+        );
+      }
+    }
+  }
+  return files;
+}
+
+function invokeResource(
+  resource: PackageResource,
+  method: string,
+  values: unknown[],
+  argumentPath: string
+): void {
+  const candidate = (resource as MutablePackageResource)[method];
+  if (typeof candidate !== "function") {
+    operationError("INVALID_ARGUMENT", "资源类型不支持该文件操作", {
+      path: argumentPath,
+      actual: resource.propertyType
+    });
+  }
+  (candidate as (...args: unknown[]) => unknown).apply(resource, values);
+}
+
+function setResourceFileName(
+  resource: PackageResource,
+  fileName: string,
+  argumentPath: string
+): void {
+  const owner = resource as MutablePackageResource;
+  if (typeof owner.setFileName === "function") {
+    invokeResource(resource, "setFileName", [fileName], argumentPath);
+    return;
+  }
+  invokeResource(resource, "setFile", [fileName], argumentPath);
+}
+
+const IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".svg"
+]);
+const SOUND_EXTENSIONS = new Set([".mp3", ".wav", ".ogg"]);
+const FONT_EXTENSIONS = new Set([
+  ".fnt",
+  ".ttf",
+  ".otf",
+  ".woff",
+  ".woff2"
+]);
+
+function importedExtension(fileName: string): string {
+  const index = fileName.lastIndexOf(".");
+  return index <= 0 ? "" : fileName.slice(index);
+}
+
+function importedPropertyType(fileName: string): PropertyType {
+  const extension = importedExtension(fileName).toLowerCase();
+  if (IMAGE_EXTENSIONS.has(extension)) return PropertyType.IMAGE_RESOURCE;
+  if (SOUND_EXTENSIONS.has(extension)) return PropertyType.SOUND_RESOURCE;
+  if (FONT_EXTENSIONS.has(extension)) return PropertyType.FONT_RESOURCE;
+  if (extension === ".jta") return PropertyType.MOVIE_CLIP_RESOURCE;
+  return PropertyType.MISC_RESOURCE;
+}
+
+function createImportedResource(
+  document: Document,
+  propertyType: PropertyType,
+  name: string
+): PackageResource {
+  switch (propertyType) {
+    case PropertyType.IMAGE_RESOURCE:
+      return document.createImageResource(name);
+    case PropertyType.SOUND_RESOURCE:
+      return document.createSoundResource(name);
+    case PropertyType.FONT_RESOURCE:
+      return document.createFontResource(name);
+    case PropertyType.MOVIE_CLIP_RESOURCE:
+      return document.createMovieClipResource(name);
+    default:
+      return document.createMiscResource(name);
+  }
 }
 
 function packageById(
@@ -428,7 +568,7 @@ function applyRenameResource(
     assertComponentName(operation.name, `${operationPath}.name`);
   }
   else {
-    assertPortableName(operation.name, `${operationPath}.name`, "组件");
+    assertPortableName(operation.name, `${operationPath}.name`, "资源");
   }
   if (resource.getName() === operation.name) {
     operationError("INVALID_ARGUMENT", "资源名称没有发生变化", {
@@ -444,6 +584,16 @@ function applyRenameResource(
     resourcePath,
     `${operationPath}.name`
   );
+  if (resource.propertyType !== PropertyType.COMPONENT) {
+    const fileName = resourceFileName(resource);
+    if (fileName) {
+      setResourceFileName(
+        resource,
+        `${operation.name}${importedExtension(fileName)}`,
+        `${operationPath}.name`
+      );
+    }
+  }
   resource.setName(operation.name);
   data.affectedPackageIds.push(pkg.getId());
   if (resource.propertyType === PropertyType.COMPONENT) {
@@ -512,19 +662,242 @@ function applyMoveResource(
   }
 }
 
+function materializedImport(
+  options: ResourceOperationsEngineOptions,
+  operationIndex: number,
+  operationPath: string
+): ImportInboxFile {
+  const file = options.importFiles?.get(operationIndex);
+  if (!file) {
+    operationError(
+      "IMPORT_NOT_REGULAR_FILE",
+      "资源操作缺少已验证的收件箱普通文件",
+      {
+        path: `${operationPath}.inboxPath`,
+        suggestedFix: "通过 ResourceOperationsService 执行资源导入"
+      }
+    );
+  }
+  return file;
+}
+
+function consumeInboxFile(
+  data: ResourceOperationsEngineData,
+  file: ImportInboxFile,
+  operationPath: string
+): void {
+  if (data.consumedInboxPaths.includes(file.sourceRelativePath)) {
+    operationError("INVALID_ARGUMENT", "同一批次不能重复消费收件箱文件", {
+      path: `${operationPath}.inboxPath`,
+      actual: file.sourceRelativePath
+    });
+  }
+  data.consumedInboxPaths.push(file.sourceRelativePath);
+}
+
+function addAssetWrite(
+  data: ResourceOperationsEngineData,
+  relativePath: string,
+  content: Uint8Array,
+  operationPath: string
+): void {
+  if (data.assetWrites.some((write) => write.relativePath === relativePath)) {
+    operationError("RESOURCE_CONFLICT", "同一批次产生了重复资源文件目标", {
+      path: `${operationPath}.name`,
+      actual: relativePath
+    });
+  }
+  data.assetWrites.push({
+    relativePath,
+    content: new Uint8Array(content)
+  });
+}
+
+function uniqueImportedName(
+  pkg: Package,
+  desiredName: string,
+  resourcePath: string
+): string {
+  let suffix = 2;
+  let candidate = desiredName;
+  while (
+    pkg.listResources().some((resource) =>
+      samePortableName(resource.getName(), candidate)
+      && canonicalExistingResourcePath(resource.getPath?.()) === resourcePath
+    )
+  ) {
+    candidate = `${desiredName}_${suffix++}`;
+  }
+  return candidate;
+}
+
+function applyImport(
+  document: Document,
+  operation: Extract<ResourceOperation, { op: "import" }>,
+  operationIndex: number,
+  operationPath: string,
+  data: ResourceOperationsEngineData,
+  options: ResourceOperationsEngineOptions
+): void {
+  assertUnusedClientRef(
+    data.clientRefs,
+    operation.clientRef,
+    `${operationPath}.clientRef`
+  );
+  assertPortableName(operation.name, `${operationPath}.name`, "资源");
+  const pkg = packageById(
+    document,
+    operation.packageId,
+    `${operationPath}.packageId`
+  );
+  const file = materializedImport(options, operationIndex, operationPath);
+  consumeInboxFile(data, file, operationPath);
+  const propertyType = importedPropertyType(file.fileName);
+  const extension = importedExtension(file.fileName);
+  const resourcePath = normalizeResourcePath(
+    operation.path,
+    `${operationPath}.path`
+  );
+  const existingAtTarget = pkg.listResources().find((resource) =>
+    samePortableName(resource.getName(), operation.name)
+    && canonicalExistingResourcePath(resource.getPath?.()) === resourcePath
+  );
+
+  let name = operation.name;
+  let resource: PackageResource;
+  if (operation.conflict === "reject" && existingAtTarget) {
+    operationError("RESOURCE_CONFLICT", "目标路径中已存在同名资源", {
+      path: `${operationPath}.name`,
+      actual: {
+        packageId: pkg.getId(),
+        resourceId: existingAtTarget.getId(),
+        name,
+        resourcePath
+      },
+      suggestedFix: "改用 conflict: rename，或明确指定 replace 与 resourceId"
+    });
+  }
+  if (operation.conflict === "rename") {
+    name = uniqueImportedName(pkg, name, resourcePath);
+  }
+
+  if (operation.conflict === "replace") {
+    resource = resourceById(
+      pkg,
+      operation.resourceId!,
+      `${operationPath}.resourceId`
+    );
+    if (
+      existingAtTarget !== undefined
+      && existingAtTarget !== resource
+    ) {
+      operationError("RESOURCE_CONFLICT", "replace 目标与同名冲突资源不一致", {
+        path: `${operationPath}.resourceId`,
+        actual: {
+          requested: operation.resourceId,
+          conflicting: existingAtTarget.getId()
+        }
+      });
+    }
+    if (resource.propertyType !== propertyType) {
+      operationError("INVALID_ARGUMENT", "替换文件类型与已有资源不兼容", {
+        path: `${operationPath}.inboxPath`,
+        actual: propertyType,
+        allowed: [resource.propertyType]
+      });
+    }
+    resource.setName(name);
+    resource.setPath(resourcePath);
+  }
+  else {
+    const resourceId = generateResourceId(
+      pkg.listResources().map((item) => item.getId())
+    );
+    resource = createImportedResource(document, propertyType, name);
+    resource.setId(resourceId);
+    resource.setPath(resourcePath);
+    pkg.addResource(resource);
+  }
+
+  setResourceFileName(
+    resource,
+    `${name}${extension}`,
+    `${operationPath}.inboxPath`
+  );
+  addAssetWrite(
+    data,
+    assetRelativePath(pkg, resource)!,
+    file.content,
+    operationPath
+  );
+  data.clientRefs[operation.clientRef] = {
+    kind: "resource",
+    packageId: pkg.getId(),
+    resourceId: resource.getId()
+  };
+  data.affectedPackageIds.push(pkg.getId());
+}
+
+function applyReplaceResource(
+  document: Document,
+  operation: Extract<ResourceOperation, { op: "replace-resource" }>,
+  operationIndex: number,
+  operationPath: string,
+  data: ResourceOperationsEngineData,
+  options: ResourceOperationsEngineOptions
+): void {
+  const pkg = packageById(
+    document,
+    operation.packageId,
+    `${operationPath}.packageId`
+  );
+  const resource = resourceById(
+    pkg,
+    operation.resourceId,
+    `${operationPath}.resourceId`
+  );
+  const file = materializedImport(options, operationIndex, operationPath);
+  consumeInboxFile(data, file, operationPath);
+  const propertyType = importedPropertyType(file.fileName);
+  if (resource.propertyType !== propertyType) {
+    operationError("INVALID_ARGUMENT", "替换文件类型与已有资源不兼容", {
+      path: `${operationPath}.inboxPath`,
+      actual: propertyType,
+      allowed: [resource.propertyType]
+    });
+  }
+  setResourceFileName(
+    resource,
+    `${resource.getName()}${importedExtension(file.fileName)}`,
+    `${operationPath}.inboxPath`
+  );
+  addAssetWrite(
+    data,
+    assetRelativePath(pkg, resource)!,
+    file.content,
+    operationPath
+  );
+  data.affectedPackageIds.push(pkg.getId());
+}
+
 export class ResourceOperationsEngine {
   public apply(
     document: Document,
-    input: ApplyResourceOperationsInput
+    input: ApplyResourceOperationsInput,
+    options: ResourceOperationsEngineOptions = {}
   ): ResultEnvelope<ResourceOperationsEngineData> {
     const initialFilePaths = modelFilePaths(document);
+    const initialAssetPaths = modelAssetPaths(document);
     const data: ResourceOperationsEngineData = {
       appliedOperations: 0,
       clientRefs: {},
       affectedPackageIds: [],
       affectedComponents: [],
       fileMoves: [],
-      deletedFiles: []
+      deletedFiles: [],
+      assetMoves: [],
+      assetWrites: [],
+      consumedInboxPaths: []
     };
     try {
       input.operations.forEach((operation, index) => {
@@ -544,6 +917,26 @@ export class ResourceOperationsEngine {
             break;
           case "move-resource":
             applyMoveResource(document, operation, operationPath, data);
+            break;
+          case "import":
+            applyImport(
+              document,
+              operation,
+              index,
+              operationPath,
+              data,
+              options
+            );
+            break;
+          case "replace-resource":
+            applyReplaceResource(
+              document,
+              operation,
+              index,
+              operationPath,
+              data,
+              options
+            );
             break;
           default:
             operationError(
@@ -578,6 +971,20 @@ export class ResourceOperationsEngine {
         left.from.localeCompare(right.from)
       );
       data.deletedFiles.sort();
+      const finalAssetPaths = modelAssetPaths(document);
+      for (const [key, from] of initialAssetPaths) {
+        const to = finalAssetPaths.get(key);
+        if (to !== undefined && to !== from) {
+          data.assetMoves.push({ from, to });
+        }
+      }
+      data.assetMoves.sort((left, right) =>
+        left.from.localeCompare(right.from)
+      );
+      data.assetWrites.sort((left, right) =>
+        left.relativePath.localeCompare(right.relativePath)
+      );
+      data.consumedInboxPaths.sort();
       return ok(data);
     }
     catch (error) {

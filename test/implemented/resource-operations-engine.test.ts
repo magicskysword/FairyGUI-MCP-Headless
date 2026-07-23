@@ -6,6 +6,7 @@ import {
   type ApplyResourceOperationsInput
 } from "../../src/contracts/tools.js";
 import { ResourceOperationsEngine } from "../../src/resources/resource-operations-engine.js";
+import type { ImportInboxFile } from "../../src/resources/import-inbox.js";
 
 const PROJECT_ID = "project-1";
 const PACKAGE_ID = "pkg00001";
@@ -27,6 +28,12 @@ function fixture(): Document {
       .setId("cmp01")
       .setPath("/")
       .setSize(320, 180)
+  );
+  pkg.addResource(
+    document.createImageResource("Icon")
+      .setId("img01")
+      .setPath("/icons/")
+      .setFileName("Icon.png")
   );
   return document;
 }
@@ -258,6 +265,184 @@ test("resource rename and move reject collisions and cross-package targets", () 
     if (!result.ok) {
       assert.equal(result.error.code, "CROSS_PACKAGE_MOVE_UNSUPPORTED");
       assert.equal(result.error.path, "operations[0].targetPackageId");
+    }
+  }
+});
+
+function inboxFile(
+  fileName: string,
+  sourceRelativePath: string,
+  bytes: number[]
+): ImportInboxFile {
+  return {
+    fileName,
+    sourceRelativePath,
+    content: new Uint8Array(bytes)
+  };
+}
+
+test("resource import applies reject, rename and replace conflict policies", () => {
+  {
+    const document = fixture();
+    const result = new ResourceOperationsEngine().apply(document, input([{
+      op: "import",
+      packageId: PACKAGE_ID,
+      clientRef: "sword",
+      inboxPath: "sword.png",
+      name: "Sword",
+      path: "/icons/",
+      conflict: "reject"
+    }]), {
+      importFiles: new Map([[
+        0,
+        inboxFile(
+          "sword.png",
+          ".fairygui-mcp/import-inbox/sword.png",
+          [1, 2, 3]
+        )
+      ]])
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const created = result.data.clientRefs.sword!;
+    assert.equal(created.kind, "resource");
+    assert.match(created.resourceId ?? "", /^[a-z0-9]{5}$/);
+    const resource = document.getRoot().getPackageById(PACKAGE_ID)!
+      .getResourceById(created.resourceId!) as {
+        propertyType: string;
+        getFileName(): string;
+      };
+    assert.equal(resource.propertyType, "ImageResource");
+    assert.equal(resource.getFileName(), "Sword.png");
+    assert.deepEqual(result.data.assetWrites.map((write) => ({
+      relativePath: write.relativePath,
+      content: [...write.content]
+    })), [{
+      relativePath: "assets/Demo/icons/Sword.png",
+      content: [1, 2, 3]
+    }]);
+    assert.deepEqual(result.data.consumedInboxPaths, [
+      ".fairygui-mcp/import-inbox/sword.png"
+    ]);
+  }
+
+  {
+    const document = fixture();
+    const result = new ResourceOperationsEngine().apply(document, input([{
+      op: "import",
+      packageId: PACKAGE_ID,
+      clientRef: "renamed-icon",
+      inboxPath: "icon.png",
+      name: "Icon",
+      path: "/icons/",
+      conflict: "rename"
+    }]), {
+      importFiles: new Map([[
+        0,
+        inboxFile(
+          "icon.png",
+          ".fairygui-mcp/import-inbox/icon.png",
+          [4]
+        )
+      ]])
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const created = document.getRoot().getPackageById(PACKAGE_ID)!
+      .getResourceById(result.data.clientRefs["renamed-icon"]!.resourceId!)!;
+    assert.equal(created.getName(), "Icon_2");
+    assert.equal(result.data.assetWrites[0]?.relativePath, (
+      "assets/Demo/icons/Icon_2.png"
+    ));
+  }
+
+  {
+    const document = fixture();
+    const result = new ResourceOperationsEngine().apply(document, input([{
+      op: "import",
+      packageId: PACKAGE_ID,
+      clientRef: "replaced-icon",
+      inboxPath: "replacement.png",
+      name: "Icon",
+      path: "/icons/",
+      conflict: "replace",
+      resourceId: "img01"
+    }]), {
+      importFiles: new Map([[
+        0,
+        inboxFile(
+          "replacement.png",
+          ".fairygui-mcp/import-inbox/replacement.png",
+          [9, 8]
+        )
+      ]])
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(
+      result.data.clientRefs["replaced-icon"]?.resourceId,
+      "img01"
+    );
+    assert.equal(result.data.assetWrites[0]?.relativePath, (
+      "assets/Demo/icons/Icon.png"
+    ));
+  }
+});
+
+test("replace-resource preserves id, updates extension and rejects type changes", () => {
+  {
+    const document = fixture();
+    const result = new ResourceOperationsEngine().apply(document, input([{
+      op: "replace-resource",
+      packageId: PACKAGE_ID,
+      resourceId: "img01",
+      inboxPath: "replacement.jpg"
+    }]), {
+      importFiles: new Map([[
+        0,
+        inboxFile(
+          "replacement.jpg",
+          ".fairygui-mcp/import-inbox/replacement.jpg",
+          [7, 7]
+        )
+      ]])
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const resource = document.getRoot().getPackageById(PACKAGE_ID)!
+      .getResourceById("img01") as { getFileName(): string };
+    assert.equal(resource.getFileName(), "Icon.jpg");
+    assert.deepEqual(result.data.assetMoves, [{
+      from: "assets/Demo/icons/Icon.png",
+      to: "assets/Demo/icons/Icon.jpg"
+    }]);
+    assert.equal(
+      result.data.assetWrites[0]?.relativePath,
+      "assets/Demo/icons/Icon.jpg"
+    );
+  }
+
+  {
+    const document = fixture();
+    const result = new ResourceOperationsEngine().apply(document, input([{
+      op: "replace-resource",
+      packageId: PACKAGE_ID,
+      resourceId: "cmp01",
+      inboxPath: "replacement.png"
+    }]), {
+      importFiles: new Map([[
+        0,
+        inboxFile(
+          "replacement.png",
+          ".fairygui-mcp/import-inbox/replacement.png",
+          [1]
+        )
+      ]])
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.code, "INVALID_ARGUMENT");
+      assert.equal(result.error.path, "operations[0].inboxPath");
     }
   }
 });

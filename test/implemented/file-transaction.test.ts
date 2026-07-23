@@ -166,6 +166,58 @@ test("rollback removes files that did not exist before the transaction", async (
   assert.equal(await readFile(fixture.second, "utf8"), "second-before");
 });
 
+test("a file transaction can delete a regular file atomically", async () => {
+  const fixture = await createFilesFixture();
+  const manager = new FileTransactionManager({
+    baseDirectory: fixture.logDirectory,
+    idFactory: () => "tx_delete"
+  });
+
+  const result = await manager.commit(fixture.projectDirectory, [{
+    relativePath: "assets/first.xml",
+    content: null
+  }]);
+
+  assert.equal(result.ok, true);
+  await assert.rejects(readFile(fixture.first), { code: "ENOENT" });
+  assert.equal(await readFile(fixture.second, "utf8"), "second-before");
+});
+
+test("failed and interrupted deletion transactions restore removed files", async () => {
+  for (const simulatedCrash of [false, true]) {
+    const fixture = await createFilesFixture();
+    const manager = new FileTransactionManager({
+      baseDirectory: fixture.logDirectory,
+      idFactory: () => simulatedCrash
+        ? "tx_delete_crash"
+        : "tx_delete_rollback",
+      faultInjector(point, context) {
+        if (point !== "after-replace" || context.fileIndex !== 0) return;
+        if (simulatedCrash) {
+          throw new SimulatedTransactionCrash("crash after delete");
+        }
+        throw new Error("fail after delete");
+      }
+    });
+
+    const result = await manager.commit(fixture.projectDirectory, [
+      { relativePath: "assets/first.xml", content: null },
+      { relativePath: "assets/second.xml", content: "second-after" }
+    ]);
+    assert.equal(result.ok, false);
+
+    if (simulatedCrash) {
+      await assert.rejects(readFile(fixture.first), { code: "ENOENT" });
+      await new FileTransactionManager({
+        baseDirectory: fixture.logDirectory
+      }).recover(fixture.projectDirectory);
+    }
+
+    assert.equal(await readFile(fixture.first, "utf8"), "first-before");
+    assert.equal(await readFile(fixture.second, "utf8"), "second-before");
+  }
+});
+
 test("transaction paths must be unique canonical project-relative paths", async () => {
   const fixture = await createFilesFixture();
   const outside = path.join(path.dirname(fixture.projectDirectory), "outside.txt");

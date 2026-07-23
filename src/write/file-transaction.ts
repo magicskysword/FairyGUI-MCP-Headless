@@ -36,6 +36,7 @@ type TransactionState =
 interface TransactionJournalFile {
   relativePath: string;
   existed: boolean;
+  delete?: boolean;
   beforePath?: string;
   beforeHash?: string;
   stagedPath: string;
@@ -58,7 +59,8 @@ interface TransactionJournal {
 
 export interface TransactionFileChange {
   relativePath: string;
-  content: string | Uint8Array;
+  /** `null` atomically deletes an existing regular file. */
+  content: string | Uint8Array | null;
 }
 
 export interface FileTransactionData {
@@ -314,6 +316,10 @@ function parseJournal(raw: string, journalPath: string): TransactionJournal {
       || file === null
       || typeof file.relativePath !== "string"
       || typeof file.existed !== "boolean"
+      || (
+        file.delete !== undefined
+        && typeof file.delete !== "boolean"
+      )
       || typeof file.stagedPath !== "string"
       || typeof file.stagedHash !== "string"
       || typeof file.adjacentTempPath !== "string"
@@ -501,9 +507,12 @@ export class FileTransactionManager {
     }
     const normalized = changes.map((change) => ({
       relativePath: normalizeRelativePath(change.relativePath),
-      content: typeof change.content === "string"
-        ? Buffer.from(change.content, "utf8")
-        : Buffer.from(change.content)
+      delete: change.content === null,
+      content: change.content === null
+        ? Buffer.alloc(0)
+        : typeof change.content === "string"
+          ? Buffer.from(change.content, "utf8")
+          : Buffer.from(change.content)
     }));
     const uniquePaths = new Set(normalized.map((change) => change.relativePath));
     if (uniquePaths.size !== normalized.length) {
@@ -526,6 +535,12 @@ export class FileTransactionManager {
           change.relativePath
         );
       }
+      if (change.delete && !entry) {
+        throw new TransactionInputError(
+          "事务不能删除不存在的文件",
+          change.relativePath
+        );
+      }
       const before = entry ? await readFile(target) : undefined;
       beforeContents.push(before);
       const parentRelative = path.posix.dirname(change.relativePath);
@@ -538,6 +553,7 @@ export class FileTransactionManager {
       preparedFiles.push({
         relativePath: change.relativePath,
         existed: before !== undefined,
+        delete: change.delete,
         ...(before === undefined
           ? {}
           : {
@@ -604,6 +620,14 @@ export class FileTransactionManager {
       );
       await mkdir(path.dirname(target), { recursive: true });
       await assertNoSymbolicLink(journal.projectDirectory, target);
+      if (file.delete) {
+        await this.inject("before-replace", journal, logPath, index);
+        await rm(target);
+        file.committed = true;
+        await writeJournal(logPath, journal);
+        await this.inject("after-replace", journal, logPath, index);
+        continue;
+      }
       await writeDurableFile(
         adjacentTemporary,
         await readFile(path.join(logPath, file.stagedPath)),
@@ -644,6 +668,36 @@ export class FileTransactionManager {
       const currentHash = await fileHash(target);
 
       if (file.existed) {
+        if (file.delete) {
+          if (
+            !recovering
+            && !file.committed
+            && currentHash === file.beforeHash
+          ) {
+            continue;
+          }
+          if (
+            currentHash !== undefined
+            && currentHash !== file.beforeHash
+          ) {
+            throw new Error(
+              `事务恢复发现外部冲突，拒绝覆盖：${file.relativePath}`
+            );
+          }
+          if (currentHash === file.beforeHash) continue;
+          const recoveryTemporary = `${adjacentTemporary}.recovery`;
+          await rm(recoveryTemporary, { force: true });
+          await mkdir(path.dirname(target), { recursive: true });
+          await writeDurableFile(
+            recoveryTemporary,
+            await readFile(path.join(logPath, file.beforePath!)),
+            true
+          );
+          await rename(recoveryTemporary, target);
+          file.committed = false;
+          await writeJournal(logPath, journal);
+          continue;
+        }
         if (
           !recovering
           && !file.committed

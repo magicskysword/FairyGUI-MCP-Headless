@@ -4,3 +4,4 @@ export {
   SERVER_NAME
 } from "./version.js";
 export * from "./contracts/result.js";
+export * from "./contracts/dom.js";

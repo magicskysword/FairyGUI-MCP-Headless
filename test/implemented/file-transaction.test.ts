@@ -3,7 +3,9 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  readdir,
   rm,
+  stat,
   symlink,
   writeFile
 } from "node:fs/promises";
@@ -47,6 +49,18 @@ async function createFilesFixture(): Promise<{
   await writeFile(first, "first-before", "utf8");
   await writeFile(second, "second-before", "utf8");
   return { projectDirectory, logDirectory, first, second };
+}
+
+async function directoryByteSize(directory: string): Promise<number> {
+  const children = await readdir(directory, { withFileTypes: true });
+  let total = 0;
+  for (const child of children) {
+    const childPath = path.join(directory, child.name);
+    total += child.isDirectory()
+      ? await directoryByteSize(childPath)
+      : (await stat(childPath)).size;
+  }
+  return total;
 }
 
 test("a file transaction commits all affected files and a terminal journal", async () => {
@@ -319,4 +333,94 @@ test("ProjectRegistry runs transaction recovery before parsing a project", async
   finally {
     await registry.closeAll();
   }
+});
+
+test("recovery completes interrupted work before pruning expired terminal logs", async () => {
+  const fixture = await createFilesFixture();
+  const expired = await new FileTransactionManager({
+    baseDirectory: fixture.logDirectory,
+    idFactory: () => "tx_expired",
+    now: () => new Date("2026-01-01T00:00:00.000Z")
+  }).commit(fixture.projectDirectory, [{
+    relativePath: "assets/first.xml",
+    content: "first-committed"
+  }]);
+  assert.equal(expired.ok, true);
+  if (!expired.ok) return;
+
+  const interrupted = await new FileTransactionManager({
+    baseDirectory: fixture.logDirectory,
+    idFactory: () => "tx_pending",
+    now: () => new Date("2026-01-01T00:00:00.000Z"),
+    faultInjector(point) {
+      if (point === "after-replace") {
+        throw new SimulatedTransactionCrash();
+      }
+    }
+  }).commit(fixture.projectDirectory, [{
+    relativePath: "assets/second.xml",
+    content: "second-interrupted"
+  }]);
+  assert.equal(interrupted.ok, false);
+  if (interrupted.ok) return;
+
+  await new FileTransactionManager({
+    baseDirectory: fixture.logDirectory,
+    now: () => new Date("2026-01-10T00:00:00.000Z"),
+    retentionMs: 7 * 24 * 60 * 60 * 1_000,
+    maxProjectBytes: 1024 * 1024
+  }).recover(fixture.projectDirectory);
+
+  assert.equal(await readFile(fixture.first, "utf8"), "first-committed");
+  assert.equal(await readFile(fixture.second, "utf8"), "second-before");
+  await assert.rejects(
+    readFile(path.join(expired.data.logPath, "journal.json")),
+    { code: "ENOENT" }
+  );
+  const recoveredJournal = JSON.parse(await readFile(
+    path.join(interrupted.error.logPath!, "journal.json"),
+    "utf8"
+  )) as { state: string };
+  assert.equal(recoveredJournal.state, "rolled-back");
+});
+
+test("log quota prunes oldest completed transactions and keeps the newest", async () => {
+  const fixture = await createFilesFixture();
+  const oldest = await new FileTransactionManager({
+    baseDirectory: fixture.logDirectory,
+    idFactory: () => "tx_oldest",
+    now: () => new Date("2026-01-01T00:00:00.000Z")
+  }).commit(fixture.projectDirectory, [{
+    relativePath: "assets/first.xml",
+    content: "first-oldest"
+  }]);
+  const newest = await new FileTransactionManager({
+    baseDirectory: fixture.logDirectory,
+    idFactory: () => "tx_newest",
+    now: () => new Date("2026-01-02T00:00:00.000Z")
+  }).commit(fixture.projectDirectory, [{
+    relativePath: "assets/first.xml",
+    content: "first-newest"
+  }]);
+  assert.equal(oldest.ok, true);
+  assert.equal(newest.ok, true);
+  if (!oldest.ok || !newest.ok) return;
+  const newestSize = await directoryByteSize(newest.data.logPath);
+
+  await new FileTransactionManager({
+    baseDirectory: fixture.logDirectory,
+    now: () => new Date("2026-01-03T00:00:00.000Z"),
+    retentionMs: 365 * 24 * 60 * 60 * 1_000,
+    maxProjectBytes: newestSize
+  }).recover(fixture.projectDirectory);
+
+  await assert.rejects(
+    readFile(path.join(oldest.data.logPath, "journal.json")),
+    { code: "ENOENT" }
+  );
+  const newestJournal = JSON.parse(await readFile(
+    path.join(newest.data.logPath, "journal.json"),
+    "utf8"
+  )) as { state: string };
+  assert.equal(newestJournal.state, "committed");
 });

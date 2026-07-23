@@ -19,6 +19,8 @@ import {
 
 const JOURNAL_SCHEMA_VERSION = 1;
 const JOURNAL_FILE_NAME = "journal.json";
+const DEFAULT_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
+const DEFAULT_MAX_PROJECT_BYTES = 1024 * 1024 * 1024;
 const TERMINAL_STATES = new Set<TransactionState>([
   "committed",
   "rolled-back"
@@ -87,6 +89,8 @@ export interface FileTransactionManagerOptions {
   baseDirectory?: string;
   idFactory?: () => string;
   now?: () => Date;
+  retentionMs?: number;
+  maxProjectBytes?: number;
   faultInjector?: (
     point: TransactionFaultPoint,
     context: TransactionFaultContext
@@ -299,6 +303,31 @@ async function collectJournalFiles(directory: string): Promise<string[]> {
   return results;
 }
 
+async function directoryByteSize(directory: string): Promise<number> {
+  const children = await readdir(directory, { withFileTypes: true });
+  let total = 0;
+  for (const child of children) {
+    const childPath = path.join(directory, child.name);
+    if (child.isDirectory()) {
+      total += await directoryByteSize(childPath);
+    }
+    else {
+      total += (await lstat(childPath)).size;
+    }
+  }
+  return total;
+}
+
+function isStrictDescendant(root: string, target: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(target));
+  return (
+    relative !== ""
+    && relative !== ".."
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative)
+  );
+}
+
 function parseJournal(raw: string, journalPath: string): TransactionJournal {
   const value = JSON.parse(raw) as Partial<TransactionJournal>;
   if (
@@ -353,6 +382,8 @@ export class FileTransactionManager {
   readonly #baseDirectory: string;
   readonly #idFactory: () => string;
   readonly #now: () => Date;
+  readonly #retentionMs: number;
+  readonly #maxProjectBytes: number;
   readonly #faultInjector:
     | FileTransactionManagerOptions["faultInjector"]
     | undefined;
@@ -364,6 +395,21 @@ export class FileTransactionManager {
     );
     this.#idFactory = options.idFactory ?? (() => `tx_${randomUUID()}`);
     this.#now = options.now ?? (() => new Date());
+    this.#retentionMs = options.retentionMs ?? DEFAULT_RETENTION_MS;
+    this.#maxProjectBytes = options.maxProjectBytes
+      ?? DEFAULT_MAX_PROJECT_BYTES;
+    if (
+      !Number.isSafeInteger(this.#retentionMs)
+      || this.#retentionMs < 0
+    ) {
+      throw new RangeError("retentionMs 必须是非负安全整数");
+    }
+    if (
+      !Number.isSafeInteger(this.#maxProjectBytes)
+      || this.#maxProjectBytes < 0
+    ) {
+      throw new RangeError("maxProjectBytes 必须是非负安全整数");
+    }
     this.#faultInjector = options.faultInjector;
   }
 
@@ -493,6 +539,79 @@ export class FileTransactionManager {
           logPath
         });
       }
+    }
+    try {
+      await this.cleanupTerminalLogs(
+        projectLogRoot,
+        canonicalProjectDirectory,
+        this.#now()
+      );
+    }
+    catch {
+      // 日志清理是尽力而为；已完成的工程恢复不能因清理失败而回退。
+    }
+  }
+
+  private async cleanupTerminalLogs(
+    projectLogRoot: string,
+    projectDirectory: string,
+    now: Date
+  ): Promise<void> {
+    type TerminalLog = {
+      logPath: string;
+      completedAt: number;
+      size: number;
+    };
+    const terminalLogs: TerminalLog[] = [];
+    for (const journalPath of await collectJournalFiles(projectLogRoot)) {
+      const logPath = path.dirname(journalPath);
+      if (!isStrictDescendant(projectLogRoot, logPath)) continue;
+      let journal: TransactionJournal;
+      try {
+        journal = parseJournal(
+          await readFile(journalPath, "utf8"),
+          journalPath
+        );
+      }
+      catch {
+        continue;
+      }
+      if (
+        path.resolve(journal.projectDirectory) !== projectDirectory
+        || !TERMINAL_STATES.has(journal.state)
+        || journal.completedAt === undefined
+      ) {
+        continue;
+      }
+      const completedAt = Date.parse(journal.completedAt);
+      if (!Number.isFinite(completedAt)) continue;
+      terminalLogs.push({
+        logPath,
+        completedAt,
+        size: await directoryByteSize(logPath)
+      });
+    }
+
+    const remaining: TerminalLog[] = [];
+    for (const log of terminalLogs) {
+      if (now.getTime() - log.completedAt > this.#retentionMs) {
+        await rm(log.logPath, { recursive: true, force: true });
+      }
+      else {
+        remaining.push(log);
+      }
+    }
+
+    let projectBytes = await directoryByteSize(projectLogRoot);
+    if (projectBytes <= this.#maxProjectBytes) return;
+    remaining.sort((left, right) =>
+      left.completedAt - right.completedAt
+      || left.logPath.localeCompare(right.logPath)
+    );
+    for (const log of remaining) {
+      if (projectBytes <= this.#maxProjectBytes) break;
+      await rm(log.logPath, { recursive: true, force: true });
+      projectBytes -= log.size;
     }
   }
 

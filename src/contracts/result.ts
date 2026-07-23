@@ -5,6 +5,7 @@ export const ERROR_CODES = [
   "INVALID_PROJECT_PATH",
   "PROJECT_NOT_FOUND",
   "NOT_FAIRYGUI_PROJECT",
+  "PROJECT_RELOAD_FAILED",
   "SESSION_NOT_FOUND",
   "PACKAGE_NOT_FOUND",
   "RESOURCE_NOT_FOUND",
@@ -116,4 +117,3 @@ export function fail(
 export function isFailure<T>(result: ResultEnvelope<T>): result is ErrorEnvelope {
   return !result.ok;
 }
-

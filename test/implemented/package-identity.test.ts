@@ -18,6 +18,9 @@ const cliPath = fileURLToPath(new URL("../../src/cli.ts", import.meta.url));
 const benchmarkPath = fileURLToPath(
   new URL("../../scripts/performance-baseline.ts", import.meta.url)
 );
+const packSmokePath = fileURLToPath(
+  new URL("../../scripts/pack-smoke.ts", import.meta.url)
+);
 const sourceDirectory = fileURLToPath(new URL("../../src/", import.meta.url));
 const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
   name: string;
@@ -198,4 +201,23 @@ test("package exposes a non-gating FairyGUI-unity performance baseline", async (
   assert.match(benchmark, /p95/);
   assert.match(benchmark, /met/);
   assert.doesNotMatch(benchmark, /process\.exitCode\s*=\s*1/);
+});
+
+test("package exposes an isolated tarball installation smoke test", async () => {
+  assert.equal(
+    manifest.scripts["test:pack"],
+    "node --import tsx scripts/pack-smoke.ts"
+  );
+  const smoke = await readFile(packSmokePath, "utf8");
+  assert.match(smoke, /pnpm[\s\S]*pack/);
+  assert.match(smoke, /link-workspace-packages=false/);
+  assert.match(smoke, /StdioClientTransport/);
+  for (const packageName of [
+    "@magicskysword/openfairygui-core",
+    "@magicskysword/openfairygui-functions",
+    "@magicskysword/fairygui-dom",
+    "@magicskysword/fairygui-mcp-headless"
+  ]) {
+    assert.match(smoke, new RegExp(packageName.replaceAll("/", "\\/")));
+  }
 });

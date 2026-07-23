@@ -16,3 +16,4 @@ export * from "./query/query-service.js";
 export * from "./render/render-service.js";
 export * from "./server/fairygui-server.js";
 export * from "./validation/validation-service.js";
+export * from "./write/commit-coordinator.js";

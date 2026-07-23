@@ -92,7 +92,7 @@ test("DOM patch schema requires expected match counts and one mutation mode", ()
       },
       {
         op: "set-text",
-        selector: '[name="title"]',
+        targetRef: "new-title",
         expectedMatches: 1,
         text: "New title"
       },
@@ -122,6 +122,22 @@ test("DOM patch schema requires expected match counts and one mutation mode", ()
   }).success, false);
   assert.equal(ApplyDomPatchInputSchema.safeParse({
     ...operations,
+    operations: [{
+      op: "remove",
+      selector: "#n0",
+      targetRef: "new-title",
+      expectedMatches: 1
+    }]
+  }).success, false);
+  assert.equal(ApplyDomPatchInputSchema.safeParse({
+    ...operations,
+    operations: [{
+      op: "remove",
+      expectedMatches: 1
+    }]
+  }).success, false);
+  assert.equal(ApplyDomPatchInputSchema.safeParse({
+    ...operations,
     replace: {
       domain: "displayTree",
       value: []
@@ -146,7 +162,7 @@ test("replace mode permits one explicit content domain per call", () => {
     ...base,
     replace: {
       domain: "relations",
-      selector: "#n0",
+      targetRef: "new-node",
       expectedMatches: 1,
       value: []
     }
@@ -231,4 +247,3 @@ test("render and validation schemas apply deterministic defaults and limits", ()
     });
   }
 });
-

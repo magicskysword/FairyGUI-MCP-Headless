@@ -131,7 +131,8 @@ const nonEmptyStyleChanges = FairyDomStyleSchema.refine(
 );
 
 const patchTargetShape = {
-  selector,
+  selector: selector.optional(),
+  targetRef: clientRef.optional(),
   expectedMatches
 } as const;
 
@@ -191,6 +192,33 @@ export const DomPatchOperationSchema = z.discriminatedUnion("op", [
 ]);
 export type DomPatchOperation = z.infer<typeof DomPatchOperationSchema>;
 
+function validatePatchTarget(
+  value: {
+    selector?: string | undefined;
+    targetRef?: string | undefined;
+    expectedMatches: number;
+  },
+  context: z.RefinementCtx,
+  path: Array<string | number> = []
+): void {
+  const targetCount = Number(value.selector !== undefined)
+    + Number(value.targetRef !== undefined);
+  if (targetCount !== 1) {
+    context.addIssue({
+      code: "custom",
+      path,
+      message: "写目标必须且只能指定 selector 或 targetRef"
+    });
+  }
+  if (value.targetRef !== undefined && value.expectedMatches !== 1) {
+    context.addIssue({
+      code: "custom",
+      path: [...path, "expectedMatches"],
+      message: "targetRef 精确指向一个同批新节点，expectedMatches 必须为 1"
+    });
+  }
+}
+
 const rootPropertiesSchema = FairyDomComponentRootSchema.pick({
   style: true,
   content: true
@@ -207,14 +235,12 @@ export const DomContentReplacementSchema = z.discriminatedUnion("domain", [
   }).strict(),
   z.object({
     domain: z.literal("relations"),
-    selector,
-    expectedMatches,
+    ...patchTargetShape,
     value: z.array(FairyDomRelationSchema)
   }).strict(),
   z.object({
     domain: z.literal("listItems"),
-    selector,
-    expectedMatches,
+    ...patchTargetShape,
     value: z.array(FairyDomListItemSchema)
   }).strict(),
   z.object({
@@ -242,11 +268,24 @@ export const ApplyDomPatchInputSchema = z.union([
   z.object({
     ...domPatchBaseShape,
     operations: z.array(DomPatchOperationSchema).min(1).max(200)
-  }).strict(),
+  }).strict().superRefine((value, context) => {
+    value.operations.forEach((operation, index) => {
+      if (operation.op !== "insert") {
+        validatePatchTarget(operation, context, ["operations", index]);
+      }
+    });
+  }),
   z.object({
     ...domPatchBaseShape,
     replace: DomContentReplacementSchema
-  }).strict()
+  }).strict().superRefine((value, context) => {
+    if (
+      value.replace.domain === "relations"
+      || value.replace.domain === "listItems"
+    ) {
+      validatePatchTarget(value.replace, context, ["replace"]);
+    }
+  })
 ]);
 export type ApplyDomPatchInput = z.infer<typeof ApplyDomPatchInputSchema>;
 
@@ -377,4 +416,3 @@ export const TOOL_INPUT_SCHEMAS = {
   "fairygui.render_component": RenderComponentInputSchema,
   "fairygui.validate": ValidateInputSchema
 } as const;
-

@@ -11,6 +11,7 @@ export * from "./contracts/render.js";
 export * from "./contracts/validation.js";
 export * from "./dom/selector.js";
 export * from "./dom/openfairygui-adapter.js";
+export * from "./dom/dom-patch-engine.js";
 export * from "./project/project-registry.js";
 export * from "./query/query-service.js";
 export * from "./render/render-service.js";

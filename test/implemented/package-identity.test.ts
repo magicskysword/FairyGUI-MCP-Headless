@@ -15,6 +15,9 @@ const skillPath = fileURLToPath(
   new URL("../../skills/fairygui-headless/SKILL.md", import.meta.url)
 );
 const cliPath = fileURLToPath(new URL("../../src/cli.ts", import.meta.url));
+const benchmarkPath = fileURLToPath(
+  new URL("../../scripts/performance-baseline.ts", import.meta.url)
+);
 const sourceDirectory = fileURLToPath(new URL("../../src/", import.meta.url));
 const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
   name: string;
@@ -23,6 +26,7 @@ const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
   engines: Record<string, string>;
   dependencies: Record<string, string>;
   files: string[];
+  scripts: Record<string, string>;
 };
 
 async function sourceFiles(directory: string): Promise<string[]> {
@@ -174,4 +178,24 @@ test("source and runtime dependencies avoid Windows-only assumptions", async () 
       `${logicalPath} joins a hard-coded backslash path`
     );
   }
+});
+
+test("package exposes a non-gating FairyGUI-unity performance baseline", async () => {
+  assert.equal(
+    manifest.scripts["benchmark:corpus"],
+    "node --import tsx scripts/performance-baseline.ts"
+  );
+  const benchmark = await readFile(benchmarkPath, "utf8");
+  for (const metric of [
+    "coldOpen",
+    "componentQuery",
+    "domPatch",
+    "hotRender",
+    "browserRecoveryRender"
+  ]) {
+    assert.match(benchmark, new RegExp(metric));
+  }
+  assert.match(benchmark, /p95/);
+  assert.match(benchmark, /met/);
+  assert.doesNotMatch(benchmark, /process\.exitCode\s*=\s*1/);
 });

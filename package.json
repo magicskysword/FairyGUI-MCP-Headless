@@ -34,7 +34,8 @@
     "test:implemented": "node --import tsx --test \"test/implemented/**/*.test.ts\"",
     "test:future": "node --import tsx --test \"test/future/**/*.test.ts\"",
     "test:all": "pnpm test:implemented && pnpm test:future",
-    "test:corpus": "node --import tsx test/corpus/fairygui-unity.smoke.ts"
+    "test:corpus": "node --import tsx test/corpus/fairygui-unity.smoke.ts",
+    "benchmark:corpus": "node --import tsx scripts/performance-baseline.ts"
   },
   "dependencies": {
     "@magicskysword/fairygui-dom": "^1.1.0",

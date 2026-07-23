@@ -420,3 +420,464 @@ test("a semantic DOM mismatch fails before any source file is written", async ()
     await context.registry.closeAll();
   }
 });
+
+test("every V1 writable node, style, Group, Relation and List survives disk round-trip", async () => {
+  const context = await setup("v1-matrix");
+  try {
+    const common = {
+      op: "insert" as const,
+      parentSelector: "component-root",
+      expectedMatches: 1 as const
+    };
+    const result = await context.service.apply(patch(context.projectId, [
+      {
+        ...common,
+        clientRef: "layout",
+        node: {
+          type: "group",
+          name: "layout",
+          style: {
+            left: 2,
+            top: 3,
+            width: 250,
+            height: 80,
+            opacity: 0.8,
+            rotation: 2,
+            visible: false,
+            touchable: false,
+            grayed: true
+          },
+          relations: [],
+          content: {
+            layout: "horizontal",
+            lineGap: 4,
+            columnGap: 5,
+            excludeInvisibles: true,
+            autoSizeDisabled: true,
+            mainGridIndex: 1
+          }
+        }
+      },
+      {
+        ...common,
+        clientRef: "image",
+        node: {
+          type: "image",
+          name: "image",
+          groupId: "layout",
+          style: {
+            left: 10,
+            top: 11,
+            width: 40,
+            height: 41,
+            opacity: 0.7,
+            rotation: 12,
+            scaleX: 1.2,
+            scaleY: 0.8,
+            skewX: 3,
+            skewY: 4,
+            pivotX: 0.5,
+            pivotY: 0.25,
+            pivotAsAnchor: true,
+            visible: false,
+            touchable: false,
+            grayed: true
+          },
+          relations: [{
+            targetId: "layout",
+            type: "Left_Left",
+            percent: false
+          }],
+          content: {
+            flip: "both",
+            fillMethod: "radial-360",
+            fillAmount: 0.5,
+            color: "#aabbcc"
+          }
+        }
+      },
+      {
+        ...common,
+        clientRef: "text",
+        node: {
+          type: "text",
+          name: "text",
+          groupId: "layout",
+          style: {
+            left: 20,
+            top: 21,
+            width: 120,
+            height: 24,
+            minWidth: 40,
+            maxWidth: 180,
+            minHeight: 12,
+            maxHeight: 48,
+            opacity: 0.6,
+            rotation: 6,
+            visible: false,
+            touchable: false,
+            grayed: true
+          },
+          relations: [{
+            targetId: "layout",
+            type: "Width",
+            percent: true
+          }],
+          content: {
+            text: "Plain",
+            fontSize: 18,
+            color: "#112233",
+            align: "center",
+            verticalAlign: "middle",
+            autoSize: "none",
+            singleLine: true,
+            bold: true,
+            italic: true,
+            underline: true,
+            strikethrough: true,
+            lineSpacing: 6,
+            letterSpacing: 2
+          }
+        }
+      },
+      {
+        ...common,
+        clientRef: "rich",
+        node: {
+          type: "rich-text",
+          name: "rich",
+          style: {
+            left: 30,
+            top: 31,
+            width: 130,
+            height: 25,
+            opacity: 0.55,
+            rotation: 7,
+            visible: false,
+            touchable: false,
+            grayed: true
+          },
+          relations: [],
+          content: {
+            text: "[b]Rich[/b]",
+            ubb: true,
+            bold: true
+          }
+        }
+      },
+      {
+        ...common,
+        clientRef: "input",
+        node: {
+          type: "input-text",
+          name: "input",
+          style: {
+            left: 40,
+            top: 41,
+            width: 140,
+            height: 26,
+            opacity: 0.5,
+            rotation: 8,
+            visible: false,
+            touchable: false,
+            grayed: true
+          },
+          relations: [],
+          content: {
+            text: "",
+            prompt: "Type",
+            restrict: "A-Z",
+            maxLength: 20,
+            password: true,
+            keyboardType: "email"
+          }
+        }
+      },
+      {
+        ...common,
+        clientRef: "loader",
+        node: {
+          type: "loader",
+          name: "loader",
+          style: {
+            left: 50,
+            top: 51,
+            width: 50,
+            height: 51,
+            opacity: 0.45,
+            rotation: 9,
+            scaleX: 1.1,
+            scaleY: 1.2,
+            pivotX: 0.2,
+            pivotY: 0.3,
+            visible: false,
+            touchable: false,
+            grayed: true
+          },
+          relations: [],
+          content: {
+            externalUrl: "asset://preview.png",
+            fill: "scale-free",
+            align: "right",
+            verticalAlign: "bottom",
+            autoSize: true,
+            playing: false,
+            frame: 2
+          }
+        }
+      },
+      {
+        ...common,
+        clientRef: "graph",
+        node: {
+          type: "graph",
+          name: "graph",
+          style: {
+            left: 60,
+            top: 61,
+            width: 60,
+            height: 61,
+            minWidth: 20,
+            maxWidth: 90,
+            minHeight: 21,
+            maxHeight: 91,
+            opacity: 0.4,
+            rotation: 10,
+            skewX: 5,
+            skewY: 6,
+            pivotX: 0.4,
+            pivotY: 0.6,
+            pivotAsAnchor: true,
+            visible: false,
+            touchable: false,
+            grayed: true
+          },
+          relations: [],
+          content: {
+            shape: "polygon",
+            fillColor: "#123456",
+            lineColor: "#654321",
+            lineSize: 2,
+            points: [
+              { x: 0, y: 0 },
+              { x: 10, y: 10 },
+              { x: 20, y: 0 }
+            ]
+          }
+        }
+      },
+      {
+        ...common,
+        clientRef: "movie",
+        node: {
+          type: "movie-clip",
+          name: "movie",
+          style: {
+            left: 70,
+            top: 71,
+            width: 70,
+            height: 71,
+            opacity: 0.35,
+            rotation: 11,
+            pivotX: 0.3,
+            pivotY: 0.7,
+            visible: false,
+            touchable: false,
+            grayed: true
+          },
+          relations: [],
+          content: {
+            playing: false,
+            frame: 3,
+            color: "#abcdef"
+          }
+        }
+      },
+      {
+        ...common,
+        clientRef: "list",
+        node: {
+          type: "list",
+          name: "list",
+          style: {
+            left: 80,
+            top: 81,
+            width: 160,
+            height: 90,
+            opacity: 0.3,
+            rotation: 13,
+            visible: false,
+            touchable: false,
+            grayed: true
+          },
+          relations: [],
+          content: {
+            layout: "flow-horizontal",
+            defaultItem: {
+              packageId: "pkg00001",
+              resourceId: "cmp01"
+            },
+            lineGap: 3,
+            columnGap: 4,
+            lineCount: 2,
+            columnCount: 3,
+            autoResizeItem: false,
+            align: "center",
+            verticalAlign: "middle",
+            items: [{
+              name: "first",
+              title: "First",
+              selectedTitle: "Selected",
+              resource: {
+                packageId: "pkg00001",
+                resourceId: "cmp01"
+              }
+            }]
+          }
+        }
+      },
+      {
+        ...common,
+        clientRef: "instance",
+        node: {
+          type: "instance",
+          name: "instance",
+          style: {
+            left: 90,
+            top: 91,
+            width: 100,
+            height: 40,
+            minWidth: 50,
+            maxWidth: 150,
+            minHeight: 20,
+            maxHeight: 60,
+            opacity: 0.25,
+            rotation: 14,
+            scaleX: 0.9,
+            scaleY: 1.1,
+            pivotX: 0.5,
+            pivotY: 0.5,
+            pivotAsAnchor: true,
+            visible: false,
+            touchable: false,
+            grayed: true
+          },
+          relations: [],
+          content: {
+            resource: {
+              packageId: "pkg00001",
+              resourceId: "cmp01"
+            }
+          }
+        }
+      }
+    ]));
+
+    if (!result.ok) {
+      assert.fail(`${result.error.code} at ${result.error.path}: ${
+        result.error.message
+      } ${
+        JSON.stringify(result.error.actual)
+      }`);
+    }
+    assert.equal(result.ok, true);
+    assert.equal(result.data.appliedOperations, 10);
+    assert.deepEqual(
+      result.data.dom.root.children.slice(-10).map((node) => node.type),
+      [
+        "group",
+        "image",
+        "text",
+        "rich-text",
+        "input-text",
+        "loader",
+        "graph",
+        "movie-clip",
+        "list",
+        "instance"
+      ]
+    );
+    const image = result.data.dom.root.children.find(
+      (node) => node.name === "image"
+    );
+    assert.equal(image?.style.skewX, 3);
+    assert.equal(image?.style.touchable, false);
+    assert.equal(image?.groupId, result.data.clientRefs.layout);
+    assert.deepEqual(image?.relations, [{
+      targetId: result.data.clientRefs.layout,
+      type: "Left_Left",
+      percent: false
+    }]);
+    const list = result.data.dom.root.children.find(
+      (node) => node.type === "list" && node.name === "list"
+    );
+    assert.equal(list?.type === "list" && list.content.lineCount, 2);
+    assert.equal(list?.type === "list" && list.content.columnCount, 3);
+    assert.equal(list?.type === "list" && list.content.items[0]?.title, "First");
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("component property replacement survives disk round-trip without losing opaque root data", async () => {
+  const context = await setup("component-properties");
+  try {
+    const result = await context.service.apply(
+      ApplyDomPatchInputSchema.parse({
+        projectId: context.projectId,
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        replace: {
+          domain: "componentProperties",
+          value: {
+            style: {
+              width: 640,
+              height: 360,
+              minWidth: 100,
+              maxWidth: 800,
+              minHeight: 80,
+              maxHeight: 500,
+              pivotX: 0.5,
+              pivotY: 0.5,
+              pivotAsAnchor: true
+            },
+            content: {
+              overflow: "scroll",
+              scrollAxis: "both",
+              opaque: false,
+              backgroundColor: "#112233",
+              maskId: "n0",
+              reversedMask: true
+            }
+          }
+        }
+      })
+    );
+
+    if (!result.ok) {
+      assert.fail(`${result.error.code} at ${result.error.path}: ${
+        result.error.message
+      } ${JSON.stringify(result.error.actual)}`);
+    }
+    assert.equal(result.data.dom.root.style.width, 640);
+    assert.equal(result.data.dom.root.style.maxHeight, 500);
+    assert.deepEqual(result.data.dom.root.content, {
+      overflow: "scroll",
+      scrollAxis: "both",
+      opaque: false,
+      backgroundColor: "#112233",
+      maskId: "n0",
+      reversedMask: true
+    });
+    const output = await readFile(context.project.componentFile, "utf8");
+    assert.match(output, /vendorRoot="keep"/);
+    assert.match(output, /size="640,360"/);
+    assert.match(output, /restrictSize="100,800,80,500"/);
+    assert.match(output, /mask="n0"/);
+    assert.match(output, /reversedMask="1"/);
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});

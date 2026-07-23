@@ -529,3 +529,235 @@ test("an operation cannot target a clientRef before its insert executes", () => 
     assert.equal(result.error.path, "operations[0].targetRef");
   }
 });
+
+test("replace displayTree preserves supplied stable ids, order and references", () => {
+  const { document, main } = fixture();
+  const input = parsePatch({
+    replace: {
+      domain: "displayTree",
+      value: [
+        {
+          id: "legacy-title",
+          type: "text",
+          name: "title",
+          groupId: "layout-group",
+          style: { left: 8, top: 9 },
+          relations: [{
+            targetId: "layout-group",
+            type: "Left_Left",
+            percent: false
+          }],
+          content: { text: "Replacement" }
+        },
+        {
+          id: "layout-group",
+          type: "group",
+          name: "layout",
+          style: {},
+          relations: [],
+          content: { layout: "vertical", lineGap: 5 }
+        }
+      ]
+    }
+  });
+
+  const data = successData(new DomPatchEngine().apply(document, input));
+
+  assert.equal(data.appliedOperations, 1);
+  assert.deepEqual(data.clientRefs, {});
+  assert.deepEqual(
+    main.listChildren().map((child) => child.getId()),
+    ["legacy-title", "layout-group"]
+  );
+  assert.equal(data.dom.root.children[0]?.groupId, "layout-group");
+  assert.deepEqual(data.dom.root.children[0]?.relations, [{
+    targetId: "layout-group",
+    type: "Left_Left",
+    percent: false
+  }]);
+});
+
+test("replace componentProperties, relations and listItems update one complete domain", () => {
+  {
+    const { document, main } = fixture();
+    const data = successData(new DomPatchEngine().apply(document, parsePatch({
+      replace: {
+        domain: "componentProperties",
+        value: {
+          style: {
+            width: 640,
+            height: 360,
+            minWidth: 100,
+            pivotX: 0.5,
+            pivotY: 0.5,
+            pivotAsAnchor: true
+          },
+          content: {
+            overflow: "scroll",
+            scrollAxis: "both",
+            opaque: false,
+            backgroundColor: "#112233",
+            maskId: "n3",
+            reversedMask: true
+          }
+        }
+      }
+    })));
+    assert.equal(data.dom.root.style.width, 640);
+    assert.equal(data.dom.root.style.height, 360);
+    assert.equal(main.getMinWidth(), 100);
+    assert.equal(main.getPivotX(), 0.5);
+    assert.equal(main.getPivotAsAnchor(), true);
+    assert.deepEqual(data.dom.root.content, {
+      overflow: "scroll",
+      scrollAxis: "both",
+      opaque: false,
+      backgroundColor: "#112233",
+      maskId: "n3",
+      reversedMask: true
+    });
+  }
+
+  {
+    const { document } = fixture();
+    const data = successData(new DomPatchEngine().apply(document, parsePatch({
+      replace: {
+        domain: "relations",
+        selector: "#n3",
+        expectedMatches: 1,
+        value: [{
+          targetId: COMPONENT_ID,
+          type: "Width",
+          percent: true
+        }]
+      }
+    })));
+    assert.deepEqual(
+      data.dom.root.children.find((node) => node.id === "n3")?.relations,
+      [{ targetId: COMPONENT_ID, type: "Width", percent: true }]
+    );
+  }
+
+  {
+    const { document } = fixture();
+    const data = successData(new DomPatchEngine().apply(document, parsePatch({
+      replace: {
+        domain: "listItems",
+        selector: "#n7",
+        expectedMatches: 1,
+        value: [{ title: "A" }, { title: "B" }, { title: "C" }]
+      }
+    })));
+    const list = data.dom.root.children.find((node) => node.id === "n7");
+    assert.equal(list?.type === "list" && list.content.items.length, 3);
+  }
+});
+
+test("planned replacement domains return their declared read-only capabilities", () => {
+  for (const domain of ["gears", "controllers", "transitions"] as const) {
+    const { document } = fixture();
+    const result = new DomPatchEngine().apply(document, parsePatch({
+      replace: { domain, value: [] }
+    }));
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.code, "READ_ONLY_CAPABILITY");
+      assert.equal(result.error.path, "replace.domain");
+    }
+  }
+});
+
+test("opaque content conflicts reject unsafe domain replacement before mutation", () => {
+  const opaqueXml = `<component size="320,180">
+  <displayList vendorDisplay="keep">
+    <text id="n3" name="title" text="Before">
+      <relation target="" sidePair="left-left" vendorRelation="keep"/>
+    </text>
+    <list id="n7"><item title="Before" vendorItem="keep"/></list>
+    <vendorWidget value="keep"/>
+  </displayList>
+</component>`;
+
+  for (const replace of [
+    {
+      domain: "displayTree" as const,
+      value: []
+    },
+    {
+      domain: "relations" as const,
+      selector: "#n3",
+      expectedMatches: 1,
+      value: []
+    },
+    {
+      domain: "listItems" as const,
+      selector: "#n7",
+      expectedMatches: 1,
+      value: []
+    }
+  ]) {
+    const { document, main } = fixture();
+    main.setExtras({
+      ...main.getExtras(),
+      _sourceComponentXml: opaqueXml
+    });
+    const beforeIds = main.listChildren().map((child) => child.getId());
+
+    const result = new DomPatchEngine().apply(document, parsePatch({ replace }));
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.code, "OPAQUE_CONTENT_CONFLICT");
+      assert.equal(result.error.path, `replace.${replace.domain}`);
+    }
+    assert.deepEqual(
+      main.listChildren().map((child) => child.getId()),
+      beforeIds
+    );
+  }
+});
+
+test("displayTree replacement rejects duplicate ids and planned node types", () => {
+  const textNode = {
+    id: "duplicate",
+    type: "text" as const,
+    name: "text",
+    style: {},
+    relations: [],
+    content: { text: "" }
+  };
+  {
+    const { document } = fixture();
+    const result = new DomPatchEngine().apply(document, parsePatch({
+      replace: {
+        domain: "displayTree",
+        value: [textNode, { ...textNode, name: "other" }]
+      }
+    }));
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "INVALID_DOM");
+  }
+  {
+    const { document } = fixture();
+    const result = new DomPatchEngine().apply(document, parsePatch({
+      replace: {
+        domain: "displayTree",
+        value: [{
+          id: "tree",
+          type: "tree",
+          name: "tree",
+          readOnly: true,
+          capability: "node.tree",
+          style: {},
+          relations: [],
+          content: {
+            layout: "single-column",
+            items: []
+          }
+        }]
+      }
+    }));
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "READ_ONLY_CAPABILITY");
+  }
+});

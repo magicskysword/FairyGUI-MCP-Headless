@@ -7,6 +7,7 @@ import {
   generateChildId,
   GraphType,
   GroupLayoutType,
+  inspectOpaqueProjectXml,
   ListLayoutType,
   LoaderFillType,
   OverflowType,
@@ -23,6 +24,7 @@ import {
   type FairyDomDocument,
   type FairyDomListItem,
   type FairyDomNewNode,
+  type FairyDomNode,
   type FairyDomRelation,
   type FairyDomResourceReference,
   type FairyDomStyle
@@ -36,6 +38,7 @@ import {
 } from "../contracts/result.js";
 import type {
   ApplyDomPatchInput,
+  DomContentReplacement,
   DomPatchOperation
 } from "../contracts/tools.js";
 import {
@@ -72,6 +75,8 @@ interface EngineContext {
   component: Component;
   clientRefs: Record<string, string>;
   clientRefTypes: Map<string, FairyDomNewNode["type"]>;
+  reservedNodeTypes: Map<string, FairyDomNewNode["type"]>;
+  replacementScope: boolean;
 }
 
 export interface DomPatchEngineData {
@@ -261,11 +266,11 @@ function resolveReferenceId(
   path: string
 ): string {
   const resolved = context.clientRefs[value] ?? value;
-  if (
-    resolved !== context.componentId
-    && context.component.getChildById(resolved) === null
-    && !Object.values(context.clientRefs).includes(resolved)
-  ) {
+  const allowedInScope = context.replacementScope
+    ? context.reservedNodeTypes.has(resolved)
+    : context.component.getChildById(resolved) !== null
+      || context.reservedNodeTypes.has(resolved);
+  if (resolved !== context.componentId && !allowedInScope) {
     patchError("INVALID_PATCH", "DOM 引用指向不存在的组件节点", {
       path,
       actual: value,
@@ -614,13 +619,13 @@ function setNodeGroup(
   const existing = context.component.getChildById(resolved);
   const referencedClient = Object.entries(context.clientRefs)
     .find(([, id]) => id === resolved)?.[0];
-  const futureType = referencedClient === undefined
-    ? undefined
-    : context.clientRefTypes.get(referencedClient);
-  if (
-    existing?.propertyType !== PropertyType.G_GROUP
-    && futureType !== "group"
-  ) {
+  const futureType = context.reservedNodeTypes.get(resolved)
+    ?? (referencedClient === undefined
+      ? undefined
+      : context.clientRefTypes.get(referencedClient));
+  const isExistingGroup = !context.replacementScope
+    && existing?.propertyType === PropertyType.G_GROUP;
+  if (!isExistingGroup && futureType !== "group") {
     patchError("INVALID_PATCH", "groupId 必须引用同组件内的 Group 节点", {
       path,
       actual: groupId,
@@ -1434,6 +1439,327 @@ function executeOperation(
   }
 }
 
+type OpaqueFinding = ReturnType<typeof inspectOpaqueProjectXml>[number];
+
+function opaqueFindings(component: Component): OpaqueFinding[] {
+  const source = component.getExtras()._sourceComponentXml;
+  return typeof source === "string"
+    ? inspectOpaqueProjectXml("component", source)
+    : [];
+}
+
+function assertNoOpaqueDomainConflict(
+  component: Component,
+  domain: "displayTree" | "relations" | "listItems",
+  targetIds: readonly string[] = []
+): void {
+  const conflicts = opaqueFindings(component).filter((finding) => {
+    if (domain === "displayTree") {
+      return finding.path.startsWith("/component/displayList");
+    }
+    if (domain === "relations") {
+      return targetIds.some((id) =>
+        id === component.getId()
+          ? finding.path.startsWith("/component/relation")
+          : finding.path.includes(`#${id}/relation`)
+      );
+    }
+    return targetIds.some((id) => finding.path.includes(`#${id}/item`));
+  });
+  if (conflicts.length > 0) {
+    patchError(
+      "OPAQUE_CONTENT_CONFLICT",
+      `内容域 ${domain} 含有无法安全归属的未知 XML 结构`,
+      {
+        path: `replace.${domain}`,
+        actual: conflicts,
+        suggestedFix:
+          "改用增量 operations 保留未知结构，或先在 FairyGUI Editor 中移除冲突扩展"
+      }
+    );
+  }
+}
+
+function replacementNode(
+  node: FairyDomNode,
+  path: string
+): FairyDomNewNode {
+  if (node.type === "tree" || node.type === "loader3d") {
+    patchError(
+      "READ_ONLY_CAPABILITY",
+      `节点类型 ${node.type} 在 V1 中只读，不能参与整树替换`,
+      {
+        path,
+        actual: node.capability,
+        allowed: ["implemented/read-write"]
+      }
+    );
+  }
+  const { id: _id, ...value } = node;
+  return value;
+}
+
+function replacementContext(
+  document: Document,
+  packageId: string,
+  componentId: string,
+  component: Component,
+  nodes: readonly FairyDomNode[]
+): EngineContext {
+  return {
+    document,
+    packageId,
+    componentId,
+    component,
+    clientRefs: {},
+    clientRefTypes: new Map(),
+    reservedNodeTypes: new Map(
+      nodes
+        .filter((node) => node.type !== "tree" && node.type !== "loader3d")
+        .map((node) => [node.id, node.type] as const)
+    ),
+    replacementScope: true
+  };
+}
+
+function replaceDisplayTree(
+  context: EngineContext,
+  value: readonly FairyDomNode[]
+): void {
+  assertNoOpaqueDomainConflict(context.component, "displayTree");
+  const ids = value.map((node) => node.id);
+  if (new Set(ids).size !== ids.length) {
+    const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
+    patchError("INVALID_DOM", "displayTree 中的节点 ID 必须唯一", {
+      path: "replace.displayTree",
+      actual: duplicate
+    });
+  }
+
+  const next = value.map((node, index) =>
+    createNode(
+      context,
+      replacementNode(node, `replace.value[${index}]`),
+      node.id,
+      `replace.value[${index}]`
+    )
+  );
+  for (const child of context.component.listChildren()) {
+    context.component.removeChild(child);
+  }
+  for (const child of next) context.component.addChild(child);
+}
+
+function replaceComponentProperties(
+  context: EngineContext,
+  value: Extract<
+    DomContentReplacement,
+    { domain: "componentProperties" }
+  >["value"]
+): void {
+  applyStyleToRoot(context.component, value.style, "replace.value.style");
+  context.component
+    .setSize(value.style.width ?? 0, value.style.height ?? 0)
+    .setMinWidth(value.style.minWidth ?? 0)
+    .setMaxWidth(value.style.maxWidth ?? 0)
+    .setMinHeight(value.style.minHeight ?? 0)
+    .setMaxHeight(value.style.maxHeight ?? 0)
+    .setPivotX(value.style.pivotX ?? 0)
+    .setPivotY(value.style.pivotY ?? 0)
+    .setPivotAsAnchor(value.style.pivotAsAnchor ?? false);
+
+  const overflowValues = {
+    visible: OverflowType.Visible,
+    hidden: OverflowType.Hidden,
+    scroll: OverflowType.Scroll
+  };
+  if (
+    value.content.overflow !== "scroll"
+    && value.content.scrollAxis !== undefined
+  ) {
+    patchError(
+      "INVALID_DOM",
+      "scrollAxis 只能在 overflow 为 scroll 时设置",
+      {
+        path: "replace.value.content.scrollAxis",
+        actual: value.content.scrollAxis,
+        allowed: ["overflow: scroll"]
+      }
+    );
+  }
+  context.component.setOverflow(overflowValues[value.content.overflow]);
+  if (value.content.overflow === "scroll") {
+    const scrollValues = {
+      horizontal: ScrollType.Horizontal,
+      vertical: ScrollType.Vertical,
+      both: ScrollType.Both
+    };
+    context.component.setScrollType(
+      scrollValues[value.content.scrollAxis ?? "vertical"]
+    );
+  }
+  context.component.setOpaque(value.content.opaque ?? true);
+  context.component.setBgColor(value.content.backgroundColor ?? "");
+  context.component.setBgColorEnabled(
+    value.content.backgroundColor !== undefined
+  );
+  if (value.content.maskId !== undefined) {
+    const resolved = resolveReferenceId(
+      context,
+      value.content.maskId,
+      "replace.value.content.maskId"
+    );
+    if (resolved === context.componentId) {
+      patchError("INVALID_DOM", "组件根不能作为自身遮罩", {
+        path: "replace.value.content.maskId",
+        actual: resolved
+      });
+    }
+    context.component.setMask(resolved);
+  }
+  else {
+    context.component.setMask("");
+  }
+  if (
+    value.content.reversedMask === true
+    && value.content.maskId === undefined
+  ) {
+    patchError("INVALID_DOM", "reversedMask 需要同时指定 maskId", {
+      path: "replace.value.content.reversedMask",
+      actual: true
+    });
+  }
+  context.component.setReversedMask(value.content.reversedMask ?? false);
+}
+
+function targetIds(targets: readonly PatchTarget[]): string[] {
+  return targets.map((target) =>
+    target.kind === "root"
+      ? target.component.getId()
+      : target.object.getId()
+  );
+}
+
+function applyReplacement(
+  document: Document,
+  packageId: string,
+  componentId: string,
+  component: Component,
+  replace: DomContentReplacement
+): DomPatchEngineData {
+  if (
+    replace.domain === "gears"
+    || replace.domain === "controllers"
+    || replace.domain === "transitions"
+  ) {
+    const capability = replace.domain === "transitions"
+      ? "animation.transition"
+      : "layout.controller-gear";
+    patchError(
+      "READ_ONLY_CAPABILITY",
+      `内容域 ${replace.domain} 在 V1 中只读`,
+      {
+        path: "replace.domain",
+        actual: capability,
+        allowed: ["implemented/read-write"]
+      }
+    );
+  }
+
+  const context = replacementContext(
+    document,
+    packageId,
+    componentId,
+    component,
+    replace.domain === "displayTree" ? replace.value : []
+  );
+  switch (replace.domain) {
+    case "displayTree":
+      replaceDisplayTree(context, replace.value);
+      break;
+    case "componentProperties":
+      context.replacementScope = false;
+      replaceComponentProperties(context, replace.value);
+      break;
+    case "relations": {
+      context.replacementScope = false;
+      const targets = selectTargets(
+        context,
+        replace.selector,
+        replace.expectedMatches,
+        "replace.selector"
+      );
+      for (const target of targets) {
+        assertWritableTarget(target, "replace.selector");
+      }
+      assertNoOpaqueDomainConflict(
+        component,
+        "relations",
+        targetIds(targets)
+      );
+      for (const target of targets) {
+        setNodeRelations(
+          context,
+          target.kind === "root"
+            ? target.component as Component & Record<string, unknown>
+            : target.object as unknown as MutableObject,
+          replace.value,
+          "replace.value"
+        );
+      }
+      break;
+    }
+    case "listItems": {
+      context.replacementScope = false;
+      const targets = selectTargets(
+        context,
+        replace.selector,
+        replace.expectedMatches,
+        "replace.selector"
+      );
+      for (const target of targets) {
+        assertWritableTarget(target, "replace.selector");
+        if (
+          target.kind === "root"
+          || target.object.propertyType !== PropertyType.G_LIST
+        ) {
+          patchError(
+            "INVALID_PATCH",
+            "listItems 内容域只能替换静态 List 节点",
+            {
+              path: "replace.selector",
+              actual: target.kind === "root"
+                ? "component-root"
+                : target.object.propertyType,
+              allowed: ["list"]
+            }
+          );
+        }
+      }
+      assertNoOpaqueDomainConflict(
+        component,
+        "listItems",
+        targetIds(targets)
+      );
+      const items = listItemsFor(context, replace.value, "replace.value");
+      for (const target of targets) {
+        invoke(
+          (target as NodeTarget).object as unknown as MutableObject,
+          "setListItems",
+          [items],
+          "replace.value"
+        );
+      }
+      break;
+    }
+  }
+  return {
+    appliedOperations: 1,
+    clientRefs: {},
+    dom: toFairyDomDocument(document, packageId, componentId)
+  };
+}
+
 function findComponent(
   document: Document,
   packageId: string,
@@ -1488,29 +1814,36 @@ export class DomPatchEngine {
     input: ApplyDomPatchInput
   ): ResultEnvelope<DomPatchEngineData> {
     try {
-      if (!("operations" in input)) {
-        return fail(
-          "CAPABILITY_NOT_IMPLEMENTED",
-          `内容域替换 ${input.replace.domain} 尚未进入当前实现步骤`,
-          {
-            path: "replace.domain",
-            actual: input.replace.domain,
-            suggestedFix: "当前先使用 operations 执行等价的增量编辑"
-          }
-        );
-      }
       const component = findComponent(
         document,
         input.packageId,
         input.componentId
       );
+      if (!("operations" in input)) {
+        return ok(
+          applyReplacement(
+            document,
+            input.packageId,
+            input.componentId,
+            component,
+            input.replace
+          )
+        );
+      }
       const allocated = allocateClientRefs(component, input.operations);
       const context: EngineContext = {
         document,
         packageId: input.packageId,
         componentId: input.componentId,
         component,
-        ...allocated
+        ...allocated,
+        reservedNodeTypes: new Map(
+          Object.entries(allocated.clientRefs).map(([clientRef, id]) => [
+            id,
+            allocated.clientRefTypes.get(clientRef)!
+          ])
+        ),
+        replacementScope: false
       };
       input.operations.forEach((operation, index) => {
         executeOperation(context, operation, index);

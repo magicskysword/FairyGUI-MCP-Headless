@@ -739,3 +739,107 @@ test("failed package deletion restores XML and binary files", async () => {
     await context.registry.closeAll();
   }
 });
+
+test("same-project concurrent resource writes commit in submission order", async () => {
+  const context = await setup();
+  try {
+    const first = context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "rename-resource",
+          packageId: "pkg00001",
+          resourceId: "img01",
+          name: "First"
+        }]
+      })
+    );
+    const second = context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "rename-resource",
+          packageId: "pkg00001",
+          resourceId: "img01",
+          name: "Second"
+        }]
+      })
+    );
+    const results = await Promise.all([first, second]);
+
+    assert.equal(results.every((result) => result.ok), true);
+    assert.match(
+      await readFile(context.project.packageFile, "utf8"),
+      /id="img01" name="Second\.png"/
+    );
+    await assert.rejects(readFile(context.project.imageFile), {
+      code: "ENOENT"
+    });
+    await assert.rejects(
+      readFile(path.join(
+        context.project.directory,
+        "assets",
+        "Demo",
+        "icons",
+        "First.png"
+      )),
+      { code: "ENOENT" }
+    );
+    assert.deepEqual(
+      [...await readFile(path.join(
+        context.project.directory,
+        "assets",
+        "Demo",
+        "icons",
+        "Second.png"
+      ))],
+      [10, 20, 30]
+    );
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("queued resource write fails after an earlier deletion removes its target", async () => {
+  const context = await setup();
+  try {
+    const removing = context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "delete-resource",
+          packageId: "pkg00001",
+          resourceId: "img01",
+          mode: "force"
+        }]
+      })
+    );
+    const renaming = context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "rename-resource",
+          packageId: "pkg00001",
+          resourceId: "img01",
+          name: "TooLate"
+        }]
+      })
+    );
+    const [removed, failed] = await Promise.all([removing, renaming]);
+
+    assert.equal(removed.ok, true);
+    assert.equal(failed.ok, false);
+    if (!failed.ok) assert.equal(failed.error.code, "RESOURCE_NOT_FOUND");
+    assert.doesNotMatch(
+      await readFile(context.project.packageFile, "utf8"),
+      /id="img01"/
+    );
+    await assert.rejects(readFile(context.project.imageFile), {
+      code: "ENOENT"
+    });
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});

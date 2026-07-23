@@ -59,6 +59,26 @@ interface TransactionJournal {
   files: TransactionJournalFile[];
 }
 
+type TransactionDiagnosticOutcome =
+  | "pending"
+  | "committed"
+  | "rolled-back"
+  | "interrupted";
+
+interface TransactionDiagnosticEntry {
+  severity: "error";
+  code: string;
+  message: string;
+}
+
+interface TransactionDiagnosticSummary {
+  schemaVersion: typeof JOURNAL_SCHEMA_VERSION;
+  transactionId: string;
+  outcome: TransactionDiagnosticOutcome;
+  updatedAt: string;
+  diagnostics: TransactionDiagnosticEntry[];
+}
+
 export interface TransactionFileChange {
   relativePath: string;
   /** `null` atomically deletes an existing regular file. */
@@ -264,6 +284,61 @@ async function writeJournal(
   await rename(temporary, target);
 }
 
+async function readDiagnosticEntries(
+  logPath: string
+): Promise<TransactionDiagnosticEntry[]> {
+  try {
+    const value = JSON.parse(await readFile(
+      path.join(logPath, "diagnostics", "summary.json"),
+      "utf8"
+    )) as Partial<TransactionDiagnosticSummary>;
+    return Array.isArray(value.diagnostics)
+      ? value.diagnostics.filter((entry): entry is TransactionDiagnosticEntry =>
+          typeof entry === "object"
+          && entry !== null
+          && entry.severity === "error"
+          && typeof entry.code === "string"
+          && typeof entry.message === "string"
+        )
+      : [];
+  }
+  catch {
+    return [];
+  }
+}
+
+async function writeDiagnosticSummary(
+  logPath: string,
+  journal: TransactionJournal,
+  outcome: TransactionDiagnosticOutcome,
+  now: Date,
+  append: TransactionDiagnosticEntry[] = []
+): Promise<void> {
+  const directory = path.join(logPath, "diagnostics");
+  await mkdir(directory, { recursive: true });
+  const target = path.join(directory, "summary.json");
+  const temporary = path.join(
+    directory,
+    `.summary-${randomUUID()}.tmp`
+  );
+  const summary: TransactionDiagnosticSummary = {
+    schemaVersion: JOURNAL_SCHEMA_VERSION,
+    transactionId: journal.transactionId,
+    outcome,
+    updatedAt: now.toISOString(),
+    diagnostics: [
+      ...await readDiagnosticEntries(logPath),
+      ...append
+    ]
+  };
+  await writeDurableFile(
+    temporary,
+    Buffer.from(`${JSON.stringify(summary, null, 2)}\n`, "utf8"),
+    true
+  );
+  await rename(temporary, target);
+}
+
 async function fileHash(filePath: string): Promise<string | undefined> {
   const entry = await entryOrUndefined(filePath);
   if (!entry) return undefined;
@@ -450,6 +525,12 @@ export class FileTransactionManager {
       );
       await this.inject("after-prepare", journal, logPath);
       await this.commitPrepared(journal, logPath);
+      await writeDiagnosticSummary(
+        logPath,
+        journal,
+        "committed",
+        this.#now()
+      ).catch(() => undefined);
       return ok({
         transactionId,
         logPath,
@@ -458,6 +539,19 @@ export class FileTransactionManager {
     }
     catch (error) {
       if (error instanceof SimulatedTransactionCrash) {
+        if (journal !== undefined) {
+          await writeDiagnosticSummary(
+            logPath,
+            journal,
+            "interrupted",
+            this.#now(),
+            [{
+              severity: "error",
+              code: "TRANSACTION_INTERRUPTED",
+              message: error.message
+            }]
+          ).catch(() => undefined);
+        }
         return fail("TRANSACTION_FAILED", "事务被中断，等待启动恢复", {
           actual: error.message,
           transactionId,
@@ -468,8 +562,29 @@ export class FileTransactionManager {
 
       let rollbackError: unknown;
       if (journal !== undefined) {
+        journal.failure = error instanceof Error
+          ? error.message
+          : String(error);
+        await writeJournal(logPath, journal).catch(() => undefined);
+        await writeDiagnosticSummary(
+          logPath,
+          journal,
+          "pending",
+          this.#now(),
+          [{
+            severity: "error",
+            code: "TRANSACTION_COMMIT_FAILED",
+            message: journal.failure
+          }]
+        ).catch(() => undefined);
         try {
           await this.rollback(journal, logPath, false);
+          await writeDiagnosticSummary(
+            logPath,
+            journal,
+            "rolled-back",
+            this.#now()
+          ).catch(() => undefined);
         }
         catch (caught) {
           rollbackError = caught;
@@ -529,6 +644,12 @@ export class FileTransactionManager {
         }
         if (TERMINAL_STATES.has(journal.state)) continue;
         await this.rollback(journal, logPath, true);
+        await writeDiagnosticSummary(
+          logPath,
+          journal,
+          "rolled-back",
+          this.#now()
+        ).catch(() => undefined);
       }
       catch (error) {
         throw new TransactionRecoveryError("恢复未完成事务失败", {
@@ -699,7 +820,14 @@ export class FileTransactionManager {
 
     await mkdir(path.join(logPath, "before"), { recursive: true });
     await mkdir(path.join(logPath, "staged"), { recursive: true });
+    await mkdir(path.join(logPath, "diagnostics"), { recursive: true });
     await writeJournal(logPath, journal);
+    await writeDiagnosticSummary(
+      logPath,
+      journal,
+      "pending",
+      this.#now()
+    );
     for (let index = 0; index < normalized.length; index++) {
       const before = beforeContents[index];
       if (before !== undefined) {

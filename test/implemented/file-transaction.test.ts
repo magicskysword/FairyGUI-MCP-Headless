@@ -91,6 +91,19 @@ test("a file transaction commits all affected files and a terminal journal", asy
     await readFile(path.join(result.data.logPath, "journal.json"), "utf8")
   ) as { state: string };
   assert.equal(journal.state, "committed");
+  assert.deepEqual(
+    (await readdir(result.data.logPath)).sort(),
+    ["before", "diagnostics", "journal.json", "staged"]
+  );
+  const diagnostics = JSON.parse(await readFile(
+    path.join(result.data.logPath, "diagnostics", "summary.json"),
+    "utf8"
+  )) as {
+    outcome: string;
+    diagnostics: unknown[];
+  };
+  assert.equal(diagnostics.outcome, "committed");
+  assert.deepEqual(diagnostics.diagnostics, []);
 });
 
 test("an ordinary commit failure rolls every changed file back", async () => {
@@ -121,6 +134,19 @@ test("an ordinary commit failure rolls every changed file back", async () => {
     await readFile(path.join(result.error.logPath!, "journal.json"), "utf8")
   ) as { state: string };
   assert.equal(journal.state, "rolled-back");
+  const diagnostics = JSON.parse(await readFile(
+    path.join(result.error.logPath!, "diagnostics", "summary.json"),
+    "utf8"
+  )) as {
+    outcome: string;
+    diagnostics: Array<{ code: string; message: string }>;
+  };
+  assert.equal(diagnostics.outcome, "rolled-back");
+  assert.equal(diagnostics.diagnostics[0]?.code, "TRANSACTION_COMMIT_FAILED");
+  assert.match(
+    diagnostics.diagnostics[0]?.message ?? "",
+    /injected replacement failure/
+  );
 });
 
 test("startup recovery restores an interrupted multi-file transaction", async () => {
@@ -140,6 +166,20 @@ test("startup recovery restores an interrupted multi-file transaction", async ()
     { relativePath: "assets/second.xml", content: "second-after" }
   ]);
   assert.equal(interrupted.ok, false);
+  if (!interrupted.ok) {
+    const diagnostics = JSON.parse(await readFile(
+      path.join(interrupted.error.logPath!, "diagnostics", "summary.json"),
+      "utf8"
+    )) as {
+      outcome: string;
+      diagnostics: Array<{ code: string }>;
+    };
+    assert.equal(diagnostics.outcome, "interrupted");
+    assert.equal(
+      diagnostics.diagnostics[0]?.code,
+      "TRANSACTION_INTERRUPTED"
+    );
+  }
   assert.equal(await readFile(fixture.first, "utf8"), "first-after");
   assert.equal(await readFile(fixture.second, "utf8"), "second-before");
 

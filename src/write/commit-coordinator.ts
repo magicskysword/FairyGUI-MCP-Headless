@@ -26,4 +26,23 @@ export class ProjectCommitCoordinator {
       }
     }
   }
+
+  runPrepared<TPrepared, TResult>(
+    projectId: string,
+    prepare: () => Promise<TPrepared> | TPrepared,
+    commit: (prepared: TPrepared) => Promise<TResult> | TResult
+  ): Promise<TResult> {
+    const preparation = Promise.resolve()
+      .then(prepare)
+      .then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error })
+      );
+
+    return this.run(projectId, async () => {
+      const prepared = await preparation;
+      if (!prepared.ok) throw prepared.error;
+      return commit(prepared.value);
+    });
+  }
 }

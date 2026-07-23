@@ -61,6 +61,46 @@ test("different projects can prepare and commit concurrently", async () => {
   ]);
 });
 
+test("same-project preparations overlap while commits remain ordered", async () => {
+  const coordinator = new ProjectCommitCoordinator();
+  const preparing = new Set<string>();
+  const events: string[] = [];
+  let releasePreparations!: () => void;
+  const preparationGate = new Promise<void>((resolve) => {
+    releasePreparations = resolve;
+  });
+
+  const submit = (label: string) => coordinator.runPrepared(
+    "project-a",
+    async () => {
+      preparing.add(label);
+      events.push(`${label}:prepare`);
+      await preparationGate;
+      return `${label}:prepared`;
+    },
+    async (prepared) => {
+      events.push(`${label}:commit:${prepared}`);
+      return label;
+    }
+  );
+
+  const first = submit("first");
+  const second = submit("second");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.deepEqual([...preparing].sort(), ["first", "second"]);
+  assert.deepEqual(events, ["first:prepare", "second:prepare"]);
+
+  releasePreparations();
+  assert.deepEqual(await Promise.all([first, second]), ["first", "second"]);
+  assert.deepEqual(events, [
+    "first:prepare",
+    "second:prepare",
+    "first:commit:first:prepared",
+    "second:commit:second:prepared"
+  ]);
+});
+
 test("a failed commit does not poison the following project queue", async () => {
   const coordinator = new ProjectCommitCoordinator();
   const failed = coordinator.run("project-a", async () => {

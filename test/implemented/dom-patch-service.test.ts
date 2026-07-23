@@ -17,6 +17,7 @@ import {
 } from "../../src/dom/dom-patch-service.js";
 import { DomPatchEngine } from "../../src/dom/dom-patch-engine.js";
 import { ProjectRegistry } from "../../src/project/project-registry.js";
+import { ProjectCommitCoordinator } from "../../src/write/commit-coordinator.js";
 import { FileTransactionManager } from "../../src/write/file-transaction.js";
 
 const temporaryDirectories: string[] = [];
@@ -98,6 +99,7 @@ async function setup(label: string, options: {
   transactionManager?: FileTransactionManager;
   beforeCommit?: DomPatchServiceOptions["beforeCommit"];
   engine?: DomPatchEngine;
+  coordinator?: ProjectCommitCoordinator;
 } = {}) {
   const project = await createProject(label);
   const logDirectory = await mkdtemp(path.join(os.tmpdir(), "fgui-patch-log-"));
@@ -115,6 +117,9 @@ async function setup(label: string, options: {
     transactions,
     temporaryRoot: validationDirectory,
     ...(options.engine === undefined ? {} : { engine: options.engine }),
+    ...(options.coordinator === undefined
+      ? {}
+      : { coordinator: options.coordinator }),
     ...(options.beforeCommit === undefined
       ? {}
       : { beforeCommit: options.beforeCommit })
@@ -138,6 +143,42 @@ function patch(
     operations
   });
 }
+
+test("DOM patch preparation uses the concurrent preparation queue", async () => {
+  class TrackingCoordinator extends ProjectCommitCoordinator {
+    public preparedCalls = 0;
+
+    public override runPrepared<TPrepared, TResult>(
+      projectId: string,
+      prepare: () => Promise<TPrepared> | TPrepared,
+      commit: (prepared: TPrepared) => Promise<TResult> | TResult
+    ): Promise<TResult> {
+      this.preparedCalls++;
+      return super.runPrepared<TPrepared, TResult>(
+        projectId,
+        prepare,
+        commit
+      );
+    }
+  }
+
+  const coordinator = new TrackingCoordinator();
+  const context = await setup("prepared-queue", { coordinator });
+  try {
+    const result = await context.service.apply(patch(context.projectId, [{
+      op: "set-text",
+      selector: "#n0",
+      expectedMatches: 1,
+      text: "Prepared"
+    }]));
+
+    assert.equal(result.ok, true);
+    assert.equal(coordinator.preparedCalls, 1);
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
 
 test("DOM patch service writes one component atomically and preserves opaque XML", async () => {
   const context = await setup("write");

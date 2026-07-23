@@ -20,7 +20,10 @@ import {
   type ResultEnvelope
 } from "../contracts/result.js";
 import type { ApplyResourceOperationsInput } from "../contracts/tools.js";
-import type { ProjectRegistry } from "../project/project-registry.js";
+import type {
+  ProjectRegistry,
+  ProjectSummary
+} from "../project/project-registry.js";
 import { ProjectCommitCoordinator } from "../write/commit-coordinator.js";
 import {
   FileTransactionManager,
@@ -234,60 +237,45 @@ export class ResourceOperationsService {
   public apply(
     input: ApplyResourceOperationsInput
   ): Promise<ResultEnvelope<ResourceOperationsData>> {
-    return this.#coordinator.run(
+    const status = this.#projects.status(input.projectId);
+    if (!status.ok) return Promise.resolve(status);
+
+    return this.#coordinator.runPrepared(
       input.projectId,
-      () => this.applyQueued(input)
+      () => this.prepareAttempt(status.data, input),
+      (firstPreparation) => this.applyQueued(
+        status.data,
+        input,
+        firstPreparation
+      )
     );
   }
 
   private async applyQueued(
-    input: ApplyResourceOperationsInput
+    project: ProjectSummary,
+    input: ApplyResourceOperationsInput,
+    firstPreparation: ResultEnvelope<PreparedResourceOperations>
   ): Promise<ResultEnvelope<ResourceOperationsData>> {
-    const status = this.#projects.status(input.projectId);
-    if (!status.ok) return status;
-
     for (let attempt = 0; attempt < this.#maxFreshRetries; attempt++) {
-      const fresh = await this.#projects.read(input.projectId, () => true);
-      if (!fresh.ok) return fresh;
-
-      const importFiles = await this.loadImportFiles(
-        status.data.projectDirectory,
-        input
-      );
-      if (!importFiles.ok) return importFiles;
-
-      let prepared: ResultEnvelope<PreparedResourceOperations>;
-      try {
-        const document = await new NodeIO().readProject(
-          status.data.projectFile
-        );
-        prepared = await this.prepare(
-          document,
-          input,
-          status.data.projectDirectory,
-          importFiles.data
-        );
+      const prepared = attempt === 0
+        ? firstPreparation
+        : await this.prepareAttempt(project, input);
+      if (!prepared.ok) {
+        if (
+          prepared.error.code === "PROJECT_RELOAD_FAILED"
+          && attempt + 1 < this.#maxFreshRetries
+        ) {
+          continue;
+        }
+        return prepared;
       }
-      catch (error) {
-        if (attempt + 1 < this.#maxFreshRetries) continue;
-        return fail(
-          "PROJECT_RELOAD_FAILED",
-          "资源写入前无法取得稳定、可解析的最新工程模型",
-          {
-            path: status.data.projectFile,
-            actual: error instanceof Error ? error.message : String(error),
-            suggestedFix: "停止外部持续写入，修复工程文件后重试"
-          }
-        );
-      }
-      if (!prepared.ok) return prepared;
 
       let current: SourceFileState[];
       try {
         current = await Promise.all(
           prepared.data.sourceStates.map(async (source) => {
             const content = await fileContentOrUndefined(projectFilePath(
-              status.data.projectDirectory,
+              project.projectDirectory,
               source.relativePath
             ));
             return {
@@ -312,7 +300,7 @@ export class ResourceOperationsService {
       if (!unchanged) continue;
 
       const transaction = await this.#transactions.commit(
-        status.data.projectDirectory,
+        project.projectDirectory,
         [
           ...prepared.data.files.map((file) => ({
             relativePath: file.relativePath,
@@ -342,6 +330,41 @@ export class ResourceOperationsService {
         suggestedFix: "暂停 FairyGUI Editor 或其他写入进程后重试"
       }
     );
+  }
+
+  private async prepareAttempt(
+    project: ProjectSummary,
+    input: ApplyResourceOperationsInput
+  ): Promise<ResultEnvelope<PreparedResourceOperations>> {
+    const fresh = await this.#projects.read(input.projectId, () => true);
+    if (!fresh.ok) return fresh;
+
+    const importFiles = await this.loadImportFiles(
+      project.projectDirectory,
+      input
+    );
+    if (!importFiles.ok) return importFiles;
+
+    try {
+      const document = await new NodeIO().readProject(project.projectFile);
+      return await this.prepare(
+        document,
+        input,
+        project.projectDirectory,
+        importFiles.data
+      );
+    }
+    catch (error) {
+      return fail(
+        "PROJECT_RELOAD_FAILED",
+        "资源写入前无法取得稳定、可解析的最新工程模型",
+        {
+          path: project.projectFile,
+          actual: error instanceof Error ? error.message : String(error),
+          suggestedFix: "停止外部持续写入，修复工程文件后重试"
+        }
+      );
+    }
   }
 
   private async loadImportFiles(

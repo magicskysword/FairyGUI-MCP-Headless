@@ -12,6 +12,7 @@ import { afterEach, test } from "node:test";
 import { ApplyResourceOperationsInputSchema } from "../../src/contracts/tools.js";
 import { ProjectRegistry } from "../../src/project/project-registry.js";
 import { ResourceOperationsService } from "../../src/resources/resource-operations-service.js";
+import { ProjectCommitCoordinator } from "../../src/write/commit-coordinator.js";
 import { FileTransactionManager } from "../../src/write/file-transaction.js";
 
 const temporaryDirectories: string[] = [];
@@ -82,6 +83,7 @@ async function writeInboxFile(
 
 async function setup(options: {
   transactions?: FileTransactionManager;
+  coordinator?: ProjectCommitCoordinator;
 } = {}) {
   const project = await createProject();
   const logDirectory = await mkdtemp(path.join(os.tmpdir(), "fgui-resource-log-"));
@@ -100,7 +102,10 @@ async function setup(options: {
     projectId: opened.data.projectId,
     service: new ResourceOperationsService(registry, {
       transactions,
-      temporaryRoot: roundtripDirectory
+      temporaryRoot: roundtripDirectory,
+      ...(options.coordinator === undefined
+        ? {}
+        : { coordinator: options.coordinator })
     })
   };
 }
@@ -134,6 +139,43 @@ function createBatch(projectId: string) {
     ]
   });
 }
+
+test("resource preparation uses the concurrent preparation queue", async () => {
+  class TrackingCoordinator extends ProjectCommitCoordinator {
+    public preparedCalls = 0;
+
+    public override runPrepared<TPrepared, TResult>(
+      projectId: string,
+      prepare: () => Promise<TPrepared> | TPrepared,
+      commit: (prepared: TPrepared) => Promise<TResult> | TResult
+    ): Promise<TResult> {
+      this.preparedCalls++;
+      return super.runPrepared(projectId, prepare, commit);
+    }
+  }
+
+  const coordinator = new TrackingCoordinator();
+  const context = await setup({ coordinator });
+  try {
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "rename-resource",
+          packageId: "pkg00001",
+          resourceId: "img01",
+          name: "Prepared"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(coordinator.preparedCalls, 1);
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
 
 test("resource service atomically creates package and component files", async () => {
   const context = await setup();

@@ -20,7 +20,10 @@ import {
   type ResultEnvelope
 } from "../contracts/result.js";
 import type { ApplyDomPatchInput } from "../contracts/tools.js";
-import type { ProjectRegistry } from "../project/project-registry.js";
+import type {
+  ProjectRegistry,
+  ProjectSummary
+} from "../project/project-registry.js";
 import { ProjectCommitCoordinator } from "../write/commit-coordinator.js";
 import {
   FileTransactionManager,
@@ -197,48 +200,41 @@ export class DomPatchService {
   public apply(
     input: ApplyDomPatchInput
   ): Promise<ResultEnvelope<DomPatchData>> {
-    return this.#coordinator.run(
+    const status = this.#projects.status(input.projectId);
+    if (!status.ok) return Promise.resolve(status);
+
+    return this.#coordinator.runPrepared(
       input.projectId,
-      () => this.applyQueued(input)
+      () => this.prepareAttempt(status.data, input),
+      (firstPreparation) => this.applyQueued(
+        status.data,
+        input,
+        firstPreparation
+      )
     );
   }
 
   private async applyQueued(
-    input: ApplyDomPatchInput
+    project: ProjectSummary,
+    input: ApplyDomPatchInput,
+    firstPreparation: ResultEnvelope<PreparedPatch>
   ): Promise<ResultEnvelope<DomPatchData>> {
-    const status = this.#projects.status(input.projectId);
-    if (!status.ok) return status;
-
     for (let attempt = 0; attempt < this.#maxFreshRetries; attempt++) {
-      const fresh = await this.#projects.read(
-        input.projectId,
-        () => true
-      );
-      if (!fresh.ok) return fresh;
-
-      let prepared: ResultEnvelope<PreparedPatch>;
-      try {
-        const document = await new NodeIO().readProject(
-          status.data.projectFile
-        );
-        prepared = await this.prepare(document, input);
+      const prepared = attempt === 0
+        ? firstPreparation
+        : await this.prepareAttempt(project, input);
+      if (!prepared.ok) {
+        if (
+          prepared.error.code === "PROJECT_RELOAD_FAILED"
+          && attempt + 1 < this.#maxFreshRetries
+        ) {
+          continue;
+        }
+        return prepared;
       }
-      catch (error) {
-        if (attempt + 1 < this.#maxFreshRetries) continue;
-        return fail(
-          "PROJECT_RELOAD_FAILED",
-          "写入前无法取得稳定、可解析的最新工程模型",
-          {
-            path: status.data.projectFile,
-            actual: error instanceof Error ? error.message : String(error),
-            suggestedFix: "停止外部持续写入，修复工程 XML 后重试"
-          }
-        );
-      }
-      if (!prepared.ok) return prepared;
 
       const targetPath = projectFilePath(
-        status.data.projectDirectory,
+        project.projectDirectory,
         prepared.data.serialized.relativePath
       );
       let currentContent: string;
@@ -247,18 +243,22 @@ export class DomPatchService {
       }
       catch (error) {
         if (attempt + 1 < this.#maxFreshRetries) continue;
-        return fail("WRITE_FAILED", "读取待提交组件源文件失败", {
-          path: prepared.data.serialized.relativePath,
-          actual: error instanceof Error ? error.message : String(error)
-        });
+        return fail(
+          "WRITE_FAILED",
+          "读取待提交组件源文件失败",
+          {
+            path: prepared.data.serialized.relativePath,
+            actual: error instanceof Error ? error.message : String(error)
+          }
+        );
       }
       if (currentContent !== prepared.data.sourceContent) {
         continue;
       }
 
       await this.#beforeCommit?.(attempt, {
-        projectDirectory: status.data.projectDirectory,
-        projectFile: status.data.projectFile,
+        projectDirectory: project.projectDirectory,
+        projectFile: project.projectFile,
         relativePath: prepared.data.serialized.relativePath,
         sourceContent: prepared.data.sourceContent,
         stagedContent: prepared.data.serialized.content
@@ -275,7 +275,7 @@ export class DomPatchService {
       }
 
       const transaction = await this.#transactions.commit(
-        status.data.projectDirectory,
+        project.projectDirectory,
         [{
           relativePath: prepared.data.serialized.relativePath,
           content: prepared.data.serialized.content
@@ -289,11 +289,38 @@ export class DomPatchService {
       "WRITE_FAILED",
       "工程在补丁准备期间持续被外部修改，未覆盖较新的磁盘内容",
       {
-        path: status.data.projectFile,
+        path: project.projectFile,
         actual: { attempts: this.#maxFreshRetries },
         suggestedFix: "暂停 FairyGUI Editor 或其他写入进程后重试"
       }
     );
+  }
+
+  private async prepareAttempt(
+    project: ProjectSummary,
+    input: ApplyDomPatchInput
+  ): Promise<ResultEnvelope<PreparedPatch>> {
+    const fresh = await this.#projects.read(
+      input.projectId,
+      () => true
+    );
+    if (!fresh.ok) return fresh;
+
+    try {
+      const document = await new NodeIO().readProject(project.projectFile);
+      return await this.prepare(document, input);
+    }
+    catch (error) {
+      return fail(
+        "PROJECT_RELOAD_FAILED",
+        "写入前无法取得稳定、可解析的最新工程模型",
+        {
+          path: project.projectFile,
+          actual: error instanceof Error ? error.message : String(error),
+          suggestedFix: "停止外部持续写入，修复工程 XML 后重试"
+        }
+      );
+    }
   }
 
   private async prepare(

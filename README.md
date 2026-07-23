@@ -1,6 +1,138 @@
 # FairyGUI-MCP-Headless
 
-面向 AI Agent 的本地 FairyGUI 无头创作 MCP。项目使用强类型 DOM 中间模型编辑 FairyGUI 工程，并通过 FairyGUI-dom 与 Playwright Chromium 提供结构预览反馈。
+面向 AI Agent 的本地 FairyGUI 无头创作 MCP。它把 FairyGUI 工程映射为受限、
+强类型的 DOM 中间模型，让 Agent 复用 HTML/CSS 的树、选择器和样式知识完成批量
+查询、原子编辑、结构预览与校验，但不声称兼容浏览器 DOM 或完整 CSS。
 
-当前版本处于 V1 开发阶段，正式支持基线为 Windows、Node.js 24 和本地 stdio MCP。
+V1 使用 Node.js 24、TypeScript ESM、本地 stdio、FairyGUI-dom 和 Playwright
+Chromium。Windows 是唯一正式开发、测试和截图基线；源码不依赖 Windows-only
+包或业务逻辑，Linux/macOS 暂不提供主动适配、CI 或视觉基线。
 
+## 安装
+
+```sh
+pnpm add --global @magicskysword/fairygui-mcp-headless
+pnpm exec playwright install chromium
+```
+
+浏览器必须显式安装。服务不会静默下载 Chromium，也不会回退到 Edge、Tauri 或
+系统 WebView。缺少浏览器时，`fairygui.render_component` 返回
+`BROWSER_NOT_INSTALLED` 和安装命令。
+
+MCP 主机配置示例：
+
+```json
+{
+  "mcpServers": {
+    "fairygui": {
+      "command": "fairygui-mcp-headless"
+    }
+  }
+}
+```
+
+## 六个工具
+
+| 工具 | 用途 |
+|---|---|
+| `fairygui.project` | `open/list/status/close` 多工程会话与启动恢复 |
+| `fairygui.query` | 一次批量查询包、资源、组件、DOM、引用、能力和审计 |
+| `fairygui.apply_dom_patch` | 对一个现有组件执行原子 DOM 批处理或单域替换 |
+| `fairygui.apply_resource_operations` | 原子创建、导入、替换、重命名、移动和删除资源 |
+| `fairygui.render_component` | 返回内联 PNG、边界、诊断、版本和预览保真度 |
+| `fairygui.validate` | 执行 `quick/roundtrip/publish/full` 校验 |
+
+所有工具只返回两类顶层结果：
+
+```ts
+{ ok: true, data, warnings? }
+{ ok: false, error: {
+  code, message, path?, actual?, allowed?, suggestedFix?,
+  transactionId?, logPath?
+} }
+```
+
+非法调用同时设置 MCP `isError:true`。校验发现工程问题仍是合法执行，结果为
+`{ok:true,data:{valid:false,...}}`。批量查询的兄弟项可以部分成功；写批次绝不
+部分成功。
+
+## Agent 推荐闭环
+
+1. 用 `fairygui.project` 打开工程，保存返回的 `projectId`。
+2. 用一次 `fairygui.query` 批量取得组件、目标 DOM、资源引用与能力矩阵。
+3. 用一次 `fairygui.apply_dom_patch` 或
+   `fairygui.apply_resource_operations` 合并同一意图的修改。
+4. 写入成功后顺序调用 `fairygui.render_component` 查看 PNG。
+5. 根据视觉反馈继续批量调整，最后调用 `fairygui.validate`。
+
+包内同时发布 `skills/fairygui-headless/SKILL.md`，包含面向 Agent 的完整调用
+纪律。
+
+## DOM 与选择器边界
+
+- 公共样式使用 `left/top/width/height/opacity/rotation/scaleX/...`，JSON
+  数值不带 `px`；不支持 `calc()`、`vw/vh` 或 `x/y/alpha` 别名。
+- 选择器只支持类型、`#id`、`[name="..."]`、复合选择器、后代和 `>`。
+- 所有写目标必须声明 `expectedMatches`，匹配数不符立即失败。
+- 同一批新节点通过 `clientRef` 引用；服务端生成稳定兼容 ID。
+- 组件实例默认是边界节点；`resolvedPreview:true` 只提供只读来源投影。
+- Group 成员仍是兄弟节点并引用 `groupId`；List/Tree 项不是普通子节点。
+
+V1 可写 image、text、rich-text、input-text、loader、graph、movie-clip、group、
+静态 list、instance、组件根基础属性、25 种 Relations、组件滚动/溢出、五种
+静态 List 布局和横向/纵向 Group。Tree、虚拟 List、Controller/Gear 驱动布局、
+Transition、Loader3D、Spine/DragonBones 与自定义扩展保留为 planned/read-only。
+
+## 磁盘、事务与导入
+
+磁盘始终是唯一事实来源。读取、渲染和写入前都会刷新外部修改；没有草稿、
+Undo/Redo、revision、ifMatch、文件锁、历史或 Git 操作。同工程写入按提交顺序
+串行，查询与渲染可以并行。
+
+写入只完整序列化受影响的 `package.xml`、组件 XML 和资源文件。多文件事务使用
+同目录临时文件、journal、before、staged、diagnostics、回滚和启动恢复；
+日志默认位于系统临时目录，保留 7 天且每工程最多 1 GiB。
+
+导入文件必须先放到：
+
+```text
+<project>/.fairygui-mcp/import-inbox/
+```
+
+工具只接受该目录下的规范相对路径，拒绝绝对路径、`..`、符号链接、目录和
+非普通文件。成功事务消费源文件，失败保留。冲突策略为
+`reject|rename|replace`；删除策略为 `reject|cascade|force`。
+
+## 结构预览
+
+`fairygui.render_component` 使用常驻 Chromium，每次任务创建隔离
+BrowserContext，并通过 `http://fairygui.internal/` 路由拦截加载包内资源；
+所有外部网络请求被阻断。结果明确声明：
+
+```json
+{
+  "backend": "fairygui-dom",
+  "fidelity": "structural-preview"
+}
+```
+
+它适合结构与布局反馈，不是 Unity 像素真值。Windows 是固定截图基线平台。
+
+## 本地开发与验证
+
+MCP 的 `package.json` 只写普通 SemVer 依赖。工作区根部
+`pnpm-workspace.yaml` 在开发期自动链接 OpenFairyGUI 与 FairyGUI-dom fork，
+运行时不依赖兄弟目录。
+
+```sh
+pnpm install
+pnpm test:all
+pnpm test:corpus
+pnpm benchmark:corpus
+pnpm test:pack
+```
+
+`test:pack` 会分别打包三个 fork 和 MCP，在工作区外的全新临时项目中安装四个
+tarball，再通过已安装 CLI 完成 MCP 初始化。详细设计见
+[`docs/architecture.md`](docs/architecture.md)，软性能记录见
+[`docs/performance-baseline.md`](docs/performance-baseline.md)。

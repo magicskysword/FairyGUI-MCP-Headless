@@ -14,6 +14,10 @@ const manifestPath = fileURLToPath(new URL("../../package.json", import.meta.url
 const skillPath = fileURLToPath(
   new URL("../../skills/fairygui-headless/SKILL.md", import.meta.url)
 );
+const readmePath = fileURLToPath(new URL("../../README.md", import.meta.url));
+const architecturePath = fileURLToPath(
+  new URL("../../docs/architecture.md", import.meta.url)
+);
 const cliPath = fileURLToPath(new URL("../../src/cli.ts", import.meta.url));
 const benchmarkPath = fileURLToPath(
   new URL("../../scripts/performance-baseline.ts", import.meta.url)
@@ -93,6 +97,7 @@ test("package identity and executable contract remain stable", () => {
   assert.equal(manifest.bin[SERVER_NAME], "./dist/cli.js");
   assert.equal(manifest.engines.node, ">=24");
   assert.ok(manifest.files.includes("skills/"));
+  assert.ok(manifest.files.includes("docs/"));
 });
 
 test("runtime dependencies use registry semver instead of sibling paths", () => {
@@ -220,4 +225,34 @@ test("package exposes an isolated tarball installation smoke test", async () => 
   ]) {
     assert.match(smoke, new RegExp(packageName.replaceAll("/", "\\/")));
   }
+});
+
+test("shipped documentation explains installation, tools and V1 boundaries", async () => {
+  const [readme, architecture] = await Promise.all([
+    readFile(readmePath, "utf8"),
+    readFile(architecturePath, "utf8")
+  ]);
+  for (const content of [readme, architecture]) {
+    assert.match(content, /Node\.js 24/);
+    assert.match(content, /Windows/);
+    assert.match(content, /structural-preview/);
+    assert.match(content, /pnpm exec playwright install chromium/);
+    for (const toolName of [
+      "fairygui.project",
+      "fairygui.query",
+      "fairygui.apply_dom_patch",
+      "fairygui.apply_resource_operations",
+      "fairygui.render_component",
+      "fairygui.validate"
+    ]) {
+      assert.match(content, new RegExp(toolName.replace(".", "\\.")));
+    }
+  }
+  assert.match(architecture, /SemVer/);
+  assert.match(architecture, /pnpm-workspace\.yaml/);
+  assert.match(architecture, /pnpm pack/);
+  assert.match(architecture, /cascade-with-force-fallback/);
+  assert.match(architecture, /7 天/);
+  assert.match(architecture, /1 GiB/);
+  assert.match(readme, /BROWSER_NOT_INSTALLED/);
 });

@@ -202,6 +202,19 @@ test("stdio-facing DOM patch handler atomically writes and immediately re-querie
     assert.equal(opened.ok, true);
     const projectId = String(opened.data?.projectId);
 
+    const beforeRender = structured(await client.callTool({
+      name: "fairygui.render_component",
+      arguments: {
+        projectId,
+        packageId: "pkg00001",
+        componentId: "cmp01"
+      }
+    }));
+    assert.equal(beforeRender.ok, true);
+    const beforeImage = beforeRender.data?.image as {
+      data: string;
+    };
+
     const result = await client.callTool({
       name: "fairygui.apply_dom_patch",
       arguments: {
@@ -265,6 +278,29 @@ test("stdio-facing DOM patch handler atomically writes and immediately re-querie
       "Written through MCP"
     );
     assert.equal(queries.dom?.data.matches[0]?.style.opacity, 0.4);
+
+    const rendered = await client.callTool({
+      name: "fairygui.render_component",
+      arguments: {
+        projectId,
+        packageId: "pkg00001",
+        componentId: "cmp01"
+      }
+    });
+    assert.equal("isError" in rendered && rendered.isError, false);
+    const renderedEnvelope = structured(rendered);
+    assert.equal(renderedEnvelope.ok, true);
+    assert.equal(renderedEnvelope.data?.backend, "fairygui-dom");
+    const renderedImage = renderedEnvelope.data?.image as {
+      mediaType: string;
+      data: string;
+    };
+    assert.equal(renderedImage.mediaType, "image/png");
+    assert.notEqual(renderedImage.data, beforeImage.data);
+    const renderedContent = "content" in rendered
+      ? rendered.content as Array<{ type: string }>
+      : [];
+    assert.ok(renderedContent.some((item) => item.type === "image"));
   }
   finally {
     await client.close();

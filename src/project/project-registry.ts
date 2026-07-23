@@ -563,6 +563,25 @@ export class ProjectRegistry {
       return ok(session.summary(false));
     }
     catch (error) {
+      if (
+        error instanceof Error
+        && "code" in error
+        && error.code === "TRANSACTION_RECOVERY_FAILED"
+      ) {
+        return fail("TRANSACTION_RECOVERY_FAILED", error.message, {
+          ...("transactionId" in error
+            && typeof error.transactionId === "string"
+            ? { transactionId: error.transactionId }
+            : {}),
+          ...("logPath" in error && typeof error.logPath === "string"
+            ? { logPath: error.logPath }
+            : {}),
+          actual: error.cause instanceof Error
+            ? error.cause.message
+            : String(error.cause),
+          suggestedFix: "检查事务日志与工程文件冲突，修复后重新打开工程"
+        });
+      }
       return fail("NOT_FAIRYGUI_PROJECT", "无法解析 FairyGUI 工程", {
         path: resolved.projectFile,
         actual: error instanceof Error ? error.message : String(error),

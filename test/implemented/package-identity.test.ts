@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { test } from "node:test";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import {
   PACKAGE_NAME,
   PACKAGE_VERSION,
@@ -13,6 +15,7 @@ const skillPath = fileURLToPath(
   new URL("../../skills/fairygui-headless/SKILL.md", import.meta.url)
 );
 const cliPath = fileURLToPath(new URL("../../src/cli.ts", import.meta.url));
+const sourceDirectory = fileURLToPath(new URL("../../src/", import.meta.url));
 const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
   name: string;
   version: string;
@@ -21,6 +24,59 @@ const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
   dependencies: Record<string, string>;
   files: string[];
 };
+
+async function sourceFiles(directory: string): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...await sourceFiles(entryPath));
+    else if (entry.isFile() && entry.name.endsWith(".ts")) {
+      files.push(entryPath);
+    }
+  }
+  return files;
+}
+
+function hardCodedBackslashPathArguments(
+  source: string,
+  fileName: string
+): string[] {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+  const matches: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node)
+      && ts.isPropertyAccessExpression(node.expression)
+      && ts.isIdentifier(node.expression.expression)
+      && node.expression.expression.text === "path"
+      && (
+        node.expression.name.text === "join"
+        || node.expression.name.text === "resolve"
+      )
+    ) {
+      for (const argument of node.arguments) {
+        if (
+          (
+            ts.isStringLiteral(argument)
+            || ts.isNoSubstitutionTemplateLiteral(argument)
+          )
+          && argument.text.includes("\\")
+        ) {
+          matches.push(argument.text);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return matches;
+}
 
 test("package identity and executable contract remain stable", () => {
   assert.equal(manifest.name, "@magicskysword/fairygui-mcp-headless");
@@ -74,4 +130,48 @@ test("package ships an AI workflow skill and a portable stdio entry point", asyn
   }
   assert.ok(cli.startsWith("#!/usr/bin/env node"));
   assert.doesNotMatch(cli, /[A-Za-z]:\\\\|\\\\node_modules\\\\/);
+});
+
+test("source and runtime dependencies avoid Windows-only assumptions", async () => {
+  const windowsOnlyPackages = new Set([
+    "edge-js",
+    "node-windows",
+    "registry-js",
+    "winax",
+    "windows-shortcuts"
+  ]);
+  for (const dependency of Object.keys(manifest.dependencies)) {
+    assert.equal(
+      windowsOnlyPackages.has(dependency),
+      false,
+      `Windows-only dependency: ${dependency}`
+    );
+  }
+
+  for (const filePath of await sourceFiles(sourceDirectory)) {
+    const source = await readFile(filePath, "utf8");
+    const logicalPath = path.relative(sourceDirectory, filePath)
+      .split(path.sep)
+      .join("/");
+    assert.doesNotMatch(
+      source,
+      /["'`][A-Za-z]:[\\/](?:[^"'`\r\n]|\\.)*/u,
+      `${logicalPath} contains a drive-letter path`
+    );
+    assert.doesNotMatch(
+      source,
+      /\b(?:cmd\.exe|powershell(?:\.exe)?|wscript\.exe|cscript\.exe)\b/iu,
+      `${logicalPath} invokes a Windows shell`
+    );
+    assert.doesNotMatch(
+      source,
+      /process\.platform\s*={2,3}\s*["']win32["']/u,
+      `${logicalPath} contains Windows-only business logic`
+    );
+    assert.deepEqual(
+      hardCodedBackslashPathArguments(source, logicalPath),
+      [],
+      `${logicalPath} joins a hard-coded backslash path`
+    );
+  }
 });

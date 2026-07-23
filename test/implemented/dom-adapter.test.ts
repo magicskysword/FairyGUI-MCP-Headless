@@ -37,6 +37,13 @@ function createDocument(): {
   const component = document.createComponent("Main")
     .setId(componentId)
     .setSize(800, 600)
+    .setMinWidth(320)
+    .setMaxWidth(1200)
+    .setMinHeight(240)
+    .setMaxHeight(900)
+    .setPivotX(0.5)
+    .setPivotY(0.25)
+    .setPivotAsAnchor(true)
     .setOverflow(OverflowType.Scroll)
     .setScrollType(ScrollType.Vertical);
   pkg.addResource(imageResource);
@@ -118,6 +125,17 @@ test("OpenFairyGUI adapter emits strict CSS-style DOM without runtime aliases", 
     overflow: "scroll",
     scrollAxis: "vertical",
     opaque: true
+  });
+  assert.deepEqual(dom.root.style, {
+    width: 800,
+    height: 600,
+    minWidth: 320,
+    maxWidth: 1200,
+    minHeight: 240,
+    maxHeight: 900,
+    pivotX: 0.5,
+    pivotY: 0.25,
+    pivotAsAnchor: true
   });
   assert.deepEqual(dom.root.children[0], {
     type: "image",

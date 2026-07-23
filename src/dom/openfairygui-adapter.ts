@@ -689,7 +689,14 @@ export function toFairyDomDocument(
       name: component.getName(),
       style: {
         width: component.getWidth(),
-        height: component.getHeight()
+        height: component.getHeight(),
+        minWidth: component.getMinWidth(),
+        maxWidth: component.getMaxWidth(),
+        minHeight: component.getMinHeight(),
+        maxHeight: component.getMaxHeight(),
+        pivotX: component.getPivotX(),
+        pivotY: component.getPivotY(),
+        pivotAsAnchor: component.getPivotAsAnchor()
       },
       content,
       relations: component.getRelations().map((relation) =>

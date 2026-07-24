@@ -75,41 +75,184 @@ export interface FairyGuiMcpServerOptions {
   coordinator?: ProjectCommitCoordinator;
 }
 
-const OUTPUT_SCHEMA: Tool["outputSchema"] = {
-  type: "object",
-  oneOf: [
-    {
-      type: "object",
-      properties: {
-        ok: { const: true },
-        data: {},
-        warnings: {
-          type: "array",
-          items: { type: "object" }
-        }
-      },
-      required: ["ok", "data"],
-      additionalProperties: false
+const TOOL_DATA_OUTPUT_SCHEMAS: Record<
+  FairyGuiToolName,
+  Record<string, unknown>
+> = {
+  "fairygui.project": {
+    type: "object",
+    properties: {
+      projectId: { type: "string" },
+      projects: { type: "array", items: { type: "object" } },
+      service: { type: "object" }
     },
-    {
-      type: "object",
-      properties: {
-        ok: { const: false },
-        error: {
-          type: "object",
-          properties: {
-            code: { type: "string" },
-            message: { type: "string" }
-          },
-          required: ["code", "message"],
-          additionalProperties: true
-        }
-      },
-      required: ["ok", "error"],
-      additionalProperties: false
-    }
-  ]
+    required: ["service"],
+    additionalProperties: true
+  },
+  "fairygui.query": {
+    type: "object",
+    properties: {
+      results: {
+        type: "object",
+        additionalProperties: { type: "object" }
+      }
+    },
+    required: ["results"],
+    additionalProperties: true
+  },
+  "fairygui.apply_dom_patch": {
+    type: "object",
+    properties: {
+      projectId: { type: "string" },
+      packageId: { type: "string" },
+      componentId: { type: "string" },
+      transactionId: { type: "string" },
+      appliedOperations: { type: "integer" },
+      clientRefs: { type: "object" },
+      affectedFiles: { type: "array", items: { type: "string" } },
+      operationResults: { type: "array", items: { type: "object" } },
+      affectedNodes: { type: "array", items: { type: "string" } }
+    },
+    required: [
+      "projectId",
+      "packageId",
+      "componentId",
+      "transactionId",
+      "appliedOperations",
+      "clientRefs",
+      "affectedFiles"
+    ],
+    additionalProperties: true
+  },
+  "fairygui.apply_resource_operations": {
+    type: "object",
+    properties: {
+      projectId: { type: "string" },
+      dryRun: { type: "boolean" },
+      transactionId: { type: "string" },
+      appliedOperations: { type: "integer" },
+      operationResults: { type: "array", items: { type: "object" } },
+      affectedReferences: { type: "array", items: { type: "object" } },
+      fileChanges: { type: "object" },
+      affectedFiles: { type: "array", items: { type: "string" } }
+    },
+    required: [
+      "projectId",
+      "dryRun",
+      "appliedOperations",
+      "operationResults",
+      "affectedReferences",
+      "fileChanges",
+      "affectedFiles"
+    ],
+    additionalProperties: true
+  },
+  "fairygui.render_component": {
+    type: "object",
+    properties: {
+      backend: { const: "fairygui-dom" },
+      fidelity: { type: "string" },
+      rendererVersion: { type: "string" },
+      requested: { type: "integer" },
+      succeeded: { type: "integer" },
+      failed: { type: "integer" },
+      results: {
+        type: "object",
+        additionalProperties: { type: "object" }
+      }
+    },
+    required: [
+      "backend",
+      "fidelity",
+      "rendererVersion",
+      "requested",
+      "succeeded",
+      "failed",
+      "results"
+    ],
+    additionalProperties: true
+  },
+  "fairygui.publish": {
+    type: "object",
+    properties: {
+      projectId: { type: "string" },
+      publishType: { enum: ["full", "definitions"] },
+      outputPath: { type: "string" },
+      outputPathSource: { type: "string" },
+      packages: { type: "array", items: { type: "object" } },
+      writtenFiles: { type: "array", items: { type: "object" } },
+      durationMs: { type: "number" }
+    },
+    required: [
+      "projectId",
+      "publishType",
+      "outputPath",
+      "outputPathSource",
+      "packages",
+      "writtenFiles",
+      "durationMs"
+    ],
+    additionalProperties: true
+  },
+  "fairygui.validate": {
+    type: "object",
+    properties: {
+      mode: { type: "string" },
+      detail: { enum: ["summary", "full"] },
+      valid: { type: "boolean" },
+      checked: { type: "object" },
+      phases: { type: "array", items: { type: "object" } },
+      diagnostics: { type: "array", items: { type: "object" } }
+    },
+    required: [
+      "mode",
+      "detail",
+      "valid",
+      "checked",
+      "phases",
+      "diagnostics"
+    ],
+    additionalProperties: true
+  }
 };
+
+function outputSchemaFor(name: FairyGuiToolName): Tool["outputSchema"] {
+  return {
+    type: "object",
+    oneOf: [
+      {
+        type: "object",
+        properties: {
+          ok: { const: true },
+          data: TOOL_DATA_OUTPUT_SCHEMAS[name],
+          warnings: {
+            type: "array",
+            items: { type: "object" }
+          }
+        },
+        required: ["ok", "data"],
+        additionalProperties: false
+      },
+      {
+        type: "object",
+        properties: {
+          ok: { const: false },
+          error: {
+            type: "object",
+            properties: {
+              code: { type: "string" },
+              message: { type: "string" }
+            },
+            required: ["code", "message"],
+            additionalProperties: true
+          }
+        },
+        required: ["ok", "error"],
+        additionalProperties: false
+      }
+    ]
+  } as Tool["outputSchema"];
+}
 
 const TOOL_DESCRIPTIONS: Record<FairyGuiToolName, string> = {
   "fairygui.project":
@@ -179,7 +322,8 @@ const TOOL_ANNOTATIONS: Record<
 function toInputSchema(schema: z.ZodType): Tool["inputSchema"] {
   const converted = z.toJSONSchema(schema, {
     target: "draft-7",
-    unrepresentable: "any"
+    unrepresentable: "any",
+    reused: "ref"
   }) as Record<string, unknown>;
   delete converted.$schema;
   return {
@@ -195,7 +339,7 @@ const TOOLS: Tool[] = Object.entries(TOOL_INPUT_SCHEMAS).map(
       name: toolName,
       description: TOOL_DESCRIPTIONS[toolName],
       inputSchema: toInputSchema(schema),
-      outputSchema: OUTPUT_SCHEMA,
+      outputSchema: outputSchemaFor(toolName),
       annotations: TOOL_ANNOTATIONS[toolName],
       execution: { taskSupport: "forbidden" }
     };

@@ -41,6 +41,7 @@ import type {
   DomContentReplacement,
   DomPatchOperation
 } from "../contracts/tools.js";
+import { InternalApplyDomPatchInputSchema } from "../contracts/tools.js";
 import {
   DomProjectionError,
   toFairyDomDocument
@@ -112,6 +113,91 @@ function patchError(
   options: ErrorOptions = {}
 ): never {
   throw new DomPatchEngineError(code, message, options);
+}
+
+interface PatchValidationIssue {
+  code: string;
+  path: PropertyKey[];
+  message: string;
+  errors?: PatchValidationIssue[][];
+  expected?: unknown;
+  values?: unknown;
+  keys?: unknown;
+  minimum?: unknown;
+  maximum?: unknown;
+}
+
+function validationLeaves(
+  issues: readonly PatchValidationIssue[]
+): PatchValidationIssue[] {
+  return issues.flatMap((issue) =>
+    issue.code === "invalid_union" && issue.errors
+      ? issue.errors.flatMap((branch) => validationLeaves(branch))
+      : [issue]
+  );
+}
+
+function patchIssuePath(path: readonly PropertyKey[]): string {
+  if (path.length === 0) return "arguments";
+  return path.reduce<string>((result, segment) => {
+    if (typeof segment === "number") return `${result}[${segment}]`;
+    const value = String(segment);
+    return result.length === 0 ? value : `${result}.${value}`;
+  }, "");
+}
+
+function patchValueAtPath(
+  value: unknown,
+  issuePath: readonly PropertyKey[]
+): unknown {
+  let current = value;
+  for (const segment of issuePath) {
+    if (current === null || typeof current !== "object") return undefined;
+    current = (current as Record<PropertyKey, unknown>)[segment];
+  }
+  return current;
+}
+
+function patchAllowed(issue: PatchValidationIssue): unknown {
+  if (issue.expected !== undefined) return issue.expected;
+  if (issue.values !== undefined) return issue.values;
+  if (issue.keys !== undefined) {
+    return {
+      recognizedFieldsOnly: true,
+      disallowedKeys: issue.keys
+    };
+  }
+  if (issue.minimum !== undefined || issue.maximum !== undefined) {
+    return {
+      ...(issue.minimum === undefined ? {} : { minimum: issue.minimum }),
+      ...(issue.maximum === undefined ? {} : { maximum: issue.maximum })
+    };
+  }
+  return issue.message;
+}
+
+function invalidPatchValidation(
+  input: ApplyDomPatchInput,
+  issues: readonly PatchValidationIssue[]
+): ResultEnvelope<never> {
+  const expectedRoot = "operations" in input ? "operations" : "replace";
+  const leaves = validationLeaves(issues);
+  const relevant = leaves.filter((issue) =>
+    String(issue.path[0] ?? "") === expectedRoot
+  );
+  const issue = [...(relevant.length > 0 ? relevant : leaves)]
+    .sort((left, right) => right.path.length - left.path.length)[0];
+  const path = issue?.path ?? [expectedRoot];
+  return fail("INVALID_PATCH", "DOM 补丁未通过内部强类型校验", {
+    path: patchIssuePath(path),
+    actual: {
+      value: patchValueAtPath(input, path),
+      issue: issue?.message ?? "补丁结构不合法"
+    },
+    allowed: issue ? patchAllowed(issue) : "有效的 FairyGUI DOM 补丁",
+    suggestedFix:
+      "先使用 query 的 detail:\"full\" 取得完整 DOM 字段，再按该节点类型修正补丁"
+  });
 }
 
 function hasMethod(
@@ -1886,28 +1972,36 @@ export class DomPatchEngine {
     document: Document,
     input: ApplyDomPatchInput
   ): ResultEnvelope<DomPatchEngineData> {
+    const validated = InternalApplyDomPatchInputSchema.safeParse(input);
+    if (!validated.success) {
+      return invalidPatchValidation(
+        input,
+        validated.error.issues as PatchValidationIssue[]
+      );
+    }
+    const patch = validated.data;
     try {
       const component = findComponent(
         document,
-        input.packageId,
-        input.componentId
+        patch.packageId,
+        patch.componentId
       );
-      if (!("operations" in input)) {
+      if (!("operations" in patch)) {
         return ok(
           applyReplacement(
             document,
-            input.packageId,
-            input.componentId,
+            patch.packageId,
+            patch.componentId,
             component,
-            input.replace
+            patch.replace
           )
         );
       }
-      const allocated = allocateClientRefs(component, input.operations);
+      const allocated = allocateClientRefs(component, patch.operations);
       const context: EngineContext = {
         document,
-        packageId: input.packageId,
-        componentId: input.componentId,
+        packageId: patch.packageId,
+        componentId: patch.componentId,
         component,
         ...allocated,
         reservedNodeTypes: new Map(
@@ -1918,16 +2012,16 @@ export class DomPatchEngine {
         ),
         replacementScope: false
       };
-      input.operations.forEach((operation, index) => {
+      patch.operations.forEach((operation, index) => {
         executeOperation(context, operation, index);
       });
       return ok({
-        appliedOperations: input.operations.length,
+        appliedOperations: patch.operations.length,
         clientRefs: { ...context.clientRefs },
         dom: toFairyDomDocument(
           document,
-          input.packageId,
-          input.componentId
+          patch.packageId,
+          patch.componentId
         )
       });
     }

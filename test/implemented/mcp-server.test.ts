@@ -80,15 +80,37 @@ function structured(result: Awaited<ReturnType<Client["callTool"]>>): {
   ok: boolean;
   data?: Record<string, unknown>;
   warnings?: Array<{ code: string }>;
-  error?: { code: string; message: string };
+  error?: {
+    code: string;
+    message: string;
+    path?: string;
+    actual?: unknown;
+    allowed?: unknown;
+    suggestedFix?: string;
+  };
 } {
   assert.ok("structuredContent" in result);
   return result.structuredContent as {
     ok: boolean;
     data?: Record<string, unknown>;
     warnings?: Array<{ code: string }>;
-    error?: { code: string; message: string };
+    error?: {
+      code: string;
+      message: string;
+      path?: string;
+      actual?: unknown;
+      allowed?: unknown;
+      suggestedFix?: string;
+    };
   };
+}
+
+function schemaDepth(value: unknown, depth = 0): number {
+  if (value === null || typeof value !== "object") return depth;
+  const children = Object.values(value as Record<string, unknown>);
+  return children.length === 0
+    ? depth
+    : Math.max(...children.map((child) => schemaDepth(child, depth + 1)));
 }
 
 function inlineToolImage(
@@ -119,7 +141,69 @@ test("MCP initialization advertises instructions and exactly seven strict tools"
       assert.equal(tool.inputSchema.type, "object");
       assert.equal(tool.outputSchema?.type, "object");
       assert.ok(tool.description);
+      const outputAlternatives = (
+        tool.outputSchema as unknown as {
+          oneOf: Array<{
+            properties?: {
+              data?: {
+                type?: string;
+                properties?: Record<string, unknown>;
+              };
+            };
+          }>;
+        }
+      ).oneOf;
+      const successData = outputAlternatives[0]?.properties?.data;
+      assert.equal(successData?.type, "object");
+      assert.ok(Object.keys(successData?.properties ?? {}).length > 0);
+      const bytes = Buffer.byteLength(JSON.stringify(tool.inputSchema));
+      assert.ok(
+        bytes <= (tool.name === "fairygui.apply_dom_patch" ? 8_192 : 16_384),
+        `${tool.name} exposed schema is ${bytes} bytes`
+      );
+      assert.ok(
+        schemaDepth(tool.inputSchema) <= 10,
+        `${tool.name} exposed schema depth is ${schemaDepth(tool.inputSchema)}`
+      );
     }
+  }
+  finally {
+    await client.close();
+    await app.close();
+  }
+});
+
+test("stdio DOM patch accepts a shallow payload then reports internal errors", async () => {
+  const projectDirectory = await createProject();
+  const { app, client } = await connectServer();
+  try {
+    const opened = structured(await client.callTool({
+      name: "fairygui.project",
+      arguments: { action: "open", path: projectDirectory }
+    }));
+    const projectId = String(opened.data?.projectId);
+    const result = await client.callTool({
+      name: "fairygui.apply_dom_patch",
+      arguments: {
+        projectId,
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        operations: [{
+          op: "set-style",
+          selector: "#n0",
+          expectedMatches: 1,
+          changes: { left: "10px" }
+        }]
+      }
+    });
+
+    assert.equal("isError" in result && result.isError, true);
+    const envelope = structured(result);
+    assert.equal(envelope.error?.code, "INVALID_PATCH");
+    assert.equal(envelope.error?.path, "operations[0].changes.left");
+    assert.notEqual(envelope.error?.actual, undefined);
+    assert.notEqual(envelope.error?.allowed, undefined);
+    assert.ok(envelope.error?.suggestedFix);
   }
   finally {
     await client.close();

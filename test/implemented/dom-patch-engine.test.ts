@@ -628,6 +628,30 @@ test("DOM patch failures use stable selector, boundary and capability errors", (
   }
 });
 
+test("DOM patch performs strict internal validation with precise paths", () => {
+  const { document } = fixture();
+  const input = parsePatch({
+    operations: [{
+      op: "set-style",
+      selector: "#n3",
+      expectedMatches: 1,
+      changes: {
+        left: "10px"
+      }
+    }]
+  });
+
+  const result = new DomPatchEngine().apply(document, input);
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error.code, "INVALID_PATCH");
+  assert.equal(result.error.path, "operations[0].changes.left");
+  assert.notEqual(result.error.actual, undefined);
+  assert.notEqual(result.error.allowed, undefined);
+  assert.match(result.error.suggestedFix ?? "", /detail.*full|完整 DOM/i);
+});
+
 test("an operation cannot target a clientRef before its insert executes", () => {
   const { document } = fixture();
   const input = parsePatch({

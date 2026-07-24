@@ -293,7 +293,7 @@ const domPatchBaseShape = {
   componentId: nonEmptyId
 } as const;
 
-export const ApplyDomPatchInputSchema = z.union([
+export const InternalApplyDomPatchInputSchema = z.union([
   z.object({
     ...domPatchBaseShape,
     operations: z.array(DomPatchOperationSchema).min(1).max(200)
@@ -331,6 +331,97 @@ export const ApplyDomPatchInputSchema = z.union([
   z.object({
     ...domPatchBaseShape,
     replace: DomContentReplacementSchema
+  }).strict()
+]);
+export type InternalApplyDomPatchInput = z.infer<
+  typeof InternalApplyDomPatchInputSchema
+>;
+
+const publicJsonObject = z.record(z.string(), z.unknown());
+const publicPatchTargetShape = {
+  selector: selector.optional(),
+  targetRef: clientRef.optional(),
+  expectedMatches
+} as const;
+
+export const PublicDomPatchOperationSchema = z.discriminatedUnion("op", [
+  z.object({
+    op: z.literal("insert"),
+    parentSelector: selector,
+    expectedMatches: singleExpectedMatch,
+    clientRef,
+    index: z.number().int().nonnegative().optional(),
+    node: publicJsonObject
+  }).strict(),
+  z.object({
+    op: z.literal("remove"),
+    ...publicPatchTargetShape
+  }).strict(),
+  z.object({
+    op: z.literal("move"),
+    ...publicPatchTargetShape,
+    toIndex: z.number().int().nonnegative()
+  }).strict(),
+  z.object({
+    op: z.literal("set-name"),
+    ...publicPatchTargetShape,
+    name: z.string()
+  }).strict(),
+  z.object({
+    op: z.literal("set-style"),
+    ...publicPatchTargetShape,
+    changes: publicJsonObject
+  }).strict(),
+  z.object({
+    op: z.literal("set-text"),
+    ...publicPatchTargetShape,
+    text: z.string()
+  }).strict(),
+  z.object({
+    op: z.literal("set-resource"),
+    ...publicPatchTargetShape,
+    resource: publicJsonObject.nullable()
+  }).strict(),
+  z.object({
+    op: z.literal("set-relations"),
+    ...publicPatchTargetShape,
+    relations: z.array(publicJsonObject)
+  }).strict(),
+  z.object({
+    op: z.literal("set-list-items"),
+    ...publicPatchTargetShape,
+    items: z.array(publicJsonObject)
+  }).strict(),
+  z.object({
+    op: z.literal("replace-node"),
+    ...publicPatchTargetShape,
+    node: publicJsonObject
+  }).strict()
+]);
+
+const PublicDomContentReplacementSchema = z.object({
+  domain: z.enum([
+    "displayTree",
+    "componentProperties",
+    "relations",
+    "listItems",
+    "gears",
+    "controllers",
+    "transitions"
+  ]),
+  selector: selector.optional(),
+  expectedMatches: expectedMatches.optional(),
+  value: z.unknown()
+}).strict();
+
+export const ApplyDomPatchInputSchema = z.union([
+  z.object({
+    ...domPatchBaseShape,
+    operations: z.array(PublicDomPatchOperationSchema).min(1).max(200)
+  }).strict(),
+  z.object({
+    ...domPatchBaseShape,
+    replace: PublicDomContentReplacementSchema
   }).strict()
 ]);
 export type ApplyDomPatchInput = z.infer<typeof ApplyDomPatchInputSchema>;

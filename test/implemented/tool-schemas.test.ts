@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { z } from "zod";
 import {
   ApplyDomPatchInputSchema,
   ApplyResourceOperationsInputSchema,
   FAIRYGUI_TOOL_NAMES,
+  InternalApplyDomPatchInputSchema,
   ProjectInputSchema,
   PublishInputSchema,
   QueryInputSchema,
@@ -11,6 +13,16 @@ import {
   TOOL_INPUT_SCHEMAS,
   ValidateInputSchema
 } from "../../src/contracts/tools.js";
+
+function jsonSchemaDepth(value: unknown, depth = 0): number {
+  if (value === null || typeof value !== "object") return depth;
+  const children = Object.values(value as Record<string, unknown>);
+  return children.length === 0
+    ? depth
+    : Math.max(...children.map((child) =>
+        jsonSchemaDepth(child, depth + 1)
+      ));
+}
 
 function namedSingleRenderArguments(
   input: Record<string, unknown>
@@ -50,6 +62,25 @@ test("public contract exposes exactly the seven MCP tools", () => {
     "fairygui.validate"
   ]);
   assert.deepEqual(Object.keys(TOOL_INPUT_SCHEMAS), FAIRYGUI_TOOL_NAMES);
+});
+
+test("public tool schemas stay inside discovery size and depth budgets", () => {
+  for (const [name, schema] of Object.entries(TOOL_INPUT_SCHEMAS)) {
+    const json = z.toJSONSchema(schema, {
+      target: "draft-7",
+      unrepresentable: "any",
+      reused: "ref"
+    });
+    const bytes = Buffer.byteLength(JSON.stringify(json));
+    assert.ok(
+      bytes <= (name === "fairygui.apply_dom_patch" ? 8_192 : 16_384),
+      `${name} public schema is ${bytes} bytes`
+    );
+    assert.ok(
+      jsonSchemaDepth(json) <= 10,
+      `${name} public schema depth is ${jsonSchemaDepth(json)}`
+    );
+  }
 });
 
 test("publish schema separates scope, type and one-off output override", () => {
@@ -204,14 +235,14 @@ test("DOM patch schema requires expected match counts and one mutation mode", ()
   };
 
   assert.deepEqual(ApplyDomPatchInputSchema.parse(operations), operations);
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...operations,
     operations: [{
       op: "remove",
       selector: "#n0"
     }]
   }).success, false);
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...operations,
     operations: [{
       op: "remove",
@@ -220,14 +251,14 @@ test("DOM patch schema requires expected match counts and one mutation mode", ()
       expectedMatches: 1
     }]
   }).success, false);
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...operations,
     operations: [{
       op: "remove",
       expectedMatches: 1
     }]
   }).success, false);
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...operations,
     replace: {
       domain: "displayTree",
@@ -250,7 +281,7 @@ test("DOM patch schema makes single targets and client references unambiguous", 
     relations: []
   };
 
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...base,
     operations: [{
       op: "insert",
@@ -260,7 +291,7 @@ test("DOM patch schema makes single targets and client references unambiguous", 
       node: newText
     }]
   }).success, false);
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...base,
     operations: [{
       op: "move",
@@ -269,7 +300,7 @@ test("DOM patch schema makes single targets and client references unambiguous", 
       toIndex: 0
     }]
   }).success, false);
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...base,
     operations: [
       {
@@ -288,7 +319,7 @@ test("DOM patch schema makes single targets and client references unambiguous", 
       }
     ]
   }).success, false);
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...base,
     operations: [{
       op: "set-text",
@@ -305,14 +336,14 @@ test("replace mode permits one explicit content domain per call", () => {
     packageId: "pkg00001",
     componentId: "cmp01"
   };
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...base,
     replace: {
       domain: "displayTree",
       value: []
     }
   }).success, true);
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...base,
     replace: {
       domain: "relations",
@@ -321,7 +352,7 @@ test("replace mode permits one explicit content domain per call", () => {
       value: []
     }
   }).success, true);
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...base,
     replace: {
       domain: "relations",

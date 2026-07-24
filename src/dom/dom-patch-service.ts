@@ -102,12 +102,30 @@ interface SemanticDifference {
   actual: unknown;
 }
 
+function equalHexColor(
+  expected: unknown,
+  actual: unknown,
+  currentPath: string
+): boolean {
+  if (
+    typeof expected !== "string"
+    || typeof actual !== "string"
+    || !/\.(?:color|fillColor|lineColor|backgroundColor)$/.test(currentPath)
+    || !/^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(expected)
+    || !/^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(actual)
+  ) {
+    return false;
+  }
+  return expected.toLowerCase() === actual.toLowerCase();
+}
+
 function firstSemanticDifference(
   expected: unknown,
   actual: unknown,
   currentPath = "dom"
 ): SemanticDifference | undefined {
   if (Object.is(expected, actual)) return undefined;
+  if (equalHexColor(expected, actual, currentPath)) return undefined;
   if (
     expected === null
     || actual === null

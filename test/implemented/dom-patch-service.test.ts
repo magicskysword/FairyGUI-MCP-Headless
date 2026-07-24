@@ -525,6 +525,31 @@ test("successful patch returns a compact summary after semantic re-read", async 
   }
 });
 
+test("hex colors remain semantically equal when serialization changes case", async () => {
+  const context = await setup("color-case");
+  try {
+    const result = await context.service.apply(patch(context.projectId, [{
+      op: "update",
+      selector: "#n0",
+      expectedMatches: 1,
+      changes: {
+        content: { color: "#AABBCC" }
+      }
+    }]));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const dom = await readDom(context);
+    const node = dom.root.children.find((item) => item.id === "n0");
+    assert.equal(
+      node?.type === "text" ? node.content.color : undefined,
+      "#aabbcc"
+    );
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
 test("a semantic DOM mismatch fails before any source file is written", async () => {
   class DivergentDomEngine extends DomPatchEngine {
     public override apply(

@@ -130,8 +130,43 @@ async function buildAndPack(
   };
 }
 
+async function createSmokeProject(temporaryRoot: string): Promise<string> {
+  const projectDirectory = path.join(temporaryRoot, "project");
+  const packageDirectory = path.join(projectDirectory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(
+    path.join(projectDirectory, "PackSmoke.fairy"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="pack-smoke-project" type="Unity" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "package.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "Main.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="320,180">
+  <displayList>
+    <text id="n0" name="title" xy="20,20" size="280,40"
+      text="Pack smoke" fontSize="24"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  return projectDirectory;
+}
+
 function smokeProgram(): string {
   return `import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -142,6 +177,8 @@ import {
 
 assert.equal(PACKAGE_NAME, "@magicskysword/fairygui-mcp-headless");
 assert.equal(PACKAGE_VERSION, "0.1.2");
+const projectDirectory = process.env.FAIRYGUI_PACK_SMOKE_PROJECT;
+assert.ok(projectDirectory, "缺少隔离冒烟工程路径");
 const serverEntry = path.resolve(
   "node_modules",
   "@magicskysword",
@@ -158,10 +195,34 @@ const client = new Client(
   { name: "pack-smoke", version: "1.0.0" },
   { capabilities: {} }
 );
+
+function successful(result, label) {
+  assert.ok(
+    "structuredContent" in result,
+    label + " 缺少 structuredContent"
+  );
+  const envelope = result.structuredContent;
+  assert.notEqual(
+    result.isError,
+    true,
+    label + " 返回 MCP isError: " + JSON.stringify(envelope)
+  );
+  assert.equal(envelope.ok, true, label + ": " + JSON.stringify(envelope));
+  return envelope.data;
+}
+
+async function callTool(name, argumentsValue) {
+  return successful(
+    await client.callTool({ name, arguments: argumentsValue }),
+    name
+  );
+}
+
 try {
   await client.connect(transport);
   const listed = await client.listTools();
-  assert.deepEqual(listed.tools.map((tool) => tool.name), [
+  const toolNames = listed.tools.map((tool) => tool.name);
+  assert.deepEqual(toolNames, [
     "fairygui.project",
     "fairygui.query",
     "fairygui.apply_dom_patch",
@@ -170,10 +231,247 @@ try {
     "fairygui.publish",
     "fairygui.validate"
   ]);
+
+  const opened = await callTool("fairygui.project", {
+    action: "open",
+    path: projectDirectory
+  });
+  const projectId = opened.projectId;
+  assert.ok(projectId);
+
+  const queried = await callTool("fairygui.query", {
+    projectId,
+    queries: {
+      packages: { kind: "packages", limit: 50 },
+      compact: {
+        kind: "components",
+        packageId: "pkg00001",
+        detail: "summary"
+      },
+      full: {
+        kind: "dom",
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        detail: "full",
+        instanceProjection: "none"
+      }
+    }
+  });
+  assert.deepEqual(Object.keys(queried.results), [
+    "packages",
+    "compact",
+    "full"
+  ]);
+  for (const result of Object.values(queried.results)) {
+    assert.equal(result.ok, true, JSON.stringify(result));
+  }
+
+  const resourceOperations = [
+    {
+      op: "create-package",
+      clientRef: "widgets",
+      name: "SmokeWidgets"
+    },
+    {
+      op: "create-component",
+      packageRef: "widgets",
+      clientRef: "panel",
+      name: "Panel",
+      width: 320,
+      height: 180
+    }
+  ];
+  const resourcePreview = await callTool(
+    "fairygui.apply_resource_operations",
+    {
+      projectId,
+      dryRun: true,
+      operations: resourceOperations
+    }
+  );
+  assert.equal(resourcePreview.dryRun, true);
+  assert.equal("transactionId" in resourcePreview, false);
+
+  const resourceApplied = await callTool(
+    "fairygui.apply_resource_operations",
+    {
+      projectId,
+      dryRun: false,
+      operations: resourceOperations
+    }
+  );
+  assert.equal(resourceApplied.dryRun, false);
+  assert.ok(resourceApplied.transactionId);
+  const generatedPackageId = resourceApplied.clientRefs.widgets.packageId;
+  const generatedComponentId =
+    resourceApplied.clientRefs.panel.resourceId;
+  assert.ok(generatedPackageId);
+  assert.ok(generatedComponentId);
+
+  const patched = await callTool("fairygui.apply_dom_patch", {
+    projectId,
+    packageId: generatedPackageId,
+    componentId: generatedComponentId,
+    operations: [
+      {
+        op: "insert",
+        parentSelector: "component-root",
+        expectedMatches: 1,
+        clientRef: "background",
+        node: {
+          type: "graph",
+          name: "background",
+          style: { width: 320, height: 180 },
+          relations: [],
+          content: {
+            shape: "rectangle",
+            fillColor: "#203040"
+          }
+        }
+      },
+      {
+        op: "insert",
+        parentSelector: "component-root",
+        expectedMatches: 1,
+        clientRef: "label",
+        node: {
+          type: "text",
+          name: "label",
+          style: {
+            left: 20,
+            top: 60,
+            width: 280,
+            height: 50
+          },
+          relations: [],
+          content: {
+            text: "Before update",
+            fontSize: 24,
+            color: "#FFFFFF"
+          }
+        }
+      },
+      {
+        op: "update",
+        targetRef: "label",
+        expectedMatches: 1,
+        changes: {
+          name: "headline",
+          style: { left: 24 },
+          relations: [{
+            targetId: "background",
+            type: "Left_Left",
+            percent: false
+          }],
+          content: { text: "Repository MCP smoke" }
+        }
+      }
+    ]
+  });
+  assert.equal(patched.appliedOperations, 3);
+  assert.deepEqual(
+    patched.affectedNodeIds,
+    [patched.clientRefs.background, patched.clientRefs.label]
+  );
+  assert.equal("dom" in patched, false);
+
+  const patchedQuery = await callTool("fairygui.query", {
+    projectId,
+    queries: {
+      full: {
+        kind: "dom",
+        packageId: generatedPackageId,
+        componentId: generatedComponentId,
+        detail: "full",
+        instanceProjection: "none"
+      }
+    }
+  });
+  assert.equal(
+    patchedQuery.results.full.ok,
+    true,
+    JSON.stringify(patchedQuery.results.full)
+  );
+  const patchedChildren =
+    patchedQuery.results.full.data.document.root.children;
+  assert.equal(patchedChildren.length, 2);
+  const headline = patchedChildren.find((node) => node.name === "headline");
+  assert.ok(headline);
+  assert.equal(
+    headline.content.text,
+    "Repository MCP smoke"
+  );
+
+  const rendered = await callTool("fairygui.render_component", {
+    projectId,
+    imageResult: "file",
+    stateDetail: "full",
+    renders: {
+      normal: {
+        packageId: generatedPackageId,
+        componentId: generatedComponentId,
+        background: "#101820"
+      },
+      compact: {
+        packageId: generatedPackageId,
+        componentId: generatedComponentId,
+        width: 160,
+        height: 90,
+        scale: 1
+      }
+    }
+  });
+  for (const key of ["normal", "compact"]) {
+    const result = rendered.results[key];
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const filePath = result.data.image.filePath;
+    assert.ok(filePath);
+    assert.equal(
+      (await readFile(filePath)).subarray(0, 8).toString("hex"),
+      "89504e470d0a1a0a"
+    );
+  }
+
+  const published = await callTool("fairygui.publish", {
+    projectId,
+    packageIds: [generatedPackageId],
+    publishType: "definitions",
+    outputPath: "smoke-release"
+  });
+  assert.equal(published.publishType, "definitions");
+  assert.equal(published.outputPathSource, "override");
+  assert.ok(published.writtenFiles.length > 0);
+  await readFile(published.writtenFiles[0].path);
+
+  const validated = await callTool("fairygui.validate", {
+    projectId,
+    mode: "full",
+    detail: "summary",
+    packageIds: [generatedPackageId],
+    componentIds: [generatedComponentId]
+  });
+  assert.equal(validated.valid, true, JSON.stringify(validated));
+
+  const closed = await callTool("fairygui.project", {
+    action: "close",
+    projectId
+  });
+  assert.equal(closed.projectId, projectId);
+
   process.stdout.write(JSON.stringify({
     packageName: PACKAGE_NAME,
     packageVersion: PACKAGE_VERSION,
-    tools: listed.tools.map((tool) => tool.name)
+    tools: toolNames,
+    workflow: {
+      queried: Object.keys(queried.results),
+      resourceDryRun: resourcePreview.dryRun,
+      resourceApplied: resourceApplied.appliedOperations,
+      patched: patched.appliedOperations,
+      rendered: Object.keys(rendered.results),
+      published: published.writtenFiles.length,
+      valid: validated.valid,
+      closed: closed.projectId
+    }
   }));
 }
 finally {
@@ -198,6 +496,7 @@ let completed = false;
 try {
   const archiveDirectory = path.join(temporaryRoot, "archives");
   const installDirectory = path.join(temporaryRoot, "install");
+  const projectDirectory = await createSmokeProject(temporaryRoot);
   await mkdir(archiveDirectory, { recursive: true });
   await mkdir(installDirectory, { recursive: true });
 
@@ -274,12 +573,26 @@ try {
   const smokeOutput = await run(
     process.execPath,
     ["smoke.mjs"],
-    installDirectory
+    installDirectory,
+    {
+      ...process.env,
+      FAIRYGUI_PACK_SMOKE_PROJECT: projectDirectory
+    }
   );
   const smoke = JSON.parse(smokeOutput) as {
     packageName: string;
     packageVersion: string;
     tools: string[];
+    workflow: {
+      queried: string[];
+      resourceDryRun: boolean;
+      resourceApplied: number;
+      patched: number;
+      rendered: string[];
+      published: number;
+      valid: boolean;
+      closed: string;
+    };
   };
   process.stdout.write(`${JSON.stringify({
     isolatedInstall: true,

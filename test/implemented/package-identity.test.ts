@@ -230,6 +230,28 @@ test("package exposes an isolated tarball installation smoke test", async () => 
   ]) {
     assert.match(smoke, new RegExp(packageName.replaceAll("/", "\\/")));
   }
+  for (const toolName of [
+    "fairygui.project",
+    "fairygui.query",
+    "fairygui.apply_dom_patch",
+    "fairygui.apply_resource_operations",
+    "fairygui.render_component",
+    "fairygui.publish",
+    "fairygui.validate"
+  ]) {
+    assert.match(
+      smoke,
+      new RegExp(`callTool[\\s\\S]*${toolName.replace(".", "\\.")}`)
+    );
+  }
+  assert.match(smoke, /dryRun:\s*true/);
+  assert.match(smoke, /dryRun:\s*false/);
+  assert.match(smoke, /detail:\s*"summary"/);
+  assert.match(smoke, /detail:\s*"full"/);
+  assert.match(smoke, /imageResult:\s*"file"[\s\S]*renders:/);
+  assert.match(smoke, /publishType:\s*"definitions"/);
+  assert.match(smoke, /mode:\s*"full"/);
+  assert.match(smoke, /action:\s*"close"/);
 });
 
 test("npm trusted publishing builds fixed GitHub dependency sources", async () => {

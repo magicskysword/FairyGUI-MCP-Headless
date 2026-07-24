@@ -150,7 +150,7 @@ export const PREVIEW_SCRIPT = String.raw`
 
   const applyTransientState = (view, state) => {
     if (!state) return;
-    state.controllers.forEach((entry, stateIndex) => {
+    (state.controllers || []).forEach((entry, stateIndex) => {
       const path = "state.controllers[" + stateIndex + "]";
       const targets = matchObjects(view, entry.selector);
       if (targets.length !== entry.expectedMatches) {
@@ -226,6 +226,75 @@ export const PREVIEW_SCRIPT = String.raw`
           });
         }
         controller.setSelectedIndex(selectedIndex);
+      });
+    });
+
+    (state.scrolls || []).forEach((entry, stateIndex) => {
+      const path = "state.scrolls[" + stateIndex + "]";
+      const targets = matchObjects(view, entry.selector);
+      if (targets.length !== entry.expectedMatches) {
+        stateFailure({
+          code: "SELECTOR_MATCH_COUNT",
+          message:
+            "临时滚动选择器匹配数量不符合 expectedMatches："
+            + entry.selector.source,
+          path: path + ".selector",
+          actual: {
+            selector: entry.selector.source,
+            expectedMatches: entry.expectedMatches,
+            actualMatches: targets.length
+          },
+          suggestedFix:
+            "先用 fairygui.query 确认节点 ID/名称，并更新 expectedMatches"
+        });
+      }
+
+      targets.forEach((target) => {
+        if (
+          typeof fgui.GComponent !== "function"
+          || !(target instanceof fgui.GComponent)
+          || !target.scrollPane
+        ) {
+          stateFailure({
+            code: "TRANSIENT_STATE_INVALID",
+            message: "临时滚动只能应用到启用了 overflow=scroll 的组件",
+            path: path + ".selector",
+            actual: {
+              selector: entry.selector.source,
+              targetId: target.id || "",
+              targetName: target.name || "",
+              targetType: runtimeType(target, view)
+            },
+            allowed: [
+              "启用了 overflow=scroll 的 component-root、instance、list 或 tree"
+            ]
+          });
+        }
+
+        target.ensureBoundsCorrect();
+        const scrollPane = target.scrollPane;
+        const maxX = Math.max(0, scrollPane.contentWidth - scrollPane.viewWidth);
+        const maxY = Math.max(0, scrollPane.contentHeight - scrollPane.viewHeight);
+        if (entry.x !== undefined && entry.x > maxX) {
+          stateFailure({
+            code: "TRANSIENT_STATE_INVALID",
+            message: "临时横向滚动位置超出实际可滚范围",
+            path: path + ".x",
+            actual: entry.x,
+            allowed: { min: 0, max: maxX }
+          });
+        }
+        if (entry.y !== undefined && entry.y > maxY) {
+          stateFailure({
+            code: "TRANSIENT_STATE_INVALID",
+            message: "临时纵向滚动位置超出实际可滚范围",
+            path: path + ".y",
+            actual: entry.y,
+            allowed: { min: 0, max: maxY }
+          });
+        }
+        if (entry.x !== undefined) scrollPane.setPosX(entry.x, false);
+        if (entry.y !== undefined) scrollPane.setPosY(entry.y, false);
       });
     });
   };

@@ -439,9 +439,46 @@ export type RenderControllerState = z.infer<
   typeof RenderControllerStateSchema
 >;
 
-export const RenderTransientStateSchema = z.object({
-  controllers: z.array(RenderControllerStateSchema).min(1).max(100)
-}).strict();
+const renderScrollStateBase = {
+  selector,
+  expectedMatches
+} as const;
+const renderScrollPosition = z.number().finite().nonnegative();
+
+export const RenderScrollStateSchema = z.union([
+  z.object({
+    ...renderScrollStateBase,
+    x: renderScrollPosition
+  }).strict(),
+  z.object({
+    ...renderScrollStateBase,
+    y: renderScrollPosition
+  }).strict(),
+  z.object({
+    ...renderScrollStateBase,
+    x: renderScrollPosition,
+    y: renderScrollPosition
+  }).strict()
+]);
+export type RenderScrollState = z.infer<typeof RenderScrollStateSchema>;
+
+const renderControllers = z.array(RenderControllerStateSchema).min(1).max(100);
+const renderScrolls = z.array(RenderScrollStateSchema).min(1).max(100);
+const renderTransientStateFields = {
+  controllers: renderControllers.optional(),
+  scrolls: renderScrolls.optional()
+} as const;
+
+export const RenderTransientStateSchema = z.union([
+  z.object({
+    ...renderTransientStateFields,
+    controllers: renderControllers
+  }).strict(),
+  z.object({
+    ...renderTransientStateFields,
+    scrolls: renderScrolls
+  }).strict()
+]);
 export type RenderTransientState = z.infer<
   typeof RenderTransientStateSchema
 >;

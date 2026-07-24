@@ -100,8 +100,16 @@ interface PreviewControllerState {
     | { kind: "pageName"; value: string };
 }
 
+interface PreviewScrollState {
+  selector: ParsedFairyDomSelector;
+  expectedMatches: number;
+  x?: number;
+  y?: number;
+}
+
 interface PreviewTransientState {
   controllers: PreviewControllerState[];
+  scrolls: PreviewScrollState[];
 }
 
 interface PreviewPayload {
@@ -181,30 +189,55 @@ function prepareTransientState(
   state: RenderTransientState | undefined
 ): ResultEnvelope<PreviewTransientState | undefined> {
   if (state === undefined) return ok(undefined);
-  try {
-    return ok({
-      controllers: state.controllers.map((entry) => ({
+  const controllers: PreviewControllerState[] = [];
+  for (const [index, entry] of (state.controllers ?? []).entries()) {
+    try {
+      controllers.push({
         selector: parseFairyDomSelector(entry.selector),
         expectedMatches: entry.expectedMatches,
         controller: entry.controller,
         selection: "selectedIndex" in entry
-          ? { kind: "index" as const, value: entry.selectedIndex }
+          ? { kind: "index", value: entry.selectedIndex }
           : "pageId" in entry
-            ? { kind: "pageId" as const, value: entry.pageId }
-            : { kind: "pageName" as const, value: entry.pageName }
-      }))
-    });
-  }
-  catch (error) {
-    if (error instanceof SelectorSyntaxError) {
-      return fail("INVALID_SELECTOR", error.message, {
-        path: `state.controllers.selector[${error.index}]`,
-        actual: error.selector,
-        suggestedFix: error.suggestedFix
+            ? { kind: "pageId", value: entry.pageId }
+            : { kind: "pageName", value: entry.pageName }
       });
     }
-    throw error;
+    catch (error) {
+      if (error instanceof SelectorSyntaxError) {
+        return fail("INVALID_SELECTOR", error.message, {
+          path: `state.controllers[${index}].selector[${error.index}]`,
+          actual: error.selector,
+          suggestedFix: error.suggestedFix
+        });
+      }
+      throw error;
+    }
   }
+
+  const scrolls: PreviewScrollState[] = [];
+  for (const [index, entry] of (state.scrolls ?? []).entries()) {
+    try {
+      scrolls.push({
+        selector: parseFairyDomSelector(entry.selector),
+        expectedMatches: entry.expectedMatches,
+        ...("x" in entry ? { x: entry.x } : {}),
+        ...("y" in entry ? { y: entry.y } : {})
+      });
+    }
+    catch (error) {
+      if (error instanceof SelectorSyntaxError) {
+        return fail("INVALID_SELECTOR", error.message, {
+          path: `state.scrolls[${index}].selector[${error.index}]`,
+          actual: error.selector,
+          suggestedFix: error.suggestedFix
+        });
+      }
+      throw error;
+    }
+  }
+
+  return ok({ controllers, scrolls });
 }
 
 export class RenderService {

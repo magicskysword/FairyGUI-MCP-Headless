@@ -224,9 +224,11 @@ BrowserContext 加载全部内存包后，按包 ID 和组件 ID 构造真实 Fa
 将 PNG 保存到系统临时目录；默认以内联 MCP image content 返回。
 
 `state.controllers` 可在隔离 BrowserContext 内按受限 DOM 选择器设置控制器页，
-支持 `selectedIndex`、`pageId` 或 `pageName` 三选一。每个目标必须声明
-`expectedMatches`；选择器数量、目标类型、控制器名和页面都经过显式校验。
-这些状态只用于当前截图，不改变内存工程快照或磁盘文件。
+支持 `selectedIndex`、`pageId` 或 `pageName` 三选一；`state.scrolls` 可按非负
+像素 `x`/`y` 设置启用滚动组件的位置。每个目标必须声明 `expectedMatches`；
+选择器数量、目标类型、控制器名、页面和实际可滚范围都经过显式校验，越界不会
+静默夹取。状态按控制器、滚动位置的顺序应用，且只用于当前截图，不改变内存
+工程快照或磁盘文件。
 
 ## 9. 验证、测试与发布
 

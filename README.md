@@ -124,7 +124,8 @@ Undo/Redo、revision、ifMatch、文件锁、历史或 Git 操作。同工程写
 图片与颜色在肉眼上接近 Editor；由于渲染后端、字体栅格化等差异，它仍不是 Unity
 像素真值。Windows 是固定截图基线平台。
 
-需要查看非默认控制器页时，可在一次渲染调用中设置只作用于该截图的状态：
+需要查看非默认控制器页或滚动区域时，可在一次渲染调用中设置只作用于该截图的
+状态：
 
 ```json
 {
@@ -134,14 +135,21 @@ Undo/Redo、revision、ifMatch、文件锁、历史或 Git 操作。同工程写
       "expectedMatches": 1,
       "controller": "start",
       "selectedIndex": 1
+    }],
+    "scrolls": [{
+      "selector": "instance[name=\"viewport\"]",
+      "expectedMatches": 1,
+      "y": 320
     }]
   }
 }
 ```
 
 页也可用 `pageId` 或 `pageName` 指定。状态选择器复用受限 DOM 选择器语法并可
-定位嵌套运行时组件；匹配数量、目标类型、控制器或页面不合法时会明确失败。
-临时状态只修改隔离 BrowserContext 内的对象，不写回工程，也不进入后续截图。
+定位嵌套运行时对象；滚动位置使用非负像素 `x`/`y`，必须处于运行时实际可滚
+范围。匹配数量、目标类型、控制器、页面或滚动范围不合法时会明确失败，不会
+静默夹取。临时状态只修改隔离 BrowserContext 内的对象，不写回工程，也不进入
+后续截图。
 
 ## 本地开发与验证
 

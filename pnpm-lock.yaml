@@ -9,13 +9,13 @@ importers:
   .:
     dependencies:
       '@magicskysword/fairygui-dom':
-        specifier: ^1.1.0
+        specifier: ^1.1.1
         version: link:../FairyGUI-dom
       '@magicskysword/openfairygui-core':
-        specifier: ^0.2.0
+        specifier: ^0.2.1
         version: link:../OpenFairyGUI/packages/core
       '@magicskysword/openfairygui-functions':
-        specifier: ^0.2.0
+        specifier: ^0.2.1
         version: link:../OpenFairyGUI/packages/functions
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0

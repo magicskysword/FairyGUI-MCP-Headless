@@ -111,15 +111,15 @@ test("runtime dependencies use registry semver instead of sibling paths", () => 
 test("fork package ranges match the local V1 package contracts", () => {
   assert.equal(
     manifest.dependencies["@magicskysword/openfairygui-core"],
-    "^0.2.0"
+    "^0.2.1"
   );
   assert.equal(
     manifest.dependencies["@magicskysword/openfairygui-functions"],
-    "^0.2.0"
+    "^0.2.1"
   );
   assert.equal(
     manifest.dependencies["@magicskysword/fairygui-dom"],
-    "^1.1.0"
+    "^1.1.1"
   );
 });
 

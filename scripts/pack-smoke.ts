@@ -23,12 +23,12 @@ const mcpDirectory = path.resolve(import.meta.dirname, "..");
 const packages = [
   {
     name: "@magicskysword/openfairygui-core",
-    version: "0.2.1",
+    version: "0.2.2",
     directory: path.join(workspaceRoot, "OpenFairyGUI", "packages", "core")
   },
   {
     name: "@magicskysword/openfairygui-functions",
-    version: "0.2.1",
+    version: "0.2.2",
     directory: path.join(workspaceRoot, "OpenFairyGUI", "packages", "functions")
   },
   {
@@ -38,7 +38,7 @@ const packages = [
   },
   {
     name: "@magicskysword/fairygui-mcp-headless",
-    version: "0.1.1",
+    version: "0.1.2",
     directory: mcpDirectory
   }
 ] as const;
@@ -141,7 +141,7 @@ import {
 } from "@magicskysword/fairygui-mcp-headless";
 
 assert.equal(PACKAGE_NAME, "@magicskysword/fairygui-mcp-headless");
-assert.equal(PACKAGE_VERSION, "0.1.1");
+assert.equal(PACKAGE_VERSION, "0.1.2");
 const serverEntry = path.resolve(
   "node_modules",
   "@magicskysword",

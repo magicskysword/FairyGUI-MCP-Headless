@@ -94,6 +94,7 @@ function hardCodedBackslashPathArguments(
 
 test("package identity and executable contract remain stable", () => {
   assert.equal(manifest.name, "@magicskysword/fairygui-mcp-headless");
+  assert.equal(manifest.version, "0.1.2");
   assert.equal(PACKAGE_NAME, manifest.name);
   assert.equal(PACKAGE_VERSION, manifest.version);
   assert.equal(SERVER_NAME, "fairygui-mcp-headless");
@@ -114,11 +115,11 @@ test("runtime dependencies use registry semver instead of sibling paths", () => 
 test("fork package ranges match the local V1 package contracts", () => {
   assert.equal(
     manifest.dependencies["@magicskysword/openfairygui-core"],
-    "^0.2.1"
+    "^0.2.2"
   );
   assert.equal(
     manifest.dependencies["@magicskysword/openfairygui-functions"],
-    "^0.2.1"
+    "^0.2.2"
   );
   assert.equal(
     manifest.dependencies["@magicskysword/fairygui-dom"],
@@ -241,7 +242,7 @@ test("npm trusted publishing builds fixed GitHub dependency sources", async () =
   assert.match(workflow, /name:\s*Checkout Headless[\s\S]*path:\s*FairyGUI-MCP-Headless/);
   assert.match(
     workflow,
-    /repository:\s*magicskysword\/OpenFairyGUI[\s\S]*ref:\s*["']v0\.2\.1["'][\s\S]*path:\s*OpenFairyGUI/
+    /repository:\s*magicskysword\/OpenFairyGUI[\s\S]*ref:\s*["']v0\.2\.2["'][\s\S]*path:\s*OpenFairyGUI/
   );
   assert.match(
     workflow,

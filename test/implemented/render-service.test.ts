@@ -284,6 +284,69 @@ async function createScrollStateProject(): Promise<{
   return { directory, componentFile };
 }
 
+async function createListStateProject(): Promise<{
+  directory: string;
+  componentFile: string;
+}> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-list-render-"));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(
+    path.join(directory, "Demo.fairy"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="list-render-project" type="DOM" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "package.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <component id="item1" name="Item.xml" path="/"/>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "Item.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="100,40" extention="Button">
+  <controller name="button"
+    pages="0,up,1,down,2,over,3,selectedOver" selected="0"/>
+  <displayList>
+    <graph id="normal" name="normal" xy="0,0" size="100,40"
+      type="rect" fillColor="#e11d48" lineColor="#e11d48" lineSize="0">
+      <gearDisplay controller="button" pages="0,2"/>
+    </graph>
+    <graph id="selected" name="selected" xy="0,0" size="100,40"
+      type="rect" fillColor="#2563eb" lineColor="#2563eb" lineSize="0">
+      <gearDisplay controller="button" pages="1,3"/>
+    </graph>
+  </displayList>
+  <Button mode="Check"/>
+</component>`,
+    "utf8"
+  );
+  const componentFile = path.join(packageDirectory, "Main.xml");
+  await writeFile(
+    componentFile,
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="100,80">
+  <displayList>
+    <list id="items" name="items" xy="0,0" size="100,80"
+      selectionMode="multiple" defaultItem="ui://pkg00001item1">
+      <item title="First"/>
+      <item title="Second"/>
+    </list>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  return { directory, componentFile };
+}
+
 async function openRenderer(options: {
   browserType?: RenderBrowserType;
 } = {}): Promise<{
@@ -661,6 +724,113 @@ test("render_component rejects an unavailable or out-of-range transient scroll",
       assert.equal(outOfRange.error.code, "TRANSIENT_STATE_INVALID");
       assert.equal(outOfRange.error.path, "state.scrolls[0].y");
       assert.deepEqual(outOfRange.error.allowed, { min: 0, max: 80 });
+    }
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component applies transient list selection without writing the project", async () => {
+  const { directory, componentFile } = await createListStateProject();
+  const before = await readFile(componentFile);
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+
+  try {
+    const result = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      state: {
+        lists: [{
+          selector: "#items",
+          expectedMatches: 1,
+          selectedIndex: 1
+        }]
+      }
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const firstOffset = (20 * decoded.info.width + 50)
+      * decoded.info.channels;
+    const secondOffset = (60 * decoded.info.width + 50)
+      * decoded.info.channels;
+    assert.ok(
+      (decoded.data[firstOffset] ?? 0) > 180
+        && (decoded.data[firstOffset + 2] ?? 0) < 120,
+      "未选中的第一项应保持红色"
+    );
+    assert.ok(
+      (decoded.data[secondOffset] ?? 0) < 80
+        && (decoded.data[secondOffset + 1] ?? 0) > 70
+        && (decoded.data[secondOffset + 2] ?? 0) > 180,
+      "选中的第二项应显示蓝色"
+    );
+    assert.deepEqual(await readFile(componentFile), before);
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component rejects an invalid transient list target or index", async () => {
+  const { directory } = await createListStateProject();
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+
+  try {
+    const invalidTarget = await renderer.render(
+      RenderComponentInputSchema.parse({
+        projectId: opened.data.projectId,
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        state: {
+          lists: [{
+            selector: "#normal",
+            expectedMatches: 2,
+            selectedIndex: 0
+          }]
+        }
+      })
+    );
+    assert.equal(invalidTarget.ok, false);
+    if (!invalidTarget.ok) {
+      assert.equal(invalidTarget.error.code, "TRANSIENT_STATE_INVALID");
+      assert.equal(invalidTarget.error.path, "state.lists[0].selector");
+    }
+
+    const invalidIndex = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      state: {
+        lists: [{
+          selector: "#items",
+          expectedMatches: 1,
+          selectedIndex: 2
+        }]
+      }
+    }));
+    assert.equal(invalidIndex.ok, false);
+    if (!invalidIndex.ok) {
+      assert.equal(invalidIndex.error.code, "TRANSIENT_STATE_INVALID");
+      assert.equal(invalidIndex.error.path, "state.lists[0].selectedIndex");
+      assert.deepEqual(invalidIndex.error.allowed, {
+        min: -1,
+        max: 1,
+        itemCount: 2
+      });
     }
   }
   finally {

@@ -225,10 +225,12 @@ BrowserContext 加载全部内存包后，按包 ID 和组件 ID 构造真实 Fa
 
 `state.controllers` 可在隔离 BrowserContext 内按受限 DOM 选择器设置控制器页，
 支持 `selectedIndex`、`pageId` 或 `pageName` 三选一；`state.scrolls` 可按非负
-像素 `x`/`y` 设置启用滚动组件的位置。每个目标必须声明 `expectedMatches`；
-选择器数量、目标类型、控制器名、页面和实际可滚范围都经过显式校验，越界不会
-静默夹取。状态按控制器、滚动位置的顺序应用，且只用于当前截图，不改变内存
-工程快照或磁盘文件。
+像素 `x`/`y` 设置启用滚动组件的位置；`state.lists` 可通过 `selectedIndex`
+或 `selectedIndices` 设置非 Tree 列表的运行时选中项。每个目标必须声明
+`expectedMatches`；选择器数量、目标类型、控制器名、页面、列表选择模式、
+项目索引和实际可滚范围都经过显式校验，越界不会静默夹取。状态按控制器、
+列表选择、滚动位置的顺序应用，且只用于当前截图，不改变内存工程快照或磁盘
+文件。
 
 ## 9. 验证、测试与发布
 

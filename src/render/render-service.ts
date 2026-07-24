@@ -107,9 +107,19 @@ interface PreviewScrollState {
   y?: number;
 }
 
+interface PreviewListState {
+  selector: ParsedFairyDomSelector;
+  expectedMatches: number;
+  selection: {
+    kind: "index" | "indices";
+    indices: number[];
+  };
+}
+
 interface PreviewTransientState {
   controllers: PreviewControllerState[];
   scrolls: PreviewScrollState[];
+  lists: PreviewListState[];
 }
 
 interface PreviewPayload {
@@ -237,7 +247,33 @@ function prepareTransientState(
     }
   }
 
-  return ok({ controllers, scrolls });
+  const lists: PreviewListState[] = [];
+  for (const [index, entry] of (state.lists ?? []).entries()) {
+    try {
+      lists.push({
+        selector: parseFairyDomSelector(entry.selector),
+        expectedMatches: entry.expectedMatches,
+        selection: "selectedIndex" in entry
+          ? {
+              kind: "index",
+              indices: entry.selectedIndex === -1 ? [] : [entry.selectedIndex]
+            }
+          : { kind: "indices", indices: entry.selectedIndices }
+      });
+    }
+    catch (error) {
+      if (error instanceof SelectorSyntaxError) {
+        return fail("INVALID_SELECTOR", error.message, {
+          path: `state.lists[${index}].selector[${error.index}]`,
+          actual: error.selector,
+          suggestedFix: error.suggestedFix
+        });
+      }
+      throw error;
+    }
+  }
+
+  return ok({ controllers, scrolls, lists });
 }
 
 export class RenderService {

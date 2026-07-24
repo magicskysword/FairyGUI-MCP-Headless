@@ -229,6 +229,111 @@ export const PREVIEW_SCRIPT = String.raw`
       });
     });
 
+    (state.lists || []).forEach((entry, stateIndex) => {
+      const path = "state.lists[" + stateIndex + "]";
+      const targets = matchObjects(view, entry.selector);
+      if (targets.length !== entry.expectedMatches) {
+        stateFailure({
+          code: "SELECTOR_MATCH_COUNT",
+          message:
+            "临时列表选择器匹配数量不符合 expectedMatches："
+            + entry.selector.source,
+          path: path + ".selector",
+          actual: {
+            selector: entry.selector.source,
+            expectedMatches: entry.expectedMatches,
+            actualMatches: targets.length
+          },
+          suggestedFix:
+            "先用 fairygui.query 确认节点 ID/名称，并更新 expectedMatches"
+        });
+      }
+
+      targets.forEach((target) => {
+        if (
+          typeof fgui.GList !== "function"
+          || !(target instanceof fgui.GList)
+          || typeof fgui.GTree === "function" && target instanceof fgui.GTree
+        ) {
+          stateFailure({
+            code: "TRANSIENT_STATE_INVALID",
+            message: "列表临时选择只能应用到非 Tree 的 GList 节点",
+            path: path + ".selector",
+            actual: {
+              selector: entry.selector.source,
+              targetId: target.id || "",
+              targetName: target.name || "",
+              targetType: runtimeType(target, view)
+            },
+            allowed: ["list"]
+          });
+        }
+
+        const indices = entry.selection.indices;
+        for (let index = 0; index < indices.length; index++) {
+          const selectedIndex = indices[index];
+          if (selectedIndex < 0 || selectedIndex >= target.numItems) {
+            stateFailure({
+              code: "TRANSIENT_STATE_INVALID",
+              message: "列表临时选择索引超出项目范围",
+              path: entry.selection.kind === "index"
+                ? path + ".selectedIndex"
+                : path + ".selectedIndices[" + index + "]",
+              actual: selectedIndex,
+              allowed: {
+                min: -1,
+                max: target.numItems - 1,
+                itemCount: target.numItems
+              }
+            });
+          }
+        }
+        if (indices.length > 0 && target.selectionMode === 3) {
+          stateFailure({
+            code: "TRANSIENT_STATE_INVALID",
+            message: "目标列表的 selectionMode 为 none，不能设置选中项",
+            path: path + ".selector",
+            actual: "none",
+            allowed: ["single", "multiple", "multipleSingleClick"]
+          });
+        }
+        if (indices.length > 1 && target.selectionMode === 0) {
+          stateFailure({
+            code: "TRANSIENT_STATE_INVALID",
+            message: "单选列表不能设置多个临时选中项",
+            path: path + ".selectedIndices",
+            actual: indices,
+            allowed: { maxSelections: 1 }
+          });
+        }
+
+        target.clearSelection();
+        indices.forEach((selectedIndex) => {
+          target.addSelection(selectedIndex, false);
+        });
+        const actualSelection = target.getSelection([]).sort((a, b) => a - b);
+        const expectedSelection = [...indices].sort((a, b) => a - b);
+        if (
+          actualSelection.length !== expectedSelection.length
+          || actualSelection.some(
+            (selectedIndex, index) =>
+              selectedIndex !== expectedSelection[index]
+          )
+        ) {
+          stateFailure({
+            code: "TRANSIENT_STATE_INVALID",
+            message: "列表项目未形成请求的运行时选中状态",
+            path: path,
+            actual: actualSelection,
+            allowed: {
+              requested: expectedSelection,
+              requirement: "列表项目必须是可选中的 Button"
+            }
+          });
+        }
+      });
+    });
+
     (state.scrolls || []).forEach((entry, stateIndex) => {
       const path = "state.scrolls[" + stateIndex + "]";
       const targets = matchObjects(view, entry.selector);

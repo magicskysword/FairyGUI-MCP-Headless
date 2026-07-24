@@ -462,11 +462,35 @@ export const RenderScrollStateSchema = z.union([
 ]);
 export type RenderScrollState = z.infer<typeof RenderScrollStateSchema>;
 
+const renderListStateBase = {
+  selector,
+  expectedMatches
+} as const;
+const renderListIndex = z.number().int().nonnegative();
+const renderListIndices = z.array(renderListIndex).max(100).refine(
+  (indices) => new Set(indices).size === indices.length,
+  { message: "selectedIndices 不能包含重复索引" }
+);
+
+export const RenderListStateSchema = z.union([
+  z.object({
+    ...renderListStateBase,
+    selectedIndex: z.number().int().min(-1)
+  }).strict(),
+  z.object({
+    ...renderListStateBase,
+    selectedIndices: renderListIndices
+  }).strict()
+]);
+export type RenderListState = z.infer<typeof RenderListStateSchema>;
+
 const renderControllers = z.array(RenderControllerStateSchema).min(1).max(100);
 const renderScrolls = z.array(RenderScrollStateSchema).min(1).max(100);
+const renderLists = z.array(RenderListStateSchema).min(1).max(100);
 const renderTransientStateFields = {
   controllers: renderControllers.optional(),
-  scrolls: renderScrolls.optional()
+  scrolls: renderScrolls.optional(),
+  lists: renderLists.optional()
 } as const;
 
 export const RenderTransientStateSchema = z.union([
@@ -477,6 +501,10 @@ export const RenderTransientStateSchema = z.union([
   z.object({
     ...renderTransientStateFields,
     scrolls: renderScrolls
+  }).strict(),
+  z.object({
+    ...renderTransientStateFields,
+    lists: renderLists
   }).strict()
 ]);
 export type RenderTransientState = z.infer<

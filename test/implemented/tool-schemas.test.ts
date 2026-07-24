@@ -365,6 +365,50 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       }]
     }
   }).success, false);
+  for (const selection of [
+    { selectedIndex: 1 },
+    { selectedIndex: -1 },
+    { selectedIndices: [0, 2] },
+    { selectedIndices: [] }
+  ]) {
+    assert.equal(RenderComponentInputSchema.safeParse({
+      projectId: "project-1",
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      state: {
+        lists: [{
+          selector: 'list[name="items"]',
+          expectedMatches: 1,
+          ...selection
+        }]
+      }
+    }).success, true);
+  }
+  assert.equal(RenderComponentInputSchema.safeParse({
+    projectId: "project-1",
+    packageId: "pkg00001",
+    componentId: "cmp01",
+    state: {
+      lists: [{
+        selector: 'list[name="items"]',
+        expectedMatches: 1,
+        selectedIndex: 1,
+        selectedIndices: [1]
+      }]
+    }
+  }).success, false);
+  assert.equal(RenderComponentInputSchema.safeParse({
+    projectId: "project-1",
+    packageId: "pkg00001",
+    componentId: "cmp01",
+    state: {
+      lists: [{
+        selector: 'list[name="items"]',
+        expectedMatches: 1,
+        selectedIndices: [1, 1]
+      }]
+    }
+  }).success, false);
   assert.equal(RenderComponentInputSchema.safeParse({
     projectId: "project-1",
     packageId: "pkg00001",

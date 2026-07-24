@@ -554,7 +554,8 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       mode
     }), {
       projectId: "project-1",
-      mode
+      mode,
+      detail: "summary"
     });
   }
 });

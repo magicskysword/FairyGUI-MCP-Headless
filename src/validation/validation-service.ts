@@ -24,8 +24,10 @@ import {
 } from "@magicskysword/openfairygui-functions";
 import type {
   ValidationData,
+  ValidationDiagnosticCounts,
   ValidationPhase,
-  ValidationPhaseName
+  ValidationPhaseName,
+  ValidationSummaryPhase
 } from "../contracts/validation.js";
 import {
   fail,
@@ -339,6 +341,35 @@ function hasErrors(diagnostics: Diagnostic[]): boolean {
   return diagnostics.some((diagnostic) => diagnostic.severity === "error");
 }
 
+const SUMMARY_DIAGNOSTIC_LIMIT = 20;
+
+function diagnosticCounts(
+  diagnostics: readonly Diagnostic[]
+): ValidationDiagnosticCounts {
+  const bySeverity = {
+    error: 0,
+    warning: 0,
+    info: 0
+  };
+  const byCode: Record<string, number> = {};
+  for (const diagnostic of diagnostics) {
+    bySeverity[diagnostic.severity]++;
+    byCode[diagnostic.code] = (byCode[diagnostic.code] ?? 0) + 1;
+  }
+  return { bySeverity, byCode };
+}
+
+function summaryPhase(phase: ValidationPhase): ValidationSummaryPhase {
+  return {
+    name: phase.name,
+    valid: phase.valid,
+    durationMs: phase.durationMs,
+    diagnosticCount: phase.diagnostics.length,
+    counts: diagnosticCounts(phase.diagnostics),
+    ...(phase.metrics === undefined ? {} : { metrics: phase.metrics })
+  };
+}
+
 export class ValidationService {
   private readonly projects: ProjectRegistry;
   private readonly temporaryRoot: string;
@@ -391,19 +422,36 @@ export class ValidationService {
     }
 
     const diagnostics = phases.flatMap((phase) => phase.diagnostics);
+    const checked = {
+      packageCount: scope.packages.length,
+      componentCount: scope.components.length
+    };
+    if (input.detail === "full") {
+      return ok({
+        detail: "full",
+        mode: input.mode,
+        valid: phases.every((phase) => phase.valid),
+        checked: {
+          ...checked,
+          packageIds: scope.packages.map((pkg) => pkg.getId()),
+          componentIds: scope.components.map(({ component }) =>
+            component.getId()
+          )
+        },
+        phases,
+        diagnostics
+      });
+    }
     return ok({
+      detail: "summary",
       mode: input.mode,
       valid: phases.every((phase) => phase.valid),
-      checked: {
-        packageCount: scope.packages.length,
-        componentCount: scope.components.length,
-        packageIds: scope.packages.map((pkg) => pkg.getId()),
-        componentIds: scope.components.map(({ component }) =>
-          component.getId()
-        )
-      },
-      phases,
-      diagnostics
+      checked,
+      diagnosticCount: diagnostics.length,
+      counts: diagnosticCounts(diagnostics),
+      phases: phases.map(summaryPhase),
+      diagnostics: diagnostics.slice(0, SUMMARY_DIAGNOSTIC_LIMIT),
+      diagnosticsTruncated: diagnostics.length > SUMMARY_DIAGNOSTIC_LIMIT
     });
   }
 

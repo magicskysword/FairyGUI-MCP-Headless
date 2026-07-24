@@ -585,6 +585,7 @@ export type PublishInput = z.infer<typeof PublishInputSchema>;
 export const ValidateInputSchema = z.object({
   projectId: nonEmptyId,
   mode: z.enum(["quick", "roundtrip", "publish", "full"]),
+  detail: z.enum(["summary", "full"]).default("summary"),
   packageIds: z.array(nonEmptyId).min(1).optional(),
   componentIds: z.array(nonEmptyId).min(1).optional()
 }).strict();

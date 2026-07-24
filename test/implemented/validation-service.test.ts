@@ -27,6 +27,7 @@ afterEach(async () => {
 async function createProject(options: {
   brokenReference?: boolean;
   codeGeneration?: boolean;
+  extraEmptyComponents?: number;
 } = {}): Promise<{
   directory: string;
   componentFile: string;
@@ -50,6 +51,12 @@ async function createProject(options: {
     : ""}
   <resources>
     <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+    ${Array.from(
+      { length: options.extraEmptyComponents ?? 0 },
+      (_, index) =>
+        `<component id="e${String(index).padStart(4, "0")}" `
+        + `name="Empty${index}.xml" path="/"/>`
+    ).join("\n    ")}
     <image id="img01" name="hero.png" path="/" exported="true"/>
   </resources>
 </packageDescription>`,
@@ -83,12 +90,22 @@ async function createProject(options: {
 </component>`,
     "utf8"
   );
+  await Promise.all(Array.from(
+    { length: options.extraEmptyComponents ?? 0 },
+    (_, index) => writeFile(
+      path.join(packageDirectory, `Empty${index}.xml`),
+      `<?xml version="1.0" encoding="utf-8"?>
+<component size="32,32"><displayList/></component>`,
+      "utf8"
+    )
+  ));
   return { directory, componentFile };
 }
 
 async function openValidator(options: {
   brokenReference?: boolean;
   codeGeneration?: boolean;
+  extraEmptyComponents?: number;
 } = {}): Promise<{
   registry: ProjectRegistry;
   validator: ValidationService;
@@ -116,7 +133,8 @@ test("quick validation returns valid:false as a successful project finding", asy
   try {
     const result = await validator.validate(ValidateInputSchema.parse({
       projectId,
-      mode: "quick"
+      mode: "quick",
+      detail: "full"
     }));
 
     assert.equal(result.ok, true, JSON.stringify(result));
@@ -129,6 +147,56 @@ test("quick validation returns valid:false as a successful project finding", asy
     ));
     assert.equal(result.data.checked.packageCount, 1);
     assert.equal(result.data.checked.componentCount, 1);
+  }
+  finally {
+    await registry.closeAll();
+  }
+});
+
+test("validation summary reports counts and limits diagnostics without full ids", async () => {
+  const { registry, validator, projectId } = await openValidator({
+    brokenReference: true,
+    extraEmptyComponents: 25
+  });
+  try {
+    const summary = await validator.validate(ValidateInputSchema.parse({
+      projectId,
+      mode: "quick"
+    }));
+
+    assert.equal(summary.ok, true, JSON.stringify(summary));
+    if (!summary.ok) return;
+    assert.equal(summary.data.detail, "summary");
+    assert.equal(summary.data.valid, false);
+    assert.deepEqual(summary.data.checked, {
+      packageCount: 1,
+      componentCount: 26
+    });
+    assert.equal("packageIds" in summary.data.checked, false);
+    assert.equal(summary.data.diagnosticCount, 26);
+    assert.deepEqual(summary.data.counts.bySeverity, {
+      error: 1,
+      warning: 0,
+      info: 25
+    });
+    assert.equal(summary.data.counts.byCode.EMPTY_COMPONENT, 25);
+    assert.equal(summary.data.diagnostics.length, 20);
+    assert.equal(summary.data.diagnosticsTruncated, true);
+    assert.equal(summary.data.phases[0]?.diagnosticCount, 26);
+    assert.equal("diagnostics" in summary.data.phases[0]!, false);
+
+    const full = await validator.validate(ValidateInputSchema.parse({
+      projectId,
+      mode: "quick",
+      detail: "full"
+    }));
+    assert.equal(full.ok, true, JSON.stringify(full));
+    if (!full.ok) return;
+    assert.equal(full.data.detail, "full");
+    assert.equal(full.data.checked.packageIds.length, 1);
+    assert.equal(full.data.checked.componentIds.length, 26);
+    assert.equal(full.data.diagnostics.length, 26);
+    assert.equal(full.data.phases[0]?.diagnostics.length, 26);
   }
   finally {
     await registry.closeAll();

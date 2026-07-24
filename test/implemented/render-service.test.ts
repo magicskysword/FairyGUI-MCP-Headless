@@ -166,6 +166,42 @@ async function createControllerStateProject(): Promise<{
   return { directory, componentFile };
 }
 
+async function createRichTextColorProject(): Promise<string> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-richtext-render-"));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(
+    path.join(directory, "Demo.fairy"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="richtext-render-project" type="DOM" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "package.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "Main.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="320,80" bgColorEnabled="true" bgColor="#383838">
+  <displayList>
+    <richtext id="link" name="link" xy="8,8" size="304,64"
+      fontSize="40" color="#68baba" ubb="true" autoSize="none"
+      text="[url=open]████████[/url]"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  return directory;
+}
+
 async function openRenderer(options: {
   browserType?: RenderBrowserType;
 } = {}): Promise<{
@@ -259,6 +295,51 @@ test("render_component resolves nested component instances through the runtime p
       red > 190 && green < 70 && blue < 110,
       `嵌套组件中心像素应为红色，实际为 rgb(${red}, ${green}, ${blue})`
     );
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component preserves a rich-text field color inside default UBB links", async () => {
+  const directory = await createRichTextColorProject();
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+
+  try {
+    const result = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01"
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let sourceColorPixels = 0;
+    let browserBluePixels = 0;
+    for (
+      let offset = 0;
+      offset < decoded.data.length;
+      offset += decoded.info.channels
+    ) {
+      const red = decoded.data[offset];
+      const green = decoded.data[offset + 1];
+      const blue = decoded.data[offset + 2];
+      if (red === 104 && green === 186 && blue === 186) {
+        sourceColorPixels++;
+      }
+      if (red === 58 && green === 103 && blue === 204) {
+        browserBluePixels++;
+      }
+    }
+    assert.ok(sourceColorPixels > 100, `源文本色像素过少：${sourceColorPixels}`);
+    assert.equal(browserBluePixels, 0);
   }
   finally {
     await renderer.close();

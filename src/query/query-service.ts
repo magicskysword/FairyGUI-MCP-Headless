@@ -253,26 +253,24 @@ export class QueryService {
     input: QueryInput
   ): ResultEnvelope<QueryBatchData> {
     const results: Record<string, QueryItemResult> = {};
-    let failures = 0;
+    const failedKeys: string[] = [];
     for (const [key, request] of Object.entries(input.queries)) {
       try {
         results[key] = ok(this.executeItem(document, request));
       }
       catch (error) {
-        failures++;
+        failedKeys.push(key);
         results[key] = this.itemFailure(error, key);
       }
     }
-    if (failures > 0) {
-      return fail(
-        "PARTIAL_QUERY_FAILURE",
-        `${failures} 个命名查询失败；其余结果已保留`,
-        {
-          path: "queries",
-          actual: { results },
-          suggestedFix: "按失败查询键中的结构化错误修正后单独重试"
-        }
-      );
+    if (failedKeys.length > 0) {
+      return ok({ results }, [{
+        severity: "warning",
+        code: "PARTIAL_QUERY_FAILURE",
+        message: `${failedKeys.length} 个命名查询失败；其余结果已保留`,
+        path: "queries",
+        details: { failedKeys }
+      }]);
     }
     return ok({ results });
   }

@@ -162,15 +162,20 @@ test("one failed query preserves successful siblings in PARTIAL_QUERY_FAILURE", 
       }
     }));
 
-    assert.equal(result.ok, false);
-    if (result.ok) return;
-    assert.equal(result.error.code, "PARTIAL_QUERY_FAILURE");
-    const actual = result.error.actual as {
-      results: Record<string, { ok: boolean; error?: { code: string } }>;
-    };
-    assert.equal(actual.results.packages?.ok, true);
-    assert.equal(actual.results.missing?.ok, false);
-    assert.equal(actual.results.missing?.error?.code, "COMPONENT_NOT_FOUND");
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(
+      result.warnings?.map((warning) => warning.code),
+      ["PARTIAL_QUERY_FAILURE"]
+    );
+    assert.equal(result.data.results.packages?.ok, true);
+    assert.equal(result.data.results.missing?.ok, false);
+    assert.equal(
+      result.data.results.missing?.ok
+        ? undefined
+        : result.data.results.missing?.error.code,
+      "COMPONENT_NOT_FOUND"
+    );
   }
   finally {
     await registry.closeAll();
@@ -220,12 +225,14 @@ test("pagination cursors are opaque, deterministic and query-kind scoped", async
         }
       }
     }));
-    assert.equal(wrongKind.ok, false);
-    if (!wrongKind.ok) {
-      const actual = wrongKind.error.actual as {
-        results: Record<string, { error?: { code: string } }>;
-      };
-      assert.equal(actual.results.packages?.error?.code, "INVALID_ARGUMENT");
+    assert.equal(wrongKind.ok, true);
+    if (wrongKind.ok) {
+      const result = wrongKind.data.results.packages;
+      assert.equal(result?.ok, false);
+      assert.equal(
+        result?.ok ? undefined : result?.error.code,
+        "INVALID_ARGUMENT"
+      );
     }
   }
   finally {
@@ -249,13 +256,15 @@ test("invalid DOM selectors fail only their named query", async () => {
       }
     }));
 
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      const actual = result.error.actual as {
-        results: Record<string, { ok: boolean; error?: { code: string } }>;
-      };
-      assert.equal(actual.results.invalidSelector?.error?.code, "INVALID_SELECTOR");
-      assert.equal(actual.results.capabilities?.ok, true);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      const invalidSelector = result.data.results.invalidSelector;
+      assert.equal(invalidSelector?.ok, false);
+      assert.equal(
+        invalidSelector?.ok ? undefined : invalidSelector?.error.code,
+        "INVALID_SELECTOR"
+      );
+      assert.equal(result.data.results.capabilities?.ok, true);
     }
   }
   finally {

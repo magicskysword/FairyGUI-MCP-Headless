@@ -79,12 +79,14 @@ async function connectServer(): Promise<{
 function structured(result: Awaited<ReturnType<Client["callTool"]>>): {
   ok: boolean;
   data?: Record<string, unknown>;
+  warnings?: Array<{ code: string }>;
   error?: { code: string; message: string };
 } {
   assert.ok("structuredContent" in result);
   return result.structuredContent as {
     ok: boolean;
     data?: Record<string, unknown>;
+    warnings?: Array<{ code: string }>;
     error?: { code: string; message: string };
   };
 }
@@ -198,6 +200,38 @@ test("stdio-facing handlers complete the M1 open-query-render-validate loop", as
       }
     });
     assert.equal(structured(queried).ok, true);
+
+    const partiallyQueried = await client.callTool({
+      name: "fairygui.query",
+      arguments: {
+        projectId,
+        queries: {
+          packages: { kind: "packages" },
+          missing: {
+            kind: "dom",
+            packageId: "pkg00001",
+            componentId: "missing"
+          }
+        }
+      }
+    });
+    assert.equal(
+      "isError" in partiallyQueried && partiallyQueried.isError,
+      false
+    );
+    const partialEnvelope = structured(partiallyQueried);
+    assert.equal(partialEnvelope.ok, true);
+    assert.deepEqual(
+      (partialEnvelope.warnings as Array<{ code: string }> | undefined)
+        ?.map((warning) => warning.code),
+      ["PARTIAL_QUERY_FAILURE"]
+    );
+    const partialResults = partialEnvelope.data?.results as Record<
+      string,
+      { ok: boolean; error?: { code: string } }
+    >;
+    assert.equal(partialResults.packages?.ok, true);
+    assert.equal(partialResults.missing?.error?.code, "COMPONENT_NOT_FOUND");
 
     const rendered = await client.callTool({
       name: "fairygui.render_component",

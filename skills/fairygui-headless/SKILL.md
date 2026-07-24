@@ -5,94 +5,182 @@ description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染、校验并�
 
 # FairyGUI Headless
 
-把 FairyGUI 工程视为磁盘上的强类型 UI 文档。复用 HTML/CSS 中关于树、选择器、样式和批处理的知识，但只使用工具 Schema 明确支持的字段；这里不是浏览器 DOM，也不是完整 CSS。
+把 FairyGUI 工程视为磁盘上的强类型 UI 文档。可以复用 HTML/CSS 的树、选择器、
+样式和批处理知识，但只能使用本 Skill、完整 DOM 查询和工具结果明确声明的字段。
+这里不是浏览器 DOM，也不是完整 CSS。
 
-## 标准工作流
+## 标准闭环
 
-1. 用 `fairygui.project` 的 `open` 打开工程并保存返回的 `projectId`。同一路径重复打开会复用会话。
-2. 用一次 `fairygui.query` 放入多个命名查询，批量查询包、组件、目标 DOM、资源引用和能力矩阵。不要为每个字段单独调用工具。
-3. 编辑前检查 `capabilities`。`implemented` 才可写；`planned` 或 `read-only` 不要尝试绕过。
-4. 组件内容修改使用一次 `fairygui.apply_dom_patch` 批量提交相关操作；包和资源修改使用一次 `fairygui.apply_resource_operations`。
-5. 写入成功后顺序调用 `fairygui.render_component` 查看内存编译的 PNG 运行时预览，再根据视觉反馈批量调整。
-6. 完成局部修改后用 `fairygui.validate` 的 `quick` 校验；交付前使用 `roundtrip`、`publish` 或 `full` 校验。
-7. 只有需要正式磁盘产物时才调用 `fairygui.publish`。
+1. 用 `fairygui.project` 的 `open` 打开工程，保存 `projectId`。
+2. 用一次 `fairygui.query` 批量查询包、组件、目标 DOM、资源引用和能力。
+3. 先检查目标与能力，再把同一意图合并为一次
+   `fairygui.apply_dom_patch` 或 `fairygui.apply_resource_operations`。
+4. 写入成功后，顺序调用 `fairygui.render_component` 做命名批量渲染。
+5. 根据 PNG、`availableState`、`appliedState`、Gear 隐藏摘要和 diagnostics
+   调整，再次批量写入并渲染。
+6. 局部完成后做 `quick` 校验；交付前做 `roundtrip`、`publish` 或 `full`。
+7. 只有需要正式磁盘产物时才调用 `fairygui.publish`，最后关闭工程会话。
 
-磁盘是唯一事实来源。工具会在读取、写入和渲染前刷新外部修改；没有草稿、Undo/Redo、revision、文件锁或 Git 操作。不要假设并发渲染能观察到尚未完成的写入。
+磁盘是唯一事实来源。工具会在查询、渲染和写入前刷新外部修改；没有草稿、
+Undo/Redo、revision、文件锁或 Git 操作。不要假设并发 render 能看到尚未完成的
+patch。
 
-## 高效查询
+## 查询纪律
 
-`fairygui.query` 的 `queries` 是命名批次。一次请求可以同时查询：
+`fairygui.query` 的 `queries` 是最多 100 项的命名批次：
 
-- `packages`：工程包；
-- `resources` 与 `components`：资源和组件；
-- `dom`：强类型 DOM，可选受限选择器和只读实例投影；
+- `packages`：包；
+- `resources`、`components`：资源和组件；
+- `dom`：受限 DOM、静态 `stateModel` 与可选实例来源投影；
 - `references`：资源引用来源；
 - `capabilities`：implemented、planned 与 read-only 边界；
-- `audit`：未知 XML 结构的只读审计。
+- `audit`：未知 XML 的只读审计。
 
-批量查询发生部分失败时，顶层返回 `PARTIAL_QUERY_FAILURE`，成功兄弟仍保留在每个查询键下。只重试失败项，不要丢弃已经取得的数据。
+大结果默认 `detail:"summary"`，默认分页 50 项。摘要用于定位，写入依据使用显式
+`detail:"full"`；继续分页时原样传回不透明 `cursor`。DOM 的
+`instanceProjection` 使用 `"none"|"summary"|"full"`，默认 `"none"`。
 
-## DOM 与选择器
+命名查询部分失败时，顶层仍是 `ok:true`、MCP `isError:false`，同时返回
+`warnings:[{code:"PARTIAL_QUERY_FAILURE",...}]`。每个查询键有自己的成功或错误
+信封；只重试失败项，不丢弃已经取得的数据。
 
-公共样式采用规范名称，例如 `left`、`top`、`width`、`height`、`opacity`、`rotation`、`scaleX` 和 `scaleY`。数值直接使用 JSON number；不要传 `px`、`calc()`、`vw`、`vh` 或运行时别名 `x/y/alpha`。
+`stateModel` 会解释 Controller 默认页、全部页面、Gear 适用页、当前有效值和节点
+默认可见性。静态无法确定时返回 `unknown`，不要自行猜测。
 
-选择器只支持：
+## DOM 编写前置要求
 
-- 类型：`text`
-- ID：`#n3`
-- 名称属性：`[name="title"]`
-- 复合：`text[name="title"]`
-- 后代与直接子代：`component-root text`、`component-root > text`
+公共样式使用 `left/top/width/height/opacity/rotation/scaleX/scaleY/...`，值是
+JSON number；不要传 `px`、`calc()`、`vw/vh` 或运行时别名 `x/y/alpha`。
 
-不支持伪类、逗号组和通用 CSS。所有写目标都必须给出 `expectedMatches`；匹配数量不同属于失败，不会猜测目标。
+选择器只支持类型、`#id`、`[name="..."]`、复合形式、后代和直接子代 `>`。
+不支持伪类、逗号组或通用 CSS。所有写目标必须传 `expectedMatches`，数量不符时
+修正选择器，不要降低预期来掩盖歧义。
 
-同一批新增节点通过 `clientRef` 相互引用。组件实例默认是边界节点；`resolvedPreview:true` 只提供来源投影，不能跨边界写入。Group 成员仍是兄弟节点并通过 `groupId` 关联；List/Tree 项目不是普通子节点。
+在执行 `insert`、`update` 或 `replace` 前，先读取
+[`references/dom-authoring.md`](references/dom-authoring.md)。该引用是节点字段、
+必填/可空规则、枚举、Relations、Group、List、Merge Patch 与五种操作范例的
+编写契约。随后用 `detail:"full"` 查询实际目标；查询结果与引用共同构成输入依据。
 
-## 原子写入
+## 原子 DOM 补丁
 
-`fairygui.apply_dom_patch` 支持：
+`fairygui.apply_dom_patch` 只接受一个组件和一个 `operations` 数组，支持：
 
-- `operations`：把插入、删除、移动、改名、样式、文本、资源、Relations 和静态 List 项目合成一个原子批次；
-- `replace`：每次只替换一个内容域。
+- `insert`：在组件根插入新节点，由 `clientRef` 取得服务端 ID；
+- `update`：对一个或多个目标应用受限 Merge Patch；
+- `move`：把一个节点移动到 `toIndex`；
+- `remove`：删除一个或多个节点；
+- `replace`：以新类型或完整节点替换一个目标，并保留原稳定 ID。
 
-优先使用 operations 做局部编辑。只有确实要完整接管一个内容域时才使用 replace；若未知 XML 无法安全保留，会返回 `OPAQUE_CONTENT_CONFLICT` 且不写磁盘。
+`node` 与 `changes` 在公开工具 Schema 中有意保持为普通 JSON object，以确保
+Agent 能发现工具；服务会按节点类型进行第二次严格校验。`INVALID_PATCH.path`
+会精确指向 `operations[n].node...` 或 `operations[n].changes...`，应按
+`actual`、`allowed` 和 `suggestedFix` 修正。
 
-`fairygui.apply_resource_operations` 把创建包/组件、收件箱导入、替换、重命名、包内移动和删除合成一个原子批次。导入文件必须预先放入工程的 `.fairygui-mcp/import-inbox/`，并传规范相对路径。不要传绝对路径或 `..`。
+`update.changes` 遵循受限 Merge Patch：缺省字段不修改、对象递归合并、数组整体
+替换、`null` 清除可选字段；必填字段不能清除。不能修改
+`id/type/readOnly/capability`，类型变化使用 `replace`。`selector` 与
+`targetRef` 必须且只能选一个；`targetRef` 只能指向本批已经执行的 `insert`。
+`groupId`、Relation `targetId` 等引用可使用稳定节点 ID 或同批 `clientRef`。
 
-资源冲突使用 `reject|rename|replace`；默认 `reject`。`replace` 必须指定已有 `resourceId`，以保留 ID 和引用。删除默认 `reject`；只有明确理解引用影响时才使用 `cascade` 或 `force`。
+批次会先预检所有目标，再修改完整内存模型；任一项失败都不写磁盘。成功结果只
+返回事务、逐操作摘要、`affectedNodeIds`、文件和 `clientRefs`，不会回传完整
+DOM；需要结果状态时再批量 query。
 
-## 反馈与校验
+## 资源操作
 
-`fairygui.render_component` 返回：
+`fairygui.apply_resource_operations` 批量创建包/组件、导入、替换、重命名、包内
+移动和删除。高风险操作先传 `dryRun:true`：服务仍会读取最新磁盘、执行完整模型
+操作、序列化和回读校验，但不创建事务、不写盘、不消费 inbox。确认
+`operationResults`、`affectedReferences`、`fileChanges`、
+`wouldConsumeInboxPaths` 和 `wouldRemoveDirectories` 后，再用相同操作传
+`dryRun:false`。
 
-- `backend: "fairygui-dom"`
-- `fidelity: "runtime-preview"`
-- PNG、边界、诊断和渲染器版本
+导入源必须位于 `.fairygui-mcp/import-inbox/`，只传规范相对路径。不要传绝对
+路径、`..`、目录或符号链接。冲突策略是 `reject|rename|replace`；删除策略是
+`reject|cascade|force`。只有明确理解引用影响时才用 `cascade` 或 `force`。
 
-工具会直接从未发布的工程在内存中编译运行时包，并执行真实 FairyGUI-dom 组件与资源加载；临时运行时产物不会写入源工程。预览应在位置、显示、图片和颜色上肉眼接近 Editor，但因浏览器与 Unity/Editor 的渲染后端不同，仍不是像素真值。遇到外部资源、计划能力或渲染差异时先阅读 diagnostics，再决定修改。浏览器缺失时按 `BROWSER_NOT_INSTALLED.suggestedFix` 安装 Playwright Chromium；工具不会静默下载或回退到系统浏览器。
+## 命名批量渲染
 
-`scale` 同时控制截图像素密度和 FairyGUI 高分辨率资源选择；需要检查 `@2x/@3x/@4x` 资源时分别传 `2/3/4`。隐式变体不要求单独导出，也不会因预览而写回工程。
+`fairygui.render_component` 的唯一形式是 `renders` 命名对象，最多 20 项；单个
+组件也必须给一个键。`imageResult` 为 `"inline"|"file"|"both"`，默认
+`"inline"`；`stateDetail` 为 `"summary"|"full"`，默认 `"summary"`。
+structuredContent 和文本永不包含 base64；内联 PNG 通过 `contentIndex` 对应
+命名结果。
 
-需要查看控制器的非默认页、List/Tree 状态或滚动区域时，在同一次调用中传入临时状态。`state.controllers` 每项使用受限 DOM `selector`、`expectedMatches` 和控制器 `controller`，并以 `selectedIndex`、`pageId` 或 `pageName` 三选一指定页面；`state.lists` 用 `selectedIndex`（`-1` 清空）或唯一的 `selectedIndices` 设置非 Tree 列表；`state.trees` 用逐级子节点索引组成的 `nodePath` 设置 folder 展开状态和选中节点，`selectedPath:null` 清空选择；`state.scrolls` 使用相同目标约束和非负像素 `x`/`y`，位置必须处于返回的实际可滚范围。临时状态可穿入已实例化的嵌套组件，但只存在于该次隔离截图中，不会写盘或影响下一次渲染。遇到 `SELECTOR_MATCH_COUNT` 或 `TRANSIENT_STATE_INVALID` 时根据返回的 `actual`、`allowed` 修正调用，不要猜测页面、项目索引、Tree 路径或依赖静默夹取。
+```json
+{
+  "projectId": "p_...",
+  "imageResult": "file",
+  "stateDetail": "full",
+  "renders": {
+    "default": {
+      "packageId": "pkg00001",
+      "componentId": "cmp01"
+    },
+    "page_one": {
+      "packageId": "pkg00001",
+      "componentId": "cmp01",
+      "width": 800,
+      "height": 600,
+      "scale": 2,
+      "state": {
+        "controllers": [{
+          "selector": "component-root",
+          "expectedMatches": 1,
+          "controller": "start",
+          "page": { "index": 1 }
+        }],
+        "lists": [{
+          "selector": "list[name=\"items\"]",
+          "expectedMatches": 1,
+          "selectedIndices": [1, 3]
+        }],
+        "trees": [{
+          "selector": "tree[name=\"outline\"]",
+          "expectedMatches": 1,
+          "expansions": [{ "path": [0, 2], "expanded": true }],
+          "selectedPath": [0, 2, 1]
+        }],
+        "scrolls": [{
+          "selector": "instance[name=\"viewport\"]",
+          "expectedMatches": 1,
+          "position": { "y": 320 }
+        }]
+      }
+    }
+  }
+}
+```
 
-`fairygui.validate` 发现工程问题时仍是合法成功结果：检查 `data.valid`，不要只看 MCP `isError`。非法参数、找不到目标、能力越界或基础设施故障会返回 `{ ok:false, error }` 并设置 `isError:true`。
+Controller 的 `page` 必须在 `index/id/name` 中三选一；scroll `position` 至少给
+一个轴。临时状态只存在于当前隔离 BrowserContext，不写盘、不影响下一张图。
+单项组件或状态失败会保留其他命名结果并返回
+`PARTIAL_RENDER_FAILURE` warning；工程会话、浏览器或共享编译失败才是顶层失败。
 
-## 正式发布
+预览编译会在独立内存模型中临时导出全部组件，因此未在 Editor 勾选导出的组件也
+能预览，工程发布设置不会改变。结果固定声明 `backend:"fairygui-dom"` 与
+`fidelity:"runtime-preview"`；位置、显示、图片和颜色应肉眼接近 Editor，但
+浏览器字体栅格化等仍可能产生少量像素差异，不是 Unity 像素真值。
 
-`fairygui.publish` 直接消费工程中的发布设置，不用 MCP 参数重复设置图集、压缩或代码生成选项：
+## 校验与发布
 
-- 省略 `packageIds` 发布全部包；指定时使用 `fairygui.query` 返回的包 ID。
-- `publishType:"full"` 执行完整发布；`"definitions"` 只跳过图集打包，不检查结果能否独立运行。
-- 省略 `outputPath` 使用工程配置路径；显式传入时，相对路径以工程根目录解析且只覆盖本次运行时产物目录。
-- 代码生成继续使用工程配置的代码路径。
-- 已有目录只覆盖同名产物，不清空目录或删除其他旧文件。
+`fairygui.validate` 的 `detail` 默认 `"summary"`：返回检查数、阶段指标、按严重度
+和代码统计以及有限诊断；需要全部 ID 和诊断时用 `"full"`。工程问题是合法结果
+`ok:true,data.valid:false`，不要只看 MCP `isError`。
 
-不要把 `fairygui.validate` 的 `publish` 模式当成正式发布：它只在临时目录校验发布链路，并且不会生成代码。
+`fairygui.publish` 直接使用工程发布设置：
+
+- 省略 `packageIds` 发布全部，指定时使用稳定包 ID；
+- `publishType:"full"` 完整发布；
+- `publishType:"definitions"` 只跳过图集，不判断输出是否独立可用；
+- `outputPath` 只临时覆盖运行时产物目录，代码路径仍来自工程设置。
+
+不要把 validate 的 `publish` 模式当成正式发布；它只在临时目录验证链路。
 
 ## 调用纪律
 
-- 先查询再写，先能力检查再选择操作。
-- 同一意图尽量一次批量调用，避免琐碎的逐字段工具往返。
-- 每次写入后等待成功结果，再顺序渲染。
-- 根据明确错误码和 `suggestedFix` 修正调用，不要通过猜测字段、修改 XML 文本或跨越实例边界来绕过契约。
-- 完成后关闭不再使用的工程会话：`fairygui.project` 的 `close`。
+- 先批量查询，再按明确字段写入。
+- 写前检查能力；planned/read-only 不要尝试绕过。
+- 同一意图一次批量调用，写成功后再顺序渲染。
+- 根据稳定错误码与 `suggestedFix` 修正，不直接改 XML。
+- 结束时调用 `fairygui.project` 的 `close`。

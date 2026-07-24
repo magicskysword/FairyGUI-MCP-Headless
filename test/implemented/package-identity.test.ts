@@ -7,12 +7,19 @@ import ts from "typescript";
 import {
   PACKAGE_NAME,
   PACKAGE_VERSION,
+  SERVER_INSTRUCTIONS,
   SERVER_NAME
 } from "../../src/index.js";
 
 const manifestPath = fileURLToPath(new URL("../../package.json", import.meta.url));
 const skillPath = fileURLToPath(
   new URL("../../skills/fairygui-headless/SKILL.md", import.meta.url)
+);
+const domAuthoringPath = fileURLToPath(
+  new URL(
+    "../../skills/fairygui-headless/references/dom-authoring.md",
+    import.meta.url
+  )
 );
 const readmePath = fileURLToPath(new URL("../../README.md", import.meta.url));
 const architecturePath = fileURLToPath(
@@ -305,9 +312,11 @@ test("npm trusted publishing builds fixed GitHub dependency sources", async () =
 });
 
 test("shipped documentation explains installation, tools and V1 boundaries", async () => {
-  const [readme, architecture] = await Promise.all([
+  const [readme, architecture, skill, domAuthoring] = await Promise.all([
     readFile(readmePath, "utf8"),
-    readFile(architecturePath, "utf8")
+    readFile(architecturePath, "utf8"),
+    readFile(skillPath, "utf8"),
+    readFile(domAuthoringPath, "utf8")
   ]);
   for (const content of [readme, architecture]) {
     assert.match(content, /Node\.js 24/);
@@ -333,4 +342,54 @@ test("shipped documentation explains installation, tools and V1 boundaries", asy
   assert.match(architecture, /7 天/);
   assert.match(architecture, /1 GiB/);
   assert.match(readme, /BROWSER_NOT_INSTALLED/);
+
+  for (const content of [readme, architecture, skill]) {
+    assert.match(content, /instanceProjection/);
+    assert.match(content, /imageResult/);
+    assert.match(content, /stateDetail/);
+    assert.match(content, /dryRun/);
+    assert.match(content, /insert[\s\S]*update[\s\S]*move[\s\S]*remove[\s\S]*replace/);
+    assert.doesNotMatch(content, /resolvedPreview|saveToFile|replace\.domain/);
+  }
+  assert.match(readme, /availableState/);
+  assert.match(readme, /appliedState/);
+  assert.match(architecture, /Merge Patch/);
+  assert.match(architecture, /PARTIAL_QUERY_FAILURE[\s\S]*warnings/);
+  assert.match(skill, /references\/dom-authoring\.md/);
+  assert.match(
+    skill,
+    /insert[\s\S]*update[\s\S]*replace[\s\S]*先读取[\s\S]*dom-authoring\.md/
+  );
+  for (const nodeType of [
+    "image",
+    "text",
+    "rich-text",
+    "input-text",
+    "loader",
+    "graph",
+    "movie-clip",
+    "group",
+    "list",
+    "instance"
+  ]) {
+    assert.match(domAuthoring, new RegExp(`\\b${nodeType}\\b`));
+  }
+  for (const operation of ["insert", "update", "move", "remove", "replace"]) {
+    assert.match(domAuthoring, new RegExp(`op[^\\n]+${operation}`));
+  }
+  for (const constraint of [
+    "必填",
+    "可空",
+    "Merge Patch",
+    "Relations",
+    "Group",
+    "List",
+    "clientRef",
+    "expectedMatches"
+  ]) {
+    assert.match(domAuthoring, new RegExp(constraint));
+  }
+  assert.match(SERVER_INSTRUCTIONS, /detail:\"full\"/);
+  assert.match(SERVER_INSTRUCTIONS, /命名批量渲染/);
+  assert.match(SERVER_INSTRUCTIONS, /insert\/update\/replace/);
 });

@@ -42,12 +42,13 @@ import {
 } from "../version.js";
 
 export const SERVER_INSTRUCTIONS = [
-  "FairyGUI 无头创作工作流：先用 fairygui.project 打开工程，再用一次 fairygui.query 批量查询包、组件、DOM、引用与能力；",
-  "需要视觉反馈时调用 fairygui.render_component，调整后再渲染；提交前调用 fairygui.validate 完成校验。",
+  "FairyGUI 无头创作工作流：先用 fairygui.project 打开工程，再用一次 fairygui.query 批量查询包、组件、DOM、引用与能力；大结果默认 detail:\"summary\"，insert/update/replace 前先用 detail:\"full\" 取得完整目标字段。",
+  "需要视觉反馈时调用 fairygui.render_component 的 renders 对象进行命名批量渲染，调整后再渲染；提交前调用 fairygui.validate 完成校验。",
   "磁盘始终是唯一事实来源；每次调用前会刷新外部变更，写操作会原子落盘且不提供草稿、Undo/Redo、revision 或 Git。",
   "DOM 使用受限的 HTML/CSS 风格知识：仅支持已声明的节点、样式名和选择器，不等同于浏览器 DOM/CSS。",
-  "尽量把同一意图合并到 query、apply_dom_patch 或 apply_resource_operations 的一个批次中；写目标必须提供 expectedMatches。",
-  "render_component 会在内存中编译未发布工程并使用 fairygui-dom runtime-preview；scale=2/3/4 会选择对应高分辨率资源，state.controllers/state.lists/state.trees/state.scrolls 可设置仅用于本次截图的控制器页、List/Tree 状态和滚动位置，它不是 Unity 像素真值。",
+  "尽量把同一意图合并到 query、apply_dom_patch 或 apply_resource_operations 的一个批次中；DOM 补丁只使用 insert/update/move/remove/replace，写目标必须提供 expectedMatches，资源高风险操作可先 dryRun。",
+  "render_component 会在内存中临时导出所有组件并使用 fairygui-dom runtime-preview，不改变工程导出设置；imageResult 控制 inline/file/both，stateDetail 控制状态摘要，scale=2/3/4 选择对应高分辨率资源。",
+  "render_component 的 state.controllers/state.lists/state.trees/state.scrolls 仅设置当前截图状态；结果用 availableState、appliedState 和 Gear 隐藏摘要解释默认页与临时状态，它不是 Unity 像素真值。",
   "fairygui.publish 直接使用工程发布设置，可按包执行全量发布或跳过图集的仅定义发布；outputPath 只临时覆盖运行时产物路径。"
 ].join("\n");
 

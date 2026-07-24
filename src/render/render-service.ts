@@ -23,11 +23,19 @@ import {
   type Diagnostic,
   type ResultEnvelope
 } from "../contracts/result.js";
-import type { RenderComponentInput } from "../contracts/tools.js";
+import type {
+  RenderComponentInput,
+  RenderTransientState
+} from "../contracts/tools.js";
 import {
   DomProjectionError,
   toFairyDomDocument
 } from "../dom/openfairygui-adapter.js";
+import {
+  parseFairyDomSelector,
+  SelectorSyntaxError,
+  type ParsedFairyDomSelector
+} from "../dom/selector.js";
 import type { ProjectRegistry } from "../project/project-registry.js";
 import { PACKAGE_VERSION } from "../version.js";
 import {
@@ -63,6 +71,7 @@ interface PreviewState {
   details?: {
     message?: string;
     stack?: string;
+    failure?: PreviewStateFailure;
     bounds?: {
       x: number;
       y: number;
@@ -70,6 +79,29 @@ interface PreviewState {
       height: number;
     };
   };
+}
+
+interface PreviewStateFailure {
+  code: "SELECTOR_MATCH_COUNT" | "TRANSIENT_STATE_INVALID";
+  message: string;
+  path?: string;
+  actual?: unknown;
+  allowed?: unknown;
+  suggestedFix?: string;
+}
+
+interface PreviewControllerState {
+  selector: ParsedFairyDomSelector;
+  expectedMatches: number;
+  controller: string;
+  selection:
+    | { kind: "index"; value: number }
+    | { kind: "pageId"; value: string }
+    | { kind: "pageName"; value: string };
+}
+
+interface PreviewTransientState {
+  controllers: PreviewControllerState[];
 }
 
 interface PreviewPayload {
@@ -85,6 +117,7 @@ interface PreviewPayload {
     height: number;
   };
   background?: string;
+  state?: PreviewTransientState;
 }
 
 interface PreparedRender {
@@ -144,6 +177,36 @@ function isBrowserMissingError(error: unknown): boolean {
   return /executable.*(?:doesn't exist|not found)|playwright install/i.test(message);
 }
 
+function prepareTransientState(
+  state: RenderTransientState | undefined
+): ResultEnvelope<PreviewTransientState | undefined> {
+  if (state === undefined) return ok(undefined);
+  try {
+    return ok({
+      controllers: state.controllers.map((entry) => ({
+        selector: parseFairyDomSelector(entry.selector),
+        expectedMatches: entry.expectedMatches,
+        controller: entry.controller,
+        selection: "selectedIndex" in entry
+          ? { kind: "index" as const, value: entry.selectedIndex }
+          : "pageId" in entry
+            ? { kind: "pageId" as const, value: entry.pageId }
+            : { kind: "pageName" as const, value: entry.pageName }
+      }))
+    });
+  }
+  catch (error) {
+    if (error instanceof SelectorSyntaxError) {
+      return fail("INVALID_SELECTOR", error.message, {
+        path: `state.controllers.selector[${error.index}]`,
+        actual: error.selector,
+        suggestedFix: error.suggestedFix
+      });
+    }
+    throw error;
+  }
+}
+
 export class RenderService {
   private readonly projects: ProjectRegistry;
   private readonly browserType: RenderBrowserType;
@@ -171,6 +234,9 @@ export class RenderService {
   public async render(
     input: RenderComponentInput
   ): Promise<ResultEnvelope<RenderComponentData>> {
+    const preparedState = prepareTransientState(input.state);
+    if (!preparedState.ok) return preparedState;
+
     const prepared = await this.projects.read(input.projectId, async (document) => {
       try {
         const dom = toFairyDomDocument(
@@ -243,7 +309,10 @@ export class RenderService {
         packageId: input.packageId,
         componentId: input.componentId,
         viewport: { width, height },
-        ...(background === undefined ? {} : { background })
+        ...(background === undefined ? {} : { background }),
+        ...(preparedState.data === undefined
+          ? {}
+          : { state: preparedState.data })
       };
       const runtimeScript = await this.loadRuntimeScript();
       context = await browserResult.data.newContext({
@@ -270,6 +339,23 @@ export class RenderService {
           .__fairyguiPreview
       );
       if (previewState.status !== "ready") {
+        const stateFailure = previewState.details?.failure;
+        if (stateFailure) {
+          return fail(stateFailure.code, stateFailure.message, {
+            ...(stateFailure.path === undefined
+              ? {}
+              : { path: stateFailure.path }),
+            ...(stateFailure.actual === undefined
+              ? {}
+              : { actual: stateFailure.actual }),
+            ...(stateFailure.allowed === undefined
+              ? {}
+              : { allowed: stateFailure.allowed }),
+            ...(stateFailure.suggestedFix === undefined
+              ? {}
+              : { suggestedFix: stateFailure.suggestedFix })
+          });
+        }
         return fail("RENDER_FAILED", "FairyGUI-dom runtime 预览运行失败", {
           actual: previewState.details
         });

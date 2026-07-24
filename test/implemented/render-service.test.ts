@@ -120,6 +120,52 @@ async function createRuntimeInstanceProject(): Promise<string> {
   return directory;
 }
 
+async function createControllerStateProject(): Promise<{
+  directory: string;
+  componentFile: string;
+}> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-state-render-"));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(
+    path.join(directory, "Demo.fairy"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="state-render-project" type="DOM" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "package.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  const componentFile = path.join(packageDirectory, "Main.xml");
+  await writeFile(
+    componentFile,
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="120,80">
+  <controller name="mode" pages="red,Red,blue,Blue" selected="0"/>
+  <displayList>
+    <graph id="redPanel" name="redPanel" xy="0,0" size="120,80"
+      type="rect" fillColor="#e11d48" lineColor="#e11d48" lineSize="0">
+      <gearDisplay controller="mode" pages="red"/>
+    </graph>
+    <graph id="bluePanel" name="bluePanel" xy="0,0" size="120,80"
+      type="rect" fillColor="#2563eb" lineColor="#2563eb" lineSize="0">
+      <gearDisplay controller="mode" pages="blue"/>
+    </graph>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  return { directory, componentFile };
+}
+
 async function openRenderer(options: {
   browserType?: RenderBrowserType;
 } = {}): Promise<{
@@ -213,6 +259,110 @@ test("render_component resolves nested component instances through the runtime p
       red > 190 && green < 70 && blue < 110,
       `嵌套组件中心像素应为红色，实际为 rgb(${red}, ${green}, ${blue})`
     );
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component applies controller state in memory without writing the project", async () => {
+  const { directory, componentFile } = await createControllerStateProject();
+  const before = await readFile(componentFile);
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+
+  try {
+    const result = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      state: {
+        controllers: [{
+          selector: "component-root",
+          expectedMatches: 1,
+          controller: "mode",
+          selectedIndex: 1
+        }]
+      }
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const offset = (40 * decoded.info.width + 60) * decoded.info.channels;
+    const red = decoded.data[offset] ?? 0;
+    const green = decoded.data[offset + 1] ?? 0;
+    const blue = decoded.data[offset + 2] ?? 0;
+    assert.ok(
+      red < 80 && green > 70 && blue > 180,
+      `临时控制器状态应显示蓝色，实际为 rgb(${red}, ${green}, ${blue})`
+    );
+    assert.deepEqual(await readFile(componentFile), before);
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component rejects invalid transient controller targets and pages clearly", async () => {
+  const { directory } = await createControllerStateProject();
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+
+  try {
+    const mismatch = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      state: {
+        controllers: [{
+          selector: "#missing",
+          expectedMatches: 1,
+          controller: "mode",
+          selectedIndex: 1
+        }]
+      }
+    }));
+    assert.equal(mismatch.ok, false);
+    if (!mismatch.ok) {
+      assert.equal(mismatch.error.code, "SELECTOR_MATCH_COUNT");
+      assert.deepEqual(mismatch.error.actual, {
+        selector: "#missing",
+        expectedMatches: 1,
+        actualMatches: 0
+      });
+    }
+
+    const invalidPage = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      state: {
+        controllers: [{
+          selector: "component-root",
+          expectedMatches: 1,
+          controller: "mode",
+          selectedIndex: 9
+        }]
+      }
+    }));
+    assert.equal(invalidPage.ok, false);
+    if (!invalidPage.ok) {
+      assert.equal(invalidPage.error.code, "TRANSIENT_STATE_INVALID");
+      assert.deepEqual(invalidPage.error.allowed, {
+        indices: [0, 1],
+        pageIds: ["red", "blue"],
+        pageNames: ["Red", "Blue"]
+      });
+    }
   }
   finally {
     await renderer.close();

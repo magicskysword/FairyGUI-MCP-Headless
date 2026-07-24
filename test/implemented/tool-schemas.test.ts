@@ -320,6 +320,51 @@ test("render and validation schemas apply deterministic defaults and limits", ()
     componentId: "cmp01",
     width: 10000
   }).success, false);
+  assert.equal(RenderComponentInputSchema.safeParse({
+    projectId: "project-1",
+    packageId: "pkg00001",
+    componentId: "cmp01",
+    state: {
+      controllers: [{
+        selector: "component-root",
+        expectedMatches: 1,
+        controller: "mode",
+        selectedIndex: 1
+      }]
+    }
+  }).success, true);
+  for (const selection of [
+    { pageId: "page-1" },
+    { pageName: "" }
+  ]) {
+    assert.equal(RenderComponentInputSchema.safeParse({
+      projectId: "project-1",
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      state: {
+        controllers: [{
+          selector: "#panel",
+          expectedMatches: 1,
+          controller: "mode",
+          ...selection
+        }]
+      }
+    }).success, true);
+  }
+  assert.equal(RenderComponentInputSchema.safeParse({
+    projectId: "project-1",
+    packageId: "pkg00001",
+    componentId: "cmp01",
+    state: {
+      controllers: [{
+        selector: "component-root",
+        expectedMatches: 1,
+        controller: "mode",
+        selectedIndex: 1,
+        pageId: "page-1"
+      }]
+    }
+  }).success, false);
 
   for (const mode of ["quick", "roundtrip", "publish", "full"]) {
     assert.deepEqual(ValidateInputSchema.parse({

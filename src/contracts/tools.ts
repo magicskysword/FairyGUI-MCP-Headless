@@ -415,6 +415,37 @@ export type ApplyResourceOperationsInput = z.infer<
   typeof ApplyResourceOperationsInputSchema
 >;
 
+const renderControllerStateBase = {
+  selector,
+  expectedMatches,
+  controller: z.string().min(1)
+} as const;
+
+export const RenderControllerStateSchema = z.union([
+  z.object({
+    ...renderControllerStateBase,
+    selectedIndex: z.number().int().nonnegative()
+  }).strict(),
+  z.object({
+    ...renderControllerStateBase,
+    pageId: z.string().min(1)
+  }).strict(),
+  z.object({
+    ...renderControllerStateBase,
+    pageName: z.string()
+  }).strict()
+]);
+export type RenderControllerState = z.infer<
+  typeof RenderControllerStateSchema
+>;
+
+export const RenderTransientStateSchema = z.object({
+  controllers: z.array(RenderControllerStateSchema).min(1).max(100)
+}).strict();
+export type RenderTransientState = z.infer<
+  typeof RenderTransientStateSchema
+>;
+
 export const RenderComponentInputSchema = z.object({
   projectId: nonEmptyId,
   packageId: nonEmptyId,
@@ -423,6 +454,7 @@ export const RenderComponentInputSchema = z.object({
   height: z.number().int().min(1).max(4096).optional(),
   scale: z.number().finite().min(0.25).max(4).default(1),
   background: z.string().min(1).optional(),
+  state: RenderTransientStateSchema.optional(),
   saveToFile: z.boolean().default(false)
 }).strict();
 export type RenderComponentInput = z.infer<typeof RenderComponentInputSchema>;

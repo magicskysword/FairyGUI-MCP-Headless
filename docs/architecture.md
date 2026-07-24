@@ -223,6 +223,11 @@ BrowserContext 加载全部内存包后，按包 ID 和组件 ID 构造真实 Fa
 仍可能产生微量像素抖动，因此不承诺 Unity 像素真值。可选 `saveToFile:true`
 将 PNG 保存到系统临时目录；默认以内联 MCP image content 返回。
 
+`state.controllers` 可在隔离 BrowserContext 内按受限 DOM 选择器设置控制器页，
+支持 `selectedIndex`、`pageId` 或 `pageName` 三选一。每个目标必须声明
+`expectedMatches`；选择器数量、目标类型、控制器名和页面都经过显式校验。
+这些状态只用于当前截图，不改变内存工程快照或磁盘文件。
+
 ## 9. 验证、测试与发布
 
 `fairygui.validate` 模式：

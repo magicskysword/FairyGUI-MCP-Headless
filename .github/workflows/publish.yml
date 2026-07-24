@@ -31,11 +31,40 @@ jobs:
         run: |
           package_version=$(node -p "require('./package.json').version")
           expected_tag="npm-v${package_version}"
+          retry_suffix="${GITHUB_REF_NAME#"$expected_tag"}"
 
-          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
-            echo "::error::tag ${GITHUB_REF_NAME} must equal ${expected_tag}"
+          if [[
+            "$GITHUB_REF_NAME" != "$expected_tag"
+            && ! "$retry_suffix" =~ ^-run\.[1-9][0-9]*$
+          ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} must equal ${expected_tag} or ${expected_tag}-run.N"
             exit 1
           fi
+
+      - name: Wait for published dependencies
+        shell: bash
+        run: |
+          dependency_names=(
+            "@magicskysword/openfairygui-core"
+            "@magicskysword/openfairygui-functions"
+            "@magicskysword/fairygui-dom"
+          )
+          deadline=$((SECONDS + 300))
+
+          for dependency_name in "${dependency_names[@]}"; do
+            dependency_range=$(node -p "require('./package.json').dependencies['${dependency_name}']")
+            dependency_version="${dependency_range#^}"
+            dependency_version="${dependency_version#~}"
+
+            until npm view "${dependency_name}@${dependency_version}" version >/dev/null 2>&1; do
+              if (( SECONDS >= deadline )); then
+                echo "::error::${dependency_name}@${dependency_version} was not visible after 5 minutes"
+                exit 1
+              fi
+              echo "Waiting for ${dependency_name}@${dependency_version} to propagate..."
+              sleep 10
+            done
+          done
 
       - name: Install dependencies
         env:

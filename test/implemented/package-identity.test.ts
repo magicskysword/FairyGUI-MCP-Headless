@@ -241,6 +241,12 @@ test("npm trusted publishing is tokenless, version-gated, and standalone", async
   assert.match(workflow, /node-version:\s*["']24["']/);
   assert.match(workflow, /package-manager-cache:\s*false/);
   assert.match(workflow, /package\.json/);
+  assert.match(workflow, /-run\\\./);
+  assert.match(workflow, /Wait for published dependencies/);
+  assert.match(workflow, /openfairygui-core/);
+  assert.match(workflow, /openfairygui-functions/);
+  assert.match(workflow, /fairygui-dom/);
+  assert.match(workflow, /sleep 10/);
   assert.match(workflow, /npm install --ignore-scripts/);
   assert.match(workflow, /playwright install --with-deps chromium/);
   assert.match(workflow, /npm run typecheck/);

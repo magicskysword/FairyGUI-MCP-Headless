@@ -12,6 +12,33 @@ import {
   ValidateInputSchema
 } from "../../src/contracts/tools.js";
 
+function namedSingleRenderArguments(
+  input: Record<string, unknown>
+): Record<string, unknown> {
+  const {
+    projectId,
+    imageResult,
+    stateDetail,
+    ...request
+  } = input;
+  return {
+    projectId,
+    ...(imageResult === undefined ? {} : { imageResult }),
+    ...(stateDetail === undefined ? {} : { stateDetail }),
+    renders: { single: request }
+  };
+}
+
+function parseSingleRenderSchema(input: Record<string, unknown>) {
+  return RenderComponentInputSchema.parse(namedSingleRenderArguments(input));
+}
+
+function safeParseSingleRenderSchema(input: Record<string, unknown>) {
+  return RenderComponentInputSchema.safeParse(
+    namedSingleRenderArguments(input)
+  );
+}
+
 test("public contract exposes exactly the seven MCP tools", () => {
   assert.deepEqual(FAIRYGUI_TOOL_NAMES, [
     "fairygui.project",
@@ -367,25 +394,29 @@ test("resource operation schema fixes collision and deletion policies", () => {
 });
 
 test("render and validation schemas apply deterministic defaults and limits", () => {
-  assert.deepEqual(RenderComponentInputSchema.parse({
+  assert.deepEqual(parseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01"
   }), {
     projectId: "project-1",
-    packageId: "pkg00001",
-    componentId: "cmp01",
-    scale: 1,
     imageResult: "inline",
-    stateDetail: "summary"
+    stateDetail: "summary",
+    renders: {
+      single: {
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        scale: 1
+      }
+    }
   });
-  assert.equal(RenderComponentInputSchema.safeParse({
+  assert.equal(safeParseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01",
     width: 10000
   }).success, false);
-  assert.equal(RenderComponentInputSchema.safeParse({
+  assert.equal(safeParseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01",
@@ -402,7 +433,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
     { id: "page-1" },
     { name: "" }
   ]) {
-    assert.equal(RenderComponentInputSchema.safeParse({
+    assert.equal(safeParseSingleRenderSchema({
       projectId: "project-1",
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -416,7 +447,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       }
     }).success, true);
   }
-  assert.equal(RenderComponentInputSchema.safeParse({
+  assert.equal(safeParseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01",
@@ -434,7 +465,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
     [0, 2],
     []
   ]) {
-    assert.equal(RenderComponentInputSchema.safeParse({
+    assert.equal(safeParseSingleRenderSchema({
       projectId: "project-1",
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -447,7 +478,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       }
     }).success, true);
   }
-  assert.equal(RenderComponentInputSchema.safeParse({
+  assert.equal(safeParseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01",
@@ -474,7 +505,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       selectedPath: [0, 1]
     }
   ]) {
-    assert.equal(RenderComponentInputSchema.safeParse({
+    assert.equal(safeParseSingleRenderSchema({
       projectId: "project-1",
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -487,7 +518,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       }
     }).success, true);
   }
-  assert.equal(RenderComponentInputSchema.safeParse({
+  assert.equal(safeParseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01",
@@ -498,7 +529,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       }]
     }
   }).success, false);
-  assert.equal(RenderComponentInputSchema.safeParse({
+  assert.equal(safeParseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01",
@@ -510,7 +541,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       }]
     }
   }).success, false);
-  assert.equal(RenderComponentInputSchema.safeParse({
+  assert.equal(safeParseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01",
@@ -522,7 +553,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       }]
     }
   }).success, true);
-  assert.equal(RenderComponentInputSchema.safeParse({
+  assert.equal(safeParseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01",
@@ -534,14 +565,14 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       }]
     }
   }).success, false);
-  assert.equal(RenderComponentInputSchema.safeParse({
+  assert.equal(safeParseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01",
     imageResult: "file",
     stateDetail: "full"
   }).success, true);
-  assert.equal(RenderComponentInputSchema.safeParse({
+  assert.equal(safeParseSingleRenderSchema({
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01",
@@ -558,4 +589,73 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       detail: "summary"
     });
   }
+});
+
+test("render schema exposes only the named batch form", () => {
+  const input = {
+    projectId: "project-1",
+    renders: {
+      defaultView: {
+        packageId: "pkg00001",
+        componentId: "cmp01"
+      },
+      selectedView: {
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        scale: 2,
+        state: {
+          controllers: [{
+            selector: "component-root",
+            expectedMatches: 1,
+            controller: "mode",
+            page: { name: "Selected" }
+          }]
+        }
+      }
+    }
+  };
+  assert.deepEqual(RenderComponentInputSchema.parse(input), {
+    projectId: "project-1",
+    imageResult: "inline",
+    stateDetail: "summary",
+    renders: {
+      defaultView: {
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        scale: 1
+      },
+      selectedView: {
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        scale: 2,
+        state: {
+          controllers: [{
+            selector: "component-root",
+            expectedMatches: 1,
+            controller: "mode",
+            page: { name: "Selected" }
+          }]
+        }
+      }
+    }
+  });
+  assert.equal(RenderComponentInputSchema.safeParse({
+    projectId: "project-1",
+    packageId: "pkg00001",
+    componentId: "cmp01"
+  }).success, false);
+  assert.equal(RenderComponentInputSchema.safeParse({
+    projectId: "project-1",
+    renders: {}
+  }).success, false);
+  assert.equal(RenderComponentInputSchema.safeParse({
+    projectId: "project-1",
+    renders: Object.fromEntries(Array.from(
+      { length: 21 },
+      (_, index) => [`view${index}`, {
+        packageId: "pkg00001",
+        componentId: "cmp01"
+      }]
+    ))
+  }).success, false);
 });

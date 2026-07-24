@@ -170,8 +170,26 @@ export const PREVIEW_SCRIPT = String.raw`
     };
   };
 
+  const targetDetails = (object, root) => ({
+    id: object === root ? "component-root" : object.id || "",
+    name: object.name || "",
+    type: runtimeType(object, root)
+  });
+
+  const selectedControllerPage = (controller) => ({
+    index: controller.selectedIndex,
+    id: controller.selectedIndex < 0 ? null : controller.selectedPageId,
+    name: controller.selectedIndex < 0 ? null : controller.selectedPage
+  });
+
   const applyTransientState = (view, state) => {
-    if (!state) return;
+    const applied = {
+      controllers: [],
+      lists: [],
+      trees: [],
+      scrolls: []
+    };
+    if (!state) return applied;
     (state.controllers || []).forEach((entry, stateIndex) => {
       const path = "state.controllers[" + stateIndex + "]";
       const targets = matchObjects(view, entry.selector);
@@ -248,6 +266,12 @@ export const PREVIEW_SCRIPT = String.raw`
           });
         }
         controller.setSelectedIndex(selectedIndex);
+        applied.controllers.push({
+          selector: entry.selector.source,
+          target: targetDetails(target, view),
+          controller: entry.controller,
+          selectedPage: selectedControllerPage(controller)
+        });
       });
     });
 
@@ -333,6 +357,17 @@ export const PREVIEW_SCRIPT = String.raw`
             });
           }
         }
+        applied.trees.push({
+          selector: entry.selector.source,
+          target: targetDetails(target, view),
+          expansions: entry.expansions.map((item) => ({
+            path: item.path,
+            expanded: item.expanded
+          })),
+          ...(entry.selectedPath === undefined
+            ? {}
+            : { selectedPath: entry.selectedPath })
+        });
       });
     });
 
@@ -434,8 +469,13 @@ export const PREVIEW_SCRIPT = String.raw`
               requested: expectedSelection,
               requirement: "列表项目必须是可选中的 Button"
             }
-          });
+            });
         }
+        applied.lists.push({
+          selector: entry.selector.source,
+          target: targetDetails(target, view),
+          selectedIndices: actualSelection
+        });
       });
     });
 
@@ -509,8 +549,155 @@ export const PREVIEW_SCRIPT = String.raw`
         if (entry.position.y !== undefined) {
           scrollPane.setPosY(entry.position.y, false);
         }
+        applied.scrolls.push({
+          selector: entry.selector.source,
+          target: targetDetails(target, view),
+          position: {
+            x: scrollPane.posX,
+            y: scrollPane.posY
+          }
+        });
       });
     });
+    return applied;
+  };
+
+  const treeNodeDetails = (tree) => {
+    const nodes = [];
+    const visit = (parent, parentPath) => {
+      for (let index = 0; index < parent.numChildren; index++) {
+        const node = parent.getChildAt(index);
+        const path = parentPath.concat(index);
+        nodes.push({
+          path,
+          text: node.text || "",
+          isFolder: Boolean(node.isFolder),
+          expanded: Boolean(node.expanded)
+        });
+        visit(node, path);
+      }
+    };
+    visit(tree.rootNode, []);
+    return nodes;
+  };
+
+  const treeNodePath = (tree, target) => {
+    if (!target) return null;
+    let found = null;
+    const visit = (parent, parentPath) => {
+      for (let index = 0; index < parent.numChildren; index++) {
+        const node = parent.getChildAt(index);
+        const path = parentPath.concat(index);
+        if (node === target) {
+          found = path;
+          return true;
+        }
+        if (visit(node, path)) return true;
+      }
+      return false;
+    };
+    visit(tree.rootNode, []);
+    return found;
+  };
+
+  const inspectAvailableState = (view, detail) => {
+    const entries = runtimeEntries(view);
+    const controllers = entries
+      .filter((entry) =>
+        Array.isArray(entry.object.controllers)
+        && entry.object.controllers.length > 0
+      )
+      .map((entry) => ({
+        target: targetDetails(entry.object, view),
+        controllers: entry.object.controllers.map((controller) => ({
+          name: controller.name || "",
+          selectedPage: selectedControllerPage(controller),
+          pages: controllerDetails(controller).indices.map((index) => ({
+            index,
+            id: controller.getPageId(index) || "",
+            name: controller.getPageName(index) || ""
+          }))
+        }))
+      }));
+    const lists = entries
+      .filter((entry) =>
+        typeof fgui.GList === "function"
+        && entry.object instanceof fgui.GList
+        && (
+          typeof fgui.GTree !== "function"
+          || !(entry.object instanceof fgui.GTree)
+        )
+      )
+      .map((entry) => ({
+        target: targetDetails(entry.object, view),
+        itemCount: entry.object.numItems,
+        selectionMode: [
+          "single",
+          "multiple",
+          "multipleSingleClick",
+          "none"
+        ][entry.object.selectionMode] || String(entry.object.selectionMode),
+        selectedIndices: entry.object.getSelection([]).sort((a, b) => a - b)
+      }));
+    const trees = entries
+      .filter((entry) =>
+        typeof fgui.GTree === "function"
+        && entry.object instanceof fgui.GTree
+      )
+      .map((entry) => {
+        const nodes = treeNodeDetails(entry.object);
+        return {
+          target: targetDetails(entry.object, view),
+          nodeCount: nodes.length,
+          folderCount: nodes.filter((node) => node.isFolder).length,
+          selectedPath: treeNodePath(
+            entry.object,
+            entry.object.getSelectedNode()
+          ),
+          ...(detail === "full" ? { nodes } : {})
+        };
+      });
+    const scrolls = entries
+      .filter((entry) =>
+        typeof fgui.GComponent === "function"
+        && entry.object instanceof fgui.GComponent
+        && entry.object.scrollPane
+      )
+      .map((entry) => {
+        const scrollPane = entry.object.scrollPane;
+        entry.object.ensureBoundsCorrect();
+        return {
+          target: targetDetails(entry.object, view),
+          position: {
+            x: scrollPane.posX,
+            y: scrollPane.posY
+          },
+          maxPosition: {
+            x: Math.max(0, scrollPane.contentWidth - scrollPane.viewWidth),
+            y: Math.max(0, scrollPane.contentHeight - scrollPane.viewHeight)
+          }
+        };
+      });
+    return { controllers, lists, trees, scrolls };
+  };
+
+  const inspectGearHidden = (view, detail) => {
+    const hidden = runtimeEntries(view)
+      .filter((entry) => {
+        const gears = entry.object._gears;
+        return entry.object !== view
+          && entry.object.visible
+          && !entry.object.internalVisible
+          && Array.isArray(gears)
+          && (gears[0] || gears[8]);
+      })
+      .map((entry) => targetDetails(entry.object, view));
+    const nodes = detail === "full" ? hidden : hidden.slice(0, 20);
+    return {
+      count: hidden.length,
+      nodes,
+      truncated: nodes.length < hidden.length
+    };
   };
 
   const loadPackages = async (descriptors) => {
@@ -591,7 +778,7 @@ export const PREVIEW_SCRIPT = String.raw`
       view.element.style.background = payload.background;
     }
     root.addChild(view);
-    applyTransientState(view, payload.state);
+    const appliedState = applyTransientState(view, payload.state);
 
     if (document.fonts) {
       await document.fonts.ready;
@@ -608,7 +795,10 @@ export const PREVIEW_SCRIPT = String.raw`
         width: bounds.width,
         height: bounds.height
       },
-      packageCount: payload.packages.length
+      packageCount: payload.packages.length,
+      availableState: inspectAvailableState(view, payload.stateDetail),
+      appliedState,
+      gearHidden: inspectGearHidden(view, payload.stateDetail)
     });
   };
 

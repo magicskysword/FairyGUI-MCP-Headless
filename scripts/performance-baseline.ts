@@ -132,7 +132,8 @@ async function findWritableTextComponent(
         dom: {
           kind: "dom",
           packageId: component.packageId,
-          componentId: component.componentId
+          componentId: component.componentId,
+          detail: "full"
         }
       }
     }));
@@ -183,7 +184,7 @@ try {
   const inventory = await query.execute(QueryInputSchema.parse({
     projectId,
     queries: {
-      components: { kind: "components", limit: 500 }
+      components: { kind: "components", detail: "full", limit: 500 }
     }
   }));
   const components = successfulQueryData<{
@@ -196,7 +197,8 @@ try {
       dom: {
         kind: "dom",
         packageId: target.component.packageId,
-        componentId: target.component.componentId
+        componentId: target.component.componentId,
+        detail: "full"
       }
     }
   });
@@ -211,18 +213,36 @@ try {
 
   const renderInput = RenderComponentInputSchema.parse({
     projectId,
-    packageId: target.component.packageId,
-    componentId: target.component.componentId,
-    width: Math.max(1, Math.min(800, Math.ceil(target.component.width || 1))),
-    height: Math.max(1, Math.min(600, Math.ceil(target.component.height || 1)))
+    renders: {
+      target: {
+        packageId: target.component.packageId,
+        componentId: target.component.componentId,
+        width: Math.max(
+          1,
+          Math.min(800, Math.ceil(target.component.width || 1))
+        ),
+        height: Math.max(
+          1,
+          Math.min(600, Math.ceil(target.component.height || 1))
+        )
+      }
+    }
   });
+  const assertRendered = (
+    result: Awaited<ReturnType<RenderService["render"]>>
+  ): void => {
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    const item = result.data.results.target;
+    if (!item) throw new Error("批量渲染缺少 target 结果");
+    if (!item.ok) throw new Error(JSON.stringify(item.error));
+  };
   const warm = await renderer.render(renderInput);
-  if (!warm.ok) throw new Error(JSON.stringify(warm.error));
+  assertRendered(warm);
   const hotRenderSamples: number[] = [];
   for (let index = 0; index < iterations; index++) {
     await measure(hotRenderSamples, async () => {
       const result = await renderer.render(renderInput);
-      if (!result.ok) throw new Error(JSON.stringify(result.error));
+      assertRendered(result);
     });
   }
 
@@ -230,7 +250,7 @@ try {
   const browserRecoverySamples: number[] = [];
   await measure(browserRecoverySamples, async () => {
     const result = await renderer.render(renderInput);
-    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    assertRendered(result);
   });
 
   const copiedProject = path.join(temporaryDirectory, "project");

@@ -553,8 +553,7 @@ export type RenderTransientState = z.infer<
   typeof RenderTransientStateSchema
 >;
 
-export const RenderComponentInputSchema = z.object({
-  projectId: nonEmptyId,
+export const RenderRequestSchema = z.object({
   packageId: nonEmptyId,
   componentId: nonEmptyId,
   width: z.number().int().min(1).max(4096).optional(),
@@ -563,10 +562,45 @@ export const RenderComponentInputSchema = z.object({
     "截图设备缩放；2/3/4 同时选择对应 @2x/@3x/@4x 资源，缺失时按 FairyGUI 规则回退"
   ),
   background: z.string().min(1).optional(),
-  state: RenderTransientStateSchema.optional(),
-  imageResult: z.enum(["inline", "file", "both"]).default("inline"),
-  stateDetail: z.enum(["summary", "full"]).default("summary")
+  state: RenderTransientStateSchema.optional()
 }).strict();
+export type RenderRequest = z.infer<typeof RenderRequestSchema>;
+export type RenderRequestInput = z.input<typeof RenderRequestSchema>;
+
+export const RenderComponentInputSchema = z.object({
+  projectId: nonEmptyId,
+  imageResult: z.enum(["inline", "file", "both"]).default("inline"),
+  stateDetail: z.enum(["summary", "full"]).default("summary"),
+  renders: z.record(z.string(), RenderRequestSchema)
+}).strict().superRefine((value, context) => {
+  const entries = Object.entries(value.renders);
+  if (entries.length === 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["renders"],
+      message: "renders 至少需要一个命名渲染"
+    });
+  }
+  if (entries.length > 20) {
+    context.addIssue({
+      code: "too_big",
+      origin: "object",
+      maximum: 20,
+      inclusive: true,
+      path: ["renders"],
+      message: "单批最多允许 20 个命名渲染"
+    });
+  }
+  for (const [key] of entries) {
+    if (!queryKeyPattern.test(key)) {
+      context.addIssue({
+        code: "custom",
+        path: ["renders", key],
+        message: "渲染键必须以字母开头且仅包含字母、数字、_ 或 -"
+      });
+    }
+  }
+});
 export type RenderComponentInput = z.infer<typeof RenderComponentInputSchema>;
 
 const publishPackageIds = z.array(nonEmptyId).min(1).max(500).refine(

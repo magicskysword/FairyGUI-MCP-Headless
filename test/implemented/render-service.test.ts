@@ -17,7 +17,10 @@ import {
   type LaunchOptions
 } from "playwright";
 import sharp from "sharp";
-import { RenderComponentInputSchema } from "../../src/contracts/tools.js";
+import {
+  RenderComponentInputSchema,
+  type RenderRequestInput
+} from "../../src/contracts/tools.js";
 import { ProjectRegistry } from "../../src/project/project-registry.js";
 import {
   RenderService,
@@ -37,6 +40,32 @@ afterEach(async () => {
 function inlineImageData(data: { image: { data?: string } }): string {
   assert.ok(data.image.data, "inline 渲染必须携带内部 PNG attachment");
   return data.image.data;
+}
+
+async function renderSingle(
+  renderer: RenderService,
+  input: RenderRequestInput & {
+    projectId: string;
+    imageResult?: "inline" | "file" | "both";
+    stateDetail?: "summary" | "full";
+  }
+) {
+  const {
+    projectId,
+    imageResult,
+    stateDetail,
+    ...request
+  } = input;
+  const batch = await renderer.render(RenderComponentInputSchema.parse({
+    projectId,
+    ...(imageResult === undefined ? {} : { imageResult }),
+    ...(stateDetail === undefined ? {} : { stateDetail }),
+    renders: { single: request }
+  }));
+  if (!batch.ok) return batch;
+  const result = batch.data.results.single;
+  assert.ok(result, "单项渲染包装必须返回 single 结果");
+  return result;
 }
 
 async function createProject(): Promise<string> {
@@ -511,11 +540,11 @@ async function openRenderer(options: {
 test("render_component returns a FairyGUI-dom runtime PNG preview", async () => {
   const { registry, renderer, projectId } = await openRenderer();
   try {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
+    const result = await renderSingle(renderer, {
       projectId,
       packageId: "pkg00001",
       componentId: "cmp01"
-    }));
+    });
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
@@ -551,6 +580,138 @@ test("render_component returns a FairyGUI-dom runtime PNG preview", async () => 
   }
 });
 
+test("render_component batches named renders and preserves successful siblings", async () => {
+  const { directory } = await createControllerStateProject();
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+  try {
+    const result = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      stateDetail: "full",
+      renders: {
+        defaultView: {
+          packageId: "pkg00001",
+          componentId: "cmp01"
+        },
+        blueView: {
+          packageId: "pkg00001",
+          componentId: "cmp01",
+          state: {
+            controllers: [{
+              selector: "component-root",
+              expectedMatches: 1,
+              controller: "mode",
+              page: { id: "blue" }
+            }]
+          }
+        },
+        badState: {
+          packageId: "pkg00001",
+          componentId: "cmp01",
+          state: {
+            controllers: [{
+              selector: "#missing",
+              expectedMatches: 1,
+              controller: "mode",
+              page: { index: 1 }
+            }]
+          }
+        },
+        missingComponent: {
+          packageId: "pkg00001",
+          componentId: "missing"
+        }
+      }
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    assert.deepEqual({
+      requested: result.data.requested,
+      succeeded: result.data.succeeded,
+      failed: result.data.failed
+    }, {
+      requested: 4,
+      succeeded: 2,
+      failed: 2
+    });
+    assert.deepEqual(result.warnings?.map((warning) => warning.code), [
+      "PARTIAL_RENDER_FAILURE"
+    ]);
+
+    const defaultView = result.data.results.defaultView;
+    assert.equal(defaultView?.ok, true, JSON.stringify(defaultView));
+    if (defaultView?.ok) {
+      assert.ok(inlineImageData(defaultView.data));
+      assert.deepEqual(
+        defaultView.data.availableState.controllers[0]?.controllers[0]?.pages,
+        [
+          { index: 0, id: "red", name: "Red" },
+          { index: 1, id: "blue", name: "Blue" }
+        ]
+      );
+      assert.equal(defaultView.data.gearHidden.count, 1);
+      assert.equal(
+        defaultView.data.gearHidden.nodes[0]?.id,
+        "bluePanel"
+      );
+    }
+
+    const blueView = result.data.results.blueView;
+    assert.equal(blueView?.ok, true, JSON.stringify(blueView));
+    if (blueView?.ok) {
+      assert.equal(
+        blueView.data.appliedState.controllers[0]?.selectedPage.id,
+        "blue"
+      );
+      assert.equal(blueView.data.gearHidden.count, 1);
+      assert.equal(blueView.data.gearHidden.nodes[0]?.id, "redPanel");
+    }
+    if (defaultView?.ok && blueView?.ok) {
+      const sampleCenter = async (data: typeof defaultView.data) => {
+        const decoded = await sharp(Buffer.from(
+          inlineImageData(data),
+          "base64"
+        )).raw().toBuffer({ resolveWithObject: true });
+        const offset = (40 * decoded.info.width + 60)
+          * decoded.info.channels;
+        return [...decoded.data.subarray(offset, offset + 3)];
+      };
+      const defaultRgb = await sampleCenter(defaultView.data);
+      const blueRgb = await sampleCenter(blueView.data);
+      assert.ok(
+        defaultRgb[0]! > 180 && defaultRgb[2]! < 120,
+        `默认控制器页应显示红色：${defaultRgb.join(",")}`
+      );
+      assert.ok(
+        blueRgb[0]! < 80 && blueRgb[2]! > 180,
+        `临时控制器页应显示蓝色：${blueRgb.join(",")}`
+      );
+    }
+
+    const badState = result.data.results.badState;
+    assert.equal(badState?.ok, false);
+    if (badState && !badState.ok) {
+      assert.equal(badState.error.code, "SELECTOR_MATCH_COUNT");
+      assert.equal(
+        badState.error.path,
+        "renders.badState.state.controllers[0].selector"
+      );
+    }
+    const missing = result.data.results.missingComponent;
+    assert.equal(missing?.ok, false);
+    if (missing && !missing.ok) {
+      assert.equal(missing.error.code, "COMPONENT_NOT_FOUND");
+    }
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
 test("render_component resolves nested component instances through the runtime package", async () => {
   const directory = await createRuntimeInstanceProject();
   const registry = new ProjectRegistry();
@@ -559,11 +720,11 @@ test("render_component resolves nested component instances through the runtime p
   const renderer = new RenderService(registry);
 
   try {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
+    const result = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01"
-    }));
+    });
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
@@ -598,11 +759,11 @@ test("render_component preserves a rich-text field color inside default UBB link
   const renderer = new RenderService(registry);
 
   try {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
+    const result = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01"
-    }));
+    });
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
@@ -646,11 +807,11 @@ test("render_component initializes text measurement before applying auto-size re
   const renderer = new RenderService(registry);
 
   try {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
+    const result = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01"
-    }));
+    });
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
@@ -692,7 +853,7 @@ test("render_component applies controller state in memory without writing the pr
   const renderer = new RenderService(registry);
 
   try {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
+    const result = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -704,10 +865,14 @@ test("render_component applies controller state in memory without writing the pr
           page: { index: 1 }
         }]
       }
-    }));
+    });
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
+    assert.equal(
+      result.data.appliedState.controllers[0]?.selectedPage.id,
+      "blue"
+    );
     const decoded = await sharp(Buffer.from(
       inlineImageData(result.data),
       "base64"
@@ -738,7 +903,7 @@ test("render_component rejects invalid transient controller targets and pages cl
   const renderer = new RenderService(registry);
 
   try {
-    const mismatch = await renderer.render(RenderComponentInputSchema.parse({
+    const mismatch = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -750,7 +915,7 @@ test("render_component rejects invalid transient controller targets and pages cl
           page: { index: 1 }
         }]
       }
-    }));
+    });
     assert.equal(mismatch.ok, false);
     if (!mismatch.ok) {
       assert.equal(mismatch.error.code, "SELECTOR_MATCH_COUNT");
@@ -761,7 +926,7 @@ test("render_component rejects invalid transient controller targets and pages cl
       });
     }
 
-    const invalidPage = await renderer.render(RenderComponentInputSchema.parse({
+    const invalidPage = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -773,7 +938,7 @@ test("render_component rejects invalid transient controller targets and pages cl
           page: { index: 9 }
         }]
       }
-    }));
+    });
     assert.equal(invalidPage.ok, false);
     if (!invalidPage.ok) {
       assert.equal(invalidPage.error.code, "TRANSIENT_STATE_INVALID");
@@ -799,7 +964,7 @@ test("render_component applies a validated transient scroll position without wri
   const renderer = new RenderService(registry);
 
   try {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
+    const result = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -810,10 +975,23 @@ test("render_component applies a validated transient scroll position without wri
           position: { y: 80 }
         }]
       }
-    }));
+    });
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
+    assert.deepEqual(result.data.appliedState.scrolls, [{
+      selector: "component-root",
+      target: {
+        id: "component-root",
+        name: "",
+        type: "component-root"
+      },
+      position: { x: 0, y: 80 }
+    }]);
+    assert.deepEqual(result.data.availableState.scrolls[0]?.maxPosition, {
+      x: 0,
+      y: 80
+    });
     const decoded = await sharp(Buffer.from(
       inlineImageData(result.data),
       "base64"
@@ -844,7 +1022,7 @@ test("render_component rejects an unavailable or out-of-range transient scroll",
   const renderer = new RenderService(registry);
 
   try {
-    const unavailable = await renderer.render(RenderComponentInputSchema.parse({
+    const unavailable = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -855,14 +1033,17 @@ test("render_component rejects an unavailable or out-of-range transient scroll",
           position: { y: 1 }
         }]
       }
-    }));
+    });
     assert.equal(unavailable.ok, false);
     if (!unavailable.ok) {
       assert.equal(unavailable.error.code, "TRANSIENT_STATE_INVALID");
-      assert.equal(unavailable.error.path, "state.scrolls[0].selector");
+      assert.equal(
+        unavailable.error.path,
+        "renders.single.state.scrolls[0].selector"
+      );
     }
 
-    const outOfRange = await renderer.render(RenderComponentInputSchema.parse({
+    const outOfRange = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -873,11 +1054,14 @@ test("render_component rejects an unavailable or out-of-range transient scroll",
           position: { y: 81 }
         }]
       }
-    }));
+    });
     assert.equal(outOfRange.ok, false);
     if (!outOfRange.ok) {
       assert.equal(outOfRange.error.code, "TRANSIENT_STATE_INVALID");
-      assert.equal(outOfRange.error.path, "state.scrolls[0].position.y");
+      assert.equal(
+        outOfRange.error.path,
+        "renders.single.state.scrolls[0].position.y"
+      );
       assert.deepEqual(outOfRange.error.allowed, { min: 0, max: 80 });
     }
   }
@@ -896,7 +1080,7 @@ test("render_component applies transient list selection without writing the proj
   const renderer = new RenderService(registry);
 
   try {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
+    const result = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -907,10 +1091,15 @@ test("render_component applies transient list selection without writing the proj
           selectedIndices: [1]
         }]
       }
-    }));
+    });
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
+    assert.deepEqual(
+      result.data.appliedState.lists[0]?.selectedIndices,
+      [1]
+    );
+    assert.equal(result.data.availableState.lists[0]?.itemCount, 2);
     const decoded = await sharp(Buffer.from(
       inlineImageData(result.data),
       "base64"
@@ -948,8 +1137,7 @@ test("render_component rejects an invalid transient list target or index", async
   const renderer = new RenderService(registry);
 
   try {
-    const invalidTarget = await renderer.render(
-      RenderComponentInputSchema.parse({
+    const invalidTarget = await renderSingle(renderer, {
         projectId: opened.data.projectId,
         packageId: "pkg00001",
         componentId: "cmp01",
@@ -960,15 +1148,17 @@ test("render_component rejects an invalid transient list target or index", async
             selectedIndices: [0]
           }]
         }
-      })
-    );
+      });
     assert.equal(invalidTarget.ok, false);
     if (!invalidTarget.ok) {
       assert.equal(invalidTarget.error.code, "TRANSIENT_STATE_INVALID");
-      assert.equal(invalidTarget.error.path, "state.lists[0].selector");
+      assert.equal(
+        invalidTarget.error.path,
+        "renders.single.state.lists[0].selector"
+      );
     }
 
-    const invalidIndex = await renderer.render(RenderComponentInputSchema.parse({
+    const invalidIndex = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -979,13 +1169,13 @@ test("render_component rejects an invalid transient list target or index", async
           selectedIndices: [2]
         }]
       }
-    }));
+    });
     assert.equal(invalidIndex.ok, false);
     if (!invalidIndex.ok) {
       assert.equal(invalidIndex.error.code, "TRANSIENT_STATE_INVALID");
       assert.equal(
         invalidIndex.error.path,
-        "state.lists[0].selectedIndices[0]"
+        "renders.single.state.lists[0].selectedIndices[0]"
       );
       assert.deepEqual(invalidIndex.error.allowed, {
         min: -1,
@@ -1009,10 +1199,11 @@ test("render_component applies transient tree expansion and selection without wr
   const renderer = new RenderService(registry);
 
   try {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
+    const result = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
+      stateDetail: "full",
       state: {
         trees: [{
           selector: "#tree",
@@ -1024,10 +1215,20 @@ test("render_component applies transient tree expansion and selection without wr
           selectedPath: [0]
         }]
       }
-    }));
+    });
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
+    assert.deepEqual(result.data.appliedState.trees[0], {
+      selector: "#tree",
+      target: { id: "tree", name: "outline", type: "tree" },
+      expansions: [{ path: [0], expanded: false }],
+      selectedPath: [0]
+    });
+    assert.deepEqual(
+      result.data.availableState.trees[0]?.nodes?.map((node) => node.path),
+      [[0], [0, 0]]
+    );
     const decoded = await sharp(Buffer.from(
       inlineImageData(result.data),
       "base64"
@@ -1066,8 +1267,7 @@ test("render_component rejects an invalid transient tree target or node path", a
   const renderer = new RenderService(registry);
 
   try {
-    const invalidTarget = await renderer.render(
-      RenderComponentInputSchema.parse({
+    const invalidTarget = await renderSingle(renderer, {
         projectId: opened.data.projectId,
         packageId: "pkg00001",
         componentId: "cmp01",
@@ -1078,15 +1278,17 @@ test("render_component rejects an invalid transient tree target or node path", a
             selectedPath: [0]
           }]
         }
-      })
-    );
+      });
     assert.equal(invalidTarget.ok, false);
     if (!invalidTarget.ok) {
       assert.equal(invalidTarget.error.code, "TRANSIENT_STATE_INVALID");
-      assert.equal(invalidTarget.error.path, "state.trees[0].selector");
+      assert.equal(
+        invalidTarget.error.path,
+        "renders.single.state.trees[0].selector"
+      );
     }
 
-    const invalidPath = await renderer.render(RenderComponentInputSchema.parse({
+    const invalidPath = await renderSingle(renderer, {
       projectId: opened.data.projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -1097,13 +1299,13 @@ test("render_component rejects an invalid transient tree target or node path", a
           selectedPath: [0, 1]
         }]
       }
-    }));
+    });
     assert.equal(invalidPath.ok, false);
     if (!invalidPath.ok) {
       assert.equal(invalidPath.error.code, "TRANSIENT_STATE_INVALID");
       assert.equal(
         invalidPath.error.path,
-        "state.trees[0].selectedPath[1]"
+        "renders.single.state.trees[0].selectedPath[1]"
       );
       assert.deepEqual(invalidPath.error.allowed, {
         min: 0,
@@ -1121,7 +1323,7 @@ test("render_component rejects an invalid transient tree target or node path", a
 test("render_component applies explicit viewport scale and only saves on request", async () => {
   const { registry, renderer, projectId } = await openRenderer();
   try {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
+    const result = await renderSingle(renderer, {
       projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
@@ -1130,7 +1332,7 @@ test("render_component applies explicit viewport scale and only saves on request
       scale: 2,
       background: "#ffffff",
       imageResult: "both"
-    }));
+    });
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
@@ -1147,12 +1349,12 @@ test("render_component applies explicit viewport scale and only saves on request
       Buffer.from(inlineImageData(result.data), "base64")
     );
 
-    const fileOnly = await renderer.render(RenderComponentInputSchema.parse({
+    const fileOnly = await renderSingle(renderer, {
       projectId,
       packageId: "pkg00001",
       componentId: "cmp01",
       imageResult: "file"
-    }));
+    });
     assert.equal(fileOnly.ok, true, JSON.stringify(fileOnly));
     if (fileOnly.ok) {
       assert.equal(fileOnly.data.image.data, undefined);
@@ -1177,12 +1379,12 @@ test("render_component selects implicit high-resolution resources at scale 2 wit
 
   try {
     const renderAtScale = async (scale: number) => {
-      const result = await renderer.render(RenderComponentInputSchema.parse({
+      const result = await renderSingle(renderer, {
         projectId: opened.data.projectId,
         packageId: "pkg00001",
         componentId: "cmp01",
         scale
-      }));
+      });
       if (!result.ok) assert.fail(result.error.message);
       assert.equal(result.ok, true, JSON.stringify(result));
       return result.data;
@@ -1254,11 +1456,11 @@ test("render_component reuses Chromium while isolating every render context", as
   });
   try {
     for (let index = 0; index < 2; index++) {
-      const result = await renderer.render(RenderComponentInputSchema.parse({
+      const result = await renderSingle(renderer, {
         projectId,
         packageId: "pkg00001",
         componentId: "cmp01"
-      }));
+      });
       assert.equal(result.ok, true, JSON.stringify(result));
     }
     assert.equal(launchCount, 1);
@@ -1286,17 +1488,17 @@ test("render_component relaunches Chromium after a disconnected browser", async 
     browserType: reconnectingBrowser
   });
   try {
-    const input = RenderComponentInputSchema.parse({
+    const input = {
       projectId,
       packageId: "pkg00001",
       componentId: "cmp01"
-    });
-    const first = await renderer.render(input);
+    };
+    const first = await renderSingle(renderer, input);
     assert.equal(first.ok, true, JSON.stringify(first));
     assert.equal(launchCount, 1);
 
     await launchedBrowser!.close();
-    const second = await renderer.render(input);
+    const second = await renderSingle(renderer, input);
     assert.equal(second.ok, true, JSON.stringify(second));
     assert.equal(launchCount, 2);
     if (first.ok && second.ok) {
@@ -1326,11 +1528,11 @@ test("render_component reports a missing browser without downloading or fallback
     browserType: missingBrowser
   });
   try {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
+    const result = await renderSingle(renderer, {
       projectId,
       packageId: "pkg00001",
       componentId: "cmp01"
-    }));
+    });
 
     assert.equal(result.ok, false);
     if (result.ok) return;
@@ -1350,25 +1552,21 @@ test("render_component reports a missing browser without downloading or fallback
 test("render_component preserves specific project and component errors", async () => {
   const { registry, renderer, projectId } = await openRenderer();
   try {
-    const missingSession = await renderer.render(
-      RenderComponentInputSchema.parse({
+    const missingSession = await renderSingle(renderer, {
         projectId: "missing",
         packageId: "pkg00001",
         componentId: "cmp01"
-      })
-    );
+      });
     assert.equal(missingSession.ok, false);
     if (!missingSession.ok) {
       assert.equal(missingSession.error.code, "SESSION_NOT_FOUND");
     }
 
-    const missingComponent = await renderer.render(
-      RenderComponentInputSchema.parse({
+    const missingComponent = await renderSingle(renderer, {
         projectId,
         packageId: "pkg00001",
         componentId: "missing"
-      })
-    );
+      });
     assert.equal(missingComponent.ok, false);
     if (!missingComponent.ok) {
       assert.equal(missingComponent.error.code, "COMPONENT_NOT_FOUND");

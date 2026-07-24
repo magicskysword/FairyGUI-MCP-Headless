@@ -5,7 +5,8 @@ import path from "node:path";
 import {
   QueryInputSchema,
   RenderComponentInputSchema,
-  ValidateInputSchema
+  ValidateInputSchema,
+  type RenderRequestInput
 } from "../../src/contracts/tools.js";
 import { ProjectRegistry } from "../../src/project/project-registry.js";
 import { QueryService } from "../../src/query/query-service.js";
@@ -68,6 +69,21 @@ function queryData<T>(
   return item.data as T;
 }
 
+async function renderSingle(
+  renderer: RenderService,
+  projectId: string,
+  request: RenderRequestInput
+) {
+  const batch = await renderer.render(RenderComponentInputSchema.parse({
+    projectId,
+    renders: { single: request }
+  }));
+  if (!batch.ok) return batch;
+  const result = batch.data.results.single;
+  assert.ok(result, "语料渲染缺少 single 结果");
+  return result;
+}
+
 const projectDirectory = path.resolve(
   process.env.FAIRYGUI_UNITY_PROJECT
     ?? path.join(
@@ -99,7 +115,7 @@ try {
     projectId,
     queries: {
       packages: { kind: "packages", limit: 100 },
-      components: { kind: "components", limit: 500 }
+      components: { kind: "components", detail: "full", limit: 500 }
     }
   }));
   const packagePage = queryData<{
@@ -149,13 +165,12 @@ try {
   const renderStartedAt = performance.now();
   let firstPngHash: string | undefined;
   for (const [index, component] of representatives.entries()) {
-    const result = await renderer.render(RenderComponentInputSchema.parse({
-      projectId,
+    const result = await renderSingle(renderer, projectId, {
       packageId: component.packageId,
       componentId: component.componentId,
       width: Math.max(1, Math.min(800, Math.ceil(component.width || 1))),
       height: Math.max(1, Math.min(600, Math.ceil(component.height || 1)))
-    }));
+    });
     if (!result.ok) {
       renderFailures.push({
         packageId: component.packageId,
@@ -174,13 +189,12 @@ try {
   const renderMs = performance.now() - renderStartedAt;
 
   const first = representatives[0]!;
-  const repeated = await renderer.render(RenderComponentInputSchema.parse({
-    projectId,
+  const repeated = await renderSingle(renderer, projectId, {
     packageId: first.packageId,
     componentId: first.componentId,
     width: Math.max(1, Math.min(800, Math.ceil(first.width || 1))),
     height: Math.max(1, Math.min(600, Math.ceil(first.height || 1)))
-  }));
+  });
   assert.equal(repeated.ok, true, JSON.stringify(repeated));
   if (repeated.ok) {
     assert.ok(repeated.data.image.data);

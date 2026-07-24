@@ -300,13 +300,21 @@ test("stdio-facing handlers complete the M1 open-query-render-validate loop", as
       name: "fairygui.render_component",
       arguments: {
         projectId,
-        packageId: "pkg00001",
-        componentId: "cmp01"
+        renders: {
+          main: {
+            packageId: "pkg00001",
+            componentId: "cmp01"
+          }
+        }
       }
     });
     const renderedEnvelope = structured(rendered);
     assert.equal(renderedEnvelope.ok, true);
-    const renderedImage = renderedEnvelope.data?.image as {
+    const renderedResults = renderedEnvelope.data?.results as Record<
+      string,
+      { ok: boolean; data: { image: unknown } }
+    >;
+    const renderedImage = renderedResults.main?.data.image as {
       mediaType: string;
       contentIndex: number;
       data?: string;
@@ -341,6 +349,101 @@ test("stdio-facing handlers complete the M1 open-query-render-validate loop", as
   }
 });
 
+test("stdio batch render maps named inline images and keeps file-only results detached", async () => {
+  const projectDirectory = await createProject();
+  const { app, client } = await connectServer();
+  try {
+    const opened = structured(await client.callTool({
+      name: "fairygui.project",
+      arguments: { action: "open", path: projectDirectory }
+    }));
+    assert.equal(opened.ok, true);
+    const projectId = String(opened.data?.projectId);
+
+    const both = await client.callTool({
+      name: "fairygui.render_component",
+      arguments: {
+        projectId,
+        imageResult: "both",
+        renders: {
+          first: {
+            packageId: "pkg00001",
+            componentId: "cmp01"
+          },
+          second: {
+            packageId: "pkg00001",
+            componentId: "cmp01",
+            width: 100,
+            height: 50
+          }
+        }
+      }
+    });
+    const bothEnvelope = structured(both);
+    assert.equal(bothEnvelope.ok, true);
+    const results = bothEnvelope.data?.results as Record<string, {
+      ok: boolean;
+      data: {
+        image: {
+          contentIndex?: number;
+          filePath?: string;
+          data?: string;
+        };
+      };
+    }>;
+    assert.equal(results.first?.data.image.contentIndex, 1);
+    assert.equal(results.second?.data.image.contentIndex, 2);
+    assert.equal("data" in results.first!.data.image, false);
+    assert.equal("data" in results.second!.data.image, false);
+    assert.ok(results.first?.data.image.filePath);
+    assert.ok(results.second?.data.image.filePath);
+    assert.equal(
+      (("content" in both ? both.content : []) as Array<{ type: string }>)
+        .filter((item) => item.type === "image").length,
+      2
+    );
+    assert.equal(
+      (await readFile(results.first!.data.image.filePath!))
+        .subarray(0, 8)
+        .toString("hex"),
+      "89504e470d0a1a0a"
+    );
+
+    const fileOnly = await client.callTool({
+      name: "fairygui.render_component",
+      arguments: {
+        projectId,
+        imageResult: "file",
+        renders: {
+          file: {
+            packageId: "pkg00001",
+            componentId: "cmp01"
+          }
+        }
+      }
+    });
+    const fileEnvelope = structured(fileOnly);
+    assert.equal(fileEnvelope.ok, true);
+    const fileResults = fileEnvelope.data?.results as Record<string, {
+      ok: boolean;
+      data: { image: Record<string, unknown> };
+    }>;
+    assert.equal("filePath" in fileResults.file!.data.image, true);
+    assert.equal("contentIndex" in fileResults.file!.data.image, false);
+    assert.equal(
+      (("content" in fileOnly
+        ? fileOnly.content
+        : []) as Array<{ type: string }>)
+        .some((item) => item.type === "image"),
+      false
+    );
+  }
+  finally {
+    await client.close();
+    await app.close();
+  }
+});
+
 test("stdio-facing DOM patch handler atomically writes and immediately re-queries", async () => {
   const projectDirectory = await createProject();
   const { app, client } = await connectServer();
@@ -356,8 +459,12 @@ test("stdio-facing DOM patch handler atomically writes and immediately re-querie
       name: "fairygui.render_component",
       arguments: {
         projectId,
-        packageId: "pkg00001",
-        componentId: "cmp01"
+        renders: {
+          main: {
+            packageId: "pkg00001",
+            componentId: "cmp01"
+          }
+        }
       }
     });
     const beforeRender = structured(beforeRenderResult);
@@ -433,15 +540,23 @@ test("stdio-facing DOM patch handler atomically writes and immediately re-querie
       name: "fairygui.render_component",
       arguments: {
         projectId,
-        packageId: "pkg00001",
-        componentId: "cmp01"
+        renders: {
+          main: {
+            packageId: "pkg00001",
+            componentId: "cmp01"
+          }
+        }
       }
     });
     assert.equal("isError" in rendered && rendered.isError, false);
     const renderedEnvelope = structured(rendered);
     assert.equal(renderedEnvelope.ok, true);
     assert.equal(renderedEnvelope.data?.backend, "fairygui-dom");
-    const renderedImage = renderedEnvelope.data?.image as {
+    const renderedResults = renderedEnvelope.data?.results as Record<
+      string,
+      { ok: boolean; data: { image: unknown } }
+    >;
+    const renderedImage = renderedResults.main?.data.image as {
       mediaType: string;
       contentIndex: number;
     };

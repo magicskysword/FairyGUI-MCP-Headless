@@ -17,16 +17,22 @@ import {
 } from "playwright";
 import type { FairyDomDocument, FairyDomNode } from "../contracts/dom.js";
 import type {
+  RenderAppliedState,
+  RenderAvailableState,
+  RenderBatchTransportData,
+  RenderGearHidden,
   RenderComponentTransportData
 } from "../contracts/render.js";
 import {
   fail,
   ok,
   type Diagnostic,
+  type ErrorEnvelope,
   type ResultEnvelope
 } from "../contracts/result.js";
 import type {
   RenderComponentInput,
+  RenderRequest,
   RenderTransientState
 } from "../contracts/tools.js";
 import {
@@ -80,6 +86,9 @@ interface PreviewState {
       width: number;
       height: number;
     };
+    availableState?: RenderAvailableState;
+    appliedState?: RenderAppliedState;
+    gearHidden?: RenderGearHidden;
   };
 }
 
@@ -147,12 +156,19 @@ interface PreviewPayload {
     height: number;
   };
   background?: string;
+  stateDetail: "summary" | "full";
   state?: PreviewTransientState;
 }
 
 interface PreparedRender {
+  request: RenderRequest;
   dom: FairyDomDocument;
+  state?: PreviewTransientState;
+}
+
+interface PreparedRenderBatch {
   runtime: CompiledRuntimeArtifacts;
+  renders: Record<string, PreparedRender | ErrorEnvelope>;
 }
 
 interface RuntimeCompilationCacheEntry {
@@ -160,7 +176,7 @@ interface RuntimeCompilationCacheEntry {
   compilation: Promise<CompiledRuntimeArtifacts>;
 }
 
-function projectionFailure(error: DomProjectionError): ResultEnvelope<never> {
+function projectionFailure(error: DomProjectionError): ErrorEnvelope {
   return fail(error.code, error.message, {
     path: `${error.packageId}/${error.componentId}`,
     actual: {
@@ -309,6 +325,19 @@ function prepareTransientState(
   return ok({ controllers, scrolls, lists, trees });
 }
 
+function namedRenderFailure(key: string, failure: ErrorEnvelope): ErrorEnvelope {
+  const path = failure.error.path;
+  return {
+    ok: false,
+    error: {
+      ...failure.error,
+      path: path?.startsWith("state")
+        ? `renders.${key}.${path}`
+        : path ?? `renders.${key}`
+    }
+  };
+}
+
 export class RenderService {
   private readonly projects: ProjectRegistry;
   private readonly browserType: RenderBrowserType;
@@ -335,27 +364,25 @@ export class RenderService {
 
   public async render(
     input: RenderComponentInput
-  ): Promise<ResultEnvelope<RenderComponentTransportData>> {
-    const preparedState = prepareTransientState(input.state);
-    if (!preparedState.ok) return preparedState;
-
-    const prepared = await this.projects.read(input.projectId, async (document) => {
-      try {
-        const dom = toFairyDomDocument(
-          document,
-          input.packageId,
-          input.componentId
-        );
+  ): Promise<ResultEnvelope<RenderBatchTransportData>> {
+    const entries = Object.entries(input.renders);
+    const states = new Map(entries.map(([key, request]) => [
+      key,
+      prepareTransientState(request.state)
+    ] as const));
+    const prepared = await this.projects.read(
+      input.projectId,
+      async (document) => {
         const summary = this.projects.status(input.projectId);
         if (!summary.ok) return summary;
+        let runtime: CompiledRuntimeArtifacts;
         try {
-          const runtime = await this.getRuntimeCompilation(
+          runtime = await this.getRuntimeCompilation(
             input.projectId,
             summary.data.generation,
             summary.data.projectFile,
             summary.data.projectDirectory
           );
-          return ok<PreparedRender>({ dom, runtime });
         }
         catch (error) {
           return fail(
@@ -368,18 +395,107 @@ export class RenderService {
             }
           );
         }
-      }
-      catch (error) {
-        if (error instanceof DomProjectionError) {
-          return projectionFailure(error);
+
+        const renders: Record<string, PreparedRender | ErrorEnvelope> = {};
+        for (const [key, request] of entries) {
+          const state = states.get(key)!;
+          if (!state.ok) {
+            renders[key] = namedRenderFailure(key, state);
+            continue;
+          }
+          try {
+            renders[key] = {
+              request,
+              dom: toFairyDomDocument(
+                document,
+                request.packageId,
+                request.componentId
+              ),
+              ...(state.data === undefined ? {} : { state: state.data })
+            };
+          }
+          catch (error) {
+            if (error instanceof DomProjectionError) {
+              renders[key] = namedRenderFailure(
+                key,
+                projectionFailure(error)
+              );
+              continue;
+            }
+            throw error;
+          }
         }
-        throw error;
+        return ok<PreparedRenderBatch>({ runtime, renders });
       }
-    });
+    );
     if (!prepared.ok) return prepared;
     if (!prepared.data.ok) return prepared.data;
 
-    const { dom, runtime } = prepared.data.data;
+    const browserResult = await this.getBrowser();
+    if (!browserResult.ok) return browserResult;
+    let runtimeScript: string;
+    try {
+      runtimeScript = await this.loadRuntimeScript();
+    }
+    catch (error) {
+      return fail("RENDER_FAILED", "无法读取 FairyGUI-dom runtime 脚本", {
+        path: this.runtimeScriptPath,
+        actual: error instanceof Error ? error.message : String(error)
+      });
+    }
+
+    const { runtime, renders } = prepared.data.data;
+    const renderedEntries = await Promise.all(entries.map(
+      async ([key]) => {
+        const item = renders[key]!;
+        if ("ok" in item && item.ok === false) {
+          return [key, item] as const;
+        }
+        const result = await this.renderPrepared(
+          item as PreparedRender,
+          runtime,
+          browserResult.data,
+          runtimeScript,
+          input.imageResult,
+          input.stateDetail
+        );
+        return [
+          key,
+          result.ok ? result : namedRenderFailure(key, result)
+        ] as const;
+      }
+    ));
+    const results = Object.fromEntries(renderedEntries);
+    const failedKeys = renderedEntries
+      .filter(([, result]) => !result.ok)
+      .map(([key]) => key);
+    const data: RenderBatchTransportData = {
+      backend: "fairygui-dom",
+      fidelity: "runtime-preview",
+      rendererVersion: PACKAGE_VERSION,
+      requested: entries.length,
+      succeeded: entries.length - failedKeys.length,
+      failed: failedKeys.length,
+      results
+    };
+    return ok(data, failedKeys.length === 0 ? undefined : [{
+      severity: "warning",
+      code: "PARTIAL_RENDER_FAILURE",
+      message: `${failedKeys.length} 个命名渲染失败；其余结果已保留`,
+      path: "renders",
+      details: { failedKeys }
+    }]);
+  }
+
+  private async renderPrepared(
+    prepared: PreparedRender,
+    runtime: CompiledRuntimeArtifacts,
+    browser: Browser,
+    runtimeScript: string,
+    imageResult: RenderComponentInput["imageResult"],
+    stateDetail: RenderComponentInput["stateDetail"]
+  ): Promise<ResultEnvelope<RenderComponentTransportData>> {
+    const { request: input, dom } = prepared;
     const width = dimension(input.width, dom.root.style.width);
     const height = dimension(input.height, dom.root.style.height);
     const diagnostics = externalResourceDiagnostics(dom.root.children);
@@ -396,9 +512,6 @@ export class RenderService {
       });
     }
 
-    const browserResult = await this.getBrowser();
-    if (!browserResult.ok) return browserResult;
-
     let context: BrowserContext | undefined;
     try {
       const background = input.background ?? dom.root.content.backgroundColor;
@@ -411,13 +524,13 @@ export class RenderService {
         packageId: input.packageId,
         componentId: input.componentId,
         viewport: { width, height },
+        stateDetail,
         ...(background === undefined ? {} : { background }),
-        ...(preparedState.data === undefined
+        ...(prepared.state === undefined
           ? {}
-          : { state: preparedState.data })
+          : { state: prepared.state })
       };
-      const runtimeScript = await this.loadRuntimeScript();
-      context = await browserResult.data.newContext({
+      context = await browser.newContext({
         viewport: { width, height },
         deviceScaleFactor: input.scale,
         serviceWorkers: "block",
@@ -475,12 +588,20 @@ export class RenderService {
         timeout: RENDER_TIMEOUT_MS
       });
       let filePath: string | undefined;
-      if (input.imageResult === "file" || input.imageResult === "both") {
+      if (imageResult === "file" || imageResult === "both") {
         await mkdir(this.temporaryRoot, { recursive: true });
         filePath = path.join(this.temporaryRoot, `${randomUUID()}.png`);
         await writeFile(filePath, png);
       }
 
+      const availableState = previewState.details?.availableState;
+      const appliedState = previewState.details?.appliedState;
+      const gearHidden = previewState.details?.gearHidden;
+      if (!availableState || !appliedState || !gearHidden) {
+        return fail("RENDER_FAILED", "运行时预览未返回状态报告", {
+          actual: previewState.details
+        });
+      }
       return ok({
         backend: "fairygui-dom",
         fidelity: "runtime-preview",
@@ -494,12 +615,15 @@ export class RenderService {
           height: bounds.height
         },
         diagnostics,
+        availableState,
+        appliedState,
+        gearHidden,
         image: {
           mediaType: "image/png",
           width: Math.round(bounds.width * input.scale),
           height: Math.round(bounds.height * input.scale),
           ...(filePath === undefined ? {} : { filePath }),
-          ...(input.imageResult === "file"
+          ...(imageResult === "file"
             ? {}
             : { data: png.toString("base64") })
         }

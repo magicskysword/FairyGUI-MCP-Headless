@@ -145,6 +145,15 @@ Undo/Redo、revision、ifMatch、文件锁、历史或 Git 操作。同工程写
       "selector": "list[name=\"items\"]",
       "expectedMatches": 1,
       "selectedIndices": [1, 3]
+    }],
+    "trees": [{
+      "selector": "tree[name=\"outline\"]",
+      "expectedMatches": 1,
+      "expansions": [{
+        "nodePath": [0, 2],
+        "expanded": true
+      }],
+      "selectedPath": [0, 2, 1]
     }]
   }
 }
@@ -154,9 +163,10 @@ Undo/Redo、revision、ifMatch、文件锁、历史或 Git 操作。同工程写
 定位嵌套运行时对象；滚动位置使用非负像素 `x`/`y`，必须处于运行时实际可滚
 范围。List 单选使用 `selectedIndex`（`-1` 清空），多选使用唯一的
 `selectedIndices`；Tree 不按可见行索引混入 List 状态。匹配数量、目标类型、
-控制器、页面、选择模式、项目索引或滚动范围不合法时会明确失败，不会静默
-夹取。临时状态只修改隔离 BrowserContext 内的对象，不写回工程，也不进入后续
-截图。
+Tree 使用逐级子节点索引组成的稳定 `nodePath` 设置 folder 展开状态和选中节点，
+`selectedPath:null` 可清空选择。控制器、页面、选择模式、项目索引、Tree 路径
+或滚动范围不合法时会明确失败，不会静默夹取。临时状态只修改隔离
+BrowserContext 内的对象，不写回工程，也不进入后续截图。
 
 ## 本地开发与验证
 

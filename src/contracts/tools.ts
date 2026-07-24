@@ -484,13 +484,49 @@ export const RenderListStateSchema = z.union([
 ]);
 export type RenderListState = z.infer<typeof RenderListStateSchema>;
 
+const renderTreeStateBase = {
+  selector,
+  expectedMatches
+} as const;
+const renderTreeNodePath = z.array(z.number().int().nonnegative()).min(1).max(32);
+const renderTreeExpansions = z.array(z.object({
+  nodePath: renderTreeNodePath,
+  expanded: z.boolean()
+}).strict()).min(1).max(100).refine(
+  (expansions) => {
+    const paths = expansions.map((entry) => entry.nodePath.join("/"));
+    return new Set(paths).size === paths.length;
+  },
+  { message: "expansions 不能重复指定同一个 nodePath" }
+);
+const renderTreeSelectedPath = renderTreeNodePath.nullable();
+const renderTreeStateFields = {
+  ...renderTreeStateBase,
+  expansions: renderTreeExpansions.optional(),
+  selectedPath: renderTreeSelectedPath.optional()
+} as const;
+
+export const RenderTreeStateSchema = z.union([
+  z.object({
+    ...renderTreeStateFields,
+    expansions: renderTreeExpansions
+  }).strict(),
+  z.object({
+    ...renderTreeStateFields,
+    selectedPath: renderTreeSelectedPath
+  }).strict()
+]);
+export type RenderTreeState = z.infer<typeof RenderTreeStateSchema>;
+
 const renderControllers = z.array(RenderControllerStateSchema).min(1).max(100);
 const renderScrolls = z.array(RenderScrollStateSchema).min(1).max(100);
 const renderLists = z.array(RenderListStateSchema).min(1).max(100);
+const renderTrees = z.array(RenderTreeStateSchema).min(1).max(100);
 const renderTransientStateFields = {
   controllers: renderControllers.optional(),
   scrolls: renderScrolls.optional(),
-  lists: renderLists.optional()
+  lists: renderLists.optional(),
+  trees: renderTrees.optional()
 } as const;
 
 export const RenderTransientStateSchema = z.union([
@@ -505,6 +541,10 @@ export const RenderTransientStateSchema = z.union([
   z.object({
     ...renderTransientStateFields,
     lists: renderLists
+  }).strict(),
+  z.object({
+    ...renderTransientStateFields,
+    trees: renderTrees
   }).strict()
 ]);
 export type RenderTransientState = z.infer<

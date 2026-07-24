@@ -397,6 +397,57 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       }]
     }
   }).success, false);
+  for (const treeState of [
+    {
+      expansions: [{ nodePath: [0, 1], expanded: false }]
+    },
+    {
+      selectedPath: [0, 1]
+    },
+    {
+      selectedPath: null
+    },
+    {
+      expansions: [{ nodePath: [0], expanded: true }],
+      selectedPath: [0, 1]
+    }
+  ]) {
+    assert.equal(RenderComponentInputSchema.safeParse({
+      projectId: "project-1",
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      state: {
+        trees: [{
+          selector: 'tree[name="outline"]',
+          expectedMatches: 1,
+          ...treeState
+        }]
+      }
+    }).success, true);
+  }
+  assert.equal(RenderComponentInputSchema.safeParse({
+    projectId: "project-1",
+    packageId: "pkg00001",
+    componentId: "cmp01",
+    state: {
+      trees: [{
+        selector: 'tree[name="outline"]',
+        expectedMatches: 1
+      }]
+    }
+  }).success, false);
+  assert.equal(RenderComponentInputSchema.safeParse({
+    projectId: "project-1",
+    packageId: "pkg00001",
+    componentId: "cmp01",
+    state: {
+      trees: [{
+        selector: 'tree[name="outline"]',
+        expectedMatches: 1,
+        selectedPath: []
+      }]
+    }
+  }).success, false);
   assert.equal(RenderComponentInputSchema.safeParse({
     projectId: "project-1",
     packageId: "pkg00001",

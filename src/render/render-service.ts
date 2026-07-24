@@ -116,10 +116,21 @@ interface PreviewListState {
   };
 }
 
+interface PreviewTreeState {
+  selector: ParsedFairyDomSelector;
+  expectedMatches: number;
+  expansions: Array<{
+    nodePath: number[];
+    expanded: boolean;
+  }>;
+  selectedPath?: number[] | null;
+}
+
 interface PreviewTransientState {
   controllers: PreviewControllerState[];
   scrolls: PreviewScrollState[];
   lists: PreviewListState[];
+  trees: PreviewTreeState[];
 }
 
 interface PreviewPayload {
@@ -273,7 +284,31 @@ function prepareTransientState(
     }
   }
 
-  return ok({ controllers, scrolls, lists });
+  const trees: PreviewTreeState[] = [];
+  for (const [index, entry] of (state.trees ?? []).entries()) {
+    try {
+      trees.push({
+        selector: parseFairyDomSelector(entry.selector),
+        expectedMatches: entry.expectedMatches,
+        expansions: entry.expansions ?? [],
+        ...(entry.selectedPath !== undefined
+          ? { selectedPath: entry.selectedPath }
+          : {})
+      });
+    }
+    catch (error) {
+      if (error instanceof SelectorSyntaxError) {
+        return fail("INVALID_SELECTOR", error.message, {
+          path: `state.trees[${index}].selector[${error.index}]`,
+          actual: error.selector,
+          suggestedFix: error.suggestedFix
+        });
+      }
+      throw error;
+    }
+  }
+
+  return ok({ controllers, scrolls, lists, trees });
 }
 
 export class RenderService {

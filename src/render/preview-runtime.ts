@@ -134,6 +134,28 @@ export const PREVIEW_SCRIPT = String.raw`
     throw error;
   };
 
+  const resolveTreeNode = (tree, nodePath, path) => {
+    let parent = tree.rootNode;
+    for (let depth = 0; depth < nodePath.length; depth++) {
+      const childIndex = nodePath[depth];
+      if (childIndex < 0 || childIndex >= parent.numChildren) {
+        stateFailure({
+          code: "TRANSIENT_STATE_INVALID",
+          message: "Tree 节点路径超出当前父节点的子节点范围",
+          path: path + "[" + depth + "]",
+          actual: childIndex,
+          allowed: {
+            min: 0,
+            max: parent.numChildren - 1,
+            childCount: parent.numChildren
+          }
+        });
+      }
+      parent = parent.getChildAt(childIndex);
+    }
+    return parent;
+  };
+
   const controllerDetails = (controller) => {
     const pageIds = [];
     const pageNames = [];
@@ -226,6 +248,91 @@ export const PREVIEW_SCRIPT = String.raw`
           });
         }
         controller.setSelectedIndex(selectedIndex);
+      });
+    });
+
+    (state.trees || []).forEach((entry, stateIndex) => {
+      const path = "state.trees[" + stateIndex + "]";
+      const targets = matchObjects(view, entry.selector);
+      if (targets.length !== entry.expectedMatches) {
+        stateFailure({
+          code: "SELECTOR_MATCH_COUNT",
+          message:
+            "临时 Tree 选择器匹配数量不符合 expectedMatches："
+            + entry.selector.source,
+          path: path + ".selector",
+          actual: {
+            selector: entry.selector.source,
+            expectedMatches: entry.expectedMatches,
+            actualMatches: targets.length
+          },
+          suggestedFix:
+            "先用 fairygui.query 确认节点 ID/名称，并更新 expectedMatches"
+        });
+      }
+
+      targets.forEach((target) => {
+        if (
+          typeof fgui.GTree !== "function"
+          || !(target instanceof fgui.GTree)
+        ) {
+          stateFailure({
+            code: "TRANSIENT_STATE_INVALID",
+            message: "Tree 临时状态只能应用到 GTree 节点",
+            path: path + ".selector",
+            actual: {
+              selector: entry.selector.source,
+              targetId: target.id || "",
+              targetName: target.name || "",
+              targetType: runtimeType(target, view)
+            },
+            allowed: ["tree"]
+          });
+        }
+
+        entry.expansions.forEach((expansion, expansionIndex) => {
+          const nodePath = path
+            + ".expansions["
+            + expansionIndex
+            + "].nodePath";
+          const node = resolveTreeNode(target, expansion.nodePath, nodePath);
+          if (!node.isFolder) {
+            stateFailure({
+              code: "TRANSIENT_STATE_INVALID",
+              message: "Tree 叶节点没有可设置的展开状态",
+              path: nodePath,
+              actual: expansion.nodePath,
+              allowed: ["指向 folder 节点的 nodePath"]
+            });
+          }
+          node.expanded = expansion.expanded;
+        });
+
+        if (entry.selectedPath === null) {
+          target.clearSelection();
+        }
+        else if (entry.selectedPath !== undefined) {
+          const node = resolveTreeNode(
+            target,
+            entry.selectedPath,
+            path + ".selectedPath"
+          );
+          target.clearSelection();
+          target.selectNode(node, false);
+          if (target.getSelectedNode() !== node) {
+            stateFailure({
+              code: "TRANSIENT_STATE_INVALID",
+              message: "Tree 节点未形成请求的运行时选中状态",
+              path: path + ".selectedPath",
+              actual: target.getSelectedNode() ? "different-node" : null,
+              allowed: {
+                requested: entry.selectedPath,
+                requirement:
+                  "Tree selectionMode 必须允许选择且节点项目必须是 Button"
+              }
+            });
+          }
+        }
       });
     });
 

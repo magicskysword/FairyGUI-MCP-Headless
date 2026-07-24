@@ -347,6 +347,72 @@ async function createListStateProject(): Promise<{
   return { directory, componentFile };
 }
 
+async function createTreeStateProject(): Promise<{
+  directory: string;
+  componentFile: string;
+}> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-tree-render-"));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(
+    path.join(directory, "Demo.fairy"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="tree-render-project" type="DOM" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "package.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <component id="item1" name="TreeItem.xml" path="/"/>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "TreeItem.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="100,40" extention="Button">
+  <controller name="button"
+    pages="0,up,1,down,2,over,3,selectedOver" selected="0"/>
+  <displayList>
+    <graph id="normal" name="normal" xy="0,0" size="100,40"
+      type="rect" fillColor="#e11d48" lineColor="#e11d48" lineSize="0">
+      <gearDisplay controller="button" pages="0,2"/>
+    </graph>
+    <graph id="selected" name="selected" xy="0,0" size="100,40"
+      type="rect" fillColor="#2563eb" lineColor="#2563eb" lineSize="0">
+      <gearDisplay controller="button" pages="1,3"/>
+    </graph>
+  </displayList>
+  <Button mode="Check"/>
+</component>`,
+    "utf8"
+  );
+  const componentFile = path.join(packageDirectory, "Main.xml");
+  await writeFile(
+    componentFile,
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="100,80">
+  <displayList>
+    <graph id="background" name="background" xy="0,0" size="100,80"
+      type="rect" fillColor="#16a34a" lineColor="#16a34a" lineSize="0"/>
+    <list id="tree" name="outline" xy="0,0" size="100,80"
+      selectionMode="single" defaultItem="ui://pkg00001item1"
+      treeView="true" indent="0">
+      <item title="Parent" level="0"/>
+      <item title="Child" level="1"/>
+    </list>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  return { directory, componentFile };
+}
+
 async function openRenderer(options: {
   browserType?: RenderBrowserType;
 } = {}): Promise<{
@@ -830,6 +896,121 @@ test("render_component rejects an invalid transient list target or index", async
         min: -1,
         max: 1,
         itemCount: 2
+      });
+    }
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component applies transient tree expansion and selection without writing", async () => {
+  const { directory, componentFile } = await createTreeStateProject();
+  const before = await readFile(componentFile);
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+
+  try {
+    const result = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      state: {
+        trees: [{
+          selector: "#tree",
+          expectedMatches: 1,
+          expansions: [{
+            nodePath: [0],
+            expanded: false
+          }],
+          selectedPath: [0]
+        }]
+      }
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const parentOffset = (20 * decoded.info.width + 50)
+      * decoded.info.channels;
+    const childOffset = (60 * decoded.info.width + 50)
+      * decoded.info.channels;
+    assert.ok(
+      (decoded.data[parentOffset] ?? 0) < 80
+        && (decoded.data[parentOffset + 1] ?? 0) > 70
+        && (decoded.data[parentOffset + 2] ?? 0) > 180,
+      "选中的父节点应显示蓝色"
+    );
+    assert.ok(
+      (decoded.data[childOffset] ?? 0) < 80
+        && (decoded.data[childOffset + 1] ?? 0) > 120
+        && (decoded.data[childOffset + 2] ?? 0) < 120,
+      "折叠父节点后子节点区域应显示绿色背景"
+    );
+    assert.deepEqual(await readFile(componentFile), before);
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component rejects an invalid transient tree target or node path", async () => {
+  const { directory } = await createTreeStateProject();
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+
+  try {
+    const invalidTarget = await renderer.render(
+      RenderComponentInputSchema.parse({
+        projectId: opened.data.projectId,
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        state: {
+          trees: [{
+            selector: "#background",
+            expectedMatches: 1,
+            selectedPath: [0]
+          }]
+        }
+      })
+    );
+    assert.equal(invalidTarget.ok, false);
+    if (!invalidTarget.ok) {
+      assert.equal(invalidTarget.error.code, "TRANSIENT_STATE_INVALID");
+      assert.equal(invalidTarget.error.path, "state.trees[0].selector");
+    }
+
+    const invalidPath = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      state: {
+        trees: [{
+          selector: "#tree",
+          expectedMatches: 1,
+          selectedPath: [0, 1]
+        }]
+      }
+    }));
+    assert.equal(invalidPath.ok, false);
+    if (!invalidPath.ok) {
+      assert.equal(invalidPath.error.code, "TRANSIENT_STATE_INVALID");
+      assert.equal(
+        invalidPath.error.path,
+        "state.trees[0].selectedPath[1]"
+      );
+      assert.deepEqual(invalidPath.error.allowed, {
+        min: 0,
+        max: 0,
+        childCount: 1
       });
     }
   }

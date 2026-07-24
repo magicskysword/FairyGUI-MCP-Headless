@@ -90,18 +90,48 @@ test("query schema accepts named heterogeneous batches and rejects empty batches
         packageId: "pkg00001",
         componentId: "cmp01",
         selector: 'text[name="title"]',
-        resolvedPreview: true
+        detail: "full",
+        instanceProjection: "full"
       },
       refs: {
         kind: "references",
         packageId: "pkg00001",
         resourceId: "img01"
       },
-      capabilities: { kind: "capabilities" }
+      capabilities: { kind: "capabilities", detail: "full" }
     }
   };
 
   assert.deepEqual(QueryInputSchema.parse(input), input);
+  assert.deepEqual(QueryInputSchema.parse({
+    projectId: "project-1",
+    queries: {
+      resources: { kind: "resources" },
+      components: { kind: "components" },
+      dom: {
+        kind: "dom",
+        packageId: "pkg00001",
+        componentId: "cmp01"
+      },
+      capabilities: { kind: "capabilities" },
+      audit: { kind: "audit" }
+    }
+  }), {
+    projectId: "project-1",
+    queries: {
+      resources: { kind: "resources", detail: "summary" },
+      components: { kind: "components", detail: "summary" },
+      dom: {
+        kind: "dom",
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        detail: "summary",
+        instanceProjection: "none"
+      },
+      capabilities: { kind: "capabilities", detail: "summary" },
+      audit: { kind: "audit", detail: "summary" }
+    }
+  });
   assert.equal(QueryInputSchema.safeParse({
     projectId: "project-1",
     queries: {}

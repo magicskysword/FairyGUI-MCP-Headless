@@ -358,7 +358,8 @@ test("stdio-facing DOM patch handler atomically writes and immediately re-querie
             kind: "dom",
             packageId: "pkg00001",
             componentId: "cmp01",
-            selector: "#n0"
+            selector: "#n0",
+            detail: "full"
           }
         }
       }
@@ -462,7 +463,8 @@ test("stdio-facing resource operations create a package and component atomically
         queries: {
           components: {
             kind: "components",
-            packageId
+            packageId,
+            detail: "full"
           }
         }
       }

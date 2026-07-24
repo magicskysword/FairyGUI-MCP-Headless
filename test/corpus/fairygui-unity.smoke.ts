@@ -130,7 +130,8 @@ try {
         kind: "dom" as const,
         packageId: component.packageId,
         componentId: component.componentId,
-        resolvedPreview: true
+        detail: "full",
+        instanceProjection: "full"
       }
     ])
   );

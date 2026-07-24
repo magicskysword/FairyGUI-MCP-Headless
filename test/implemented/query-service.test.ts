@@ -102,22 +102,31 @@ test("named query batches return packages, resources, DOM, refs and capabilities
       projectId,
       queries: {
         packages: { kind: "packages" },
-        resources: { kind: "resources", packageId: "pkg00001" },
-        components: { kind: "components", packageId: "pkg00001" },
+        resources: {
+          kind: "resources",
+          packageId: "pkg00001",
+          detail: "full"
+        },
+        components: {
+          kind: "components",
+          packageId: "pkg00001",
+          detail: "full"
+        },
         dom: {
           kind: "dom",
           packageId: "pkg00001",
           componentId: "cmp01",
           selector: 'text[name="title"]',
-          resolvedPreview: true
+          detail: "full",
+          instanceProjection: "full"
         },
         refs: {
           kind: "references",
           packageId: "pkg00001",
           resourceId: "img01"
         },
-        capabilities: { kind: "capabilities" },
-        audit: { kind: "audit", includeOpaque: true }
+        capabilities: { kind: "capabilities", detail: "full" },
+        audit: { kind: "audit", detail: "full" }
       }
     }));
 
@@ -208,7 +217,8 @@ test("DOM query explains controllers, all gear types and effective visibility", 
         dom: {
           kind: "dom",
           packageId: "pkg00001",
-          componentId: "cmp01"
+          componentId: "cmp01",
+          detail: "full"
         }
       }
     }));
@@ -302,9 +312,11 @@ test("pagination cursors are opaque, deterministic and query-kind scoped", async
     if (!first.ok || !first.data.results.resources?.ok) return;
     const firstData = first.data.results.resources.data as {
       items: unknown[];
+      returned: number;
       nextCursor?: string;
     };
     assert.equal(firstData.items.length, 2);
+    assert.equal(firstData.returned, 2);
     assert.ok(firstData.nextCursor);
 
     const second = await service.execute(QueryInputSchema.parse({
@@ -319,8 +331,12 @@ test("pagination cursors are opaque, deterministic and query-kind scoped", async
     }));
     assert.equal(second.ok, true);
     if (second.ok && second.data.results.resources?.ok) {
-      const data = second.data.results.resources.data as { items: unknown[] };
+      const data = second.data.results.resources.data as {
+        items: unknown[];
+        returned: number;
+      };
       assert.equal(data.items.length, 1);
+      assert.equal(data.returned, 1);
     }
 
     const wrongKind = await service.execute(QueryInputSchema.parse({
@@ -340,6 +356,199 @@ test("pagination cursors are opaque, deterministic and query-kind scoped", async
         result?.ok ? undefined : result?.error.code,
         "INVALID_ARGUMENT"
       );
+    }
+  }
+  finally {
+    await registry.closeAll();
+  }
+});
+
+test("large queries default to compact summaries and expose full detail explicitly", async () => {
+  const { registry, service, projectId } = await openService();
+  try {
+    const summary = await service.execute(QueryInputSchema.parse({
+      projectId,
+      queries: {
+        resources: { kind: "resources", packageId: "pkg00001" },
+        components: { kind: "components", packageId: "pkg00001" },
+        dom: {
+          kind: "dom",
+          packageId: "pkg00001",
+          componentId: "cmp01"
+        },
+        capabilities: { kind: "capabilities" },
+        audit: { kind: "audit" }
+      }
+    }));
+    assert.equal(summary.ok, true);
+    if (!summary.ok) return;
+
+    const resources = summary.data.results.resources;
+    assert.equal(resources?.ok, true);
+    if (resources?.ok) {
+      const item = (resources.data as {
+        items: Array<Record<string, unknown>>;
+        returned: number;
+      }).items[0]!;
+      assert.deepEqual(Object.keys(item).sort(), [
+        "name",
+        "packageId",
+        "resourceId",
+        "type"
+      ]);
+      assert.equal((resources.data as { returned: number }).returned, 3);
+    }
+
+    const components = summary.data.results.components;
+    assert.equal(components?.ok, true);
+    if (components?.ok) {
+      const item = (components.data as {
+        items: Array<Record<string, unknown>>;
+      }).items[0]!;
+      assert.deepEqual(Object.keys(item).sort(), [
+        "componentId",
+        "name",
+        "packageId"
+      ]);
+    }
+
+    const dom = summary.data.results.dom;
+    assert.equal(dom?.ok, true);
+    if (dom?.ok) {
+      const data = dom.data as {
+        document: {
+          root: {
+            childCount: number;
+            children: Array<Record<string, unknown>>;
+          };
+        };
+        stateModel: {
+          gears: Array<Record<string, unknown>>;
+        };
+        projections?: unknown;
+      };
+      assert.equal(data.document.root.childCount, 3);
+      assert.equal(data.document.root.children.length, 3);
+      assert.equal("content" in data.document.root.children[0]!, false);
+      assert.equal("values" in data.stateModel.gears[0]!, false);
+      assert.equal("pageValues" in data.stateModel.gears[0]!, false);
+      assert.equal(data.projections, undefined);
+    }
+
+    const capabilities = summary.data.results.capabilities;
+    assert.equal(capabilities?.ok, true);
+    if (capabilities?.ok) {
+      const item = (capabilities.data as {
+        items: Array<Record<string, unknown>>;
+      }).items[0]!;
+      assert.equal("fidelity" in item, false);
+    }
+
+    const audit = summary.data.results.audit;
+    assert.equal(audit?.ok, true);
+    if (audit?.ok) {
+      const data = audit.data as Record<string, unknown>;
+      assert.equal(typeof data.total, "number");
+      assert.equal(typeof data.counts, "object");
+      assert.equal("items" in data, false);
+    }
+
+    const full = await service.execute(QueryInputSchema.parse({
+      projectId,
+      queries: {
+        resources: {
+          kind: "resources",
+          packageId: "pkg00001",
+          detail: "full"
+        },
+        components: {
+          kind: "components",
+          packageId: "pkg00001",
+          detail: "full"
+        },
+        dom: {
+          kind: "dom",
+          packageId: "pkg00001",
+          componentId: "cmp01",
+          detail: "full",
+          instanceProjection: "summary"
+        },
+        capabilities: { kind: "capabilities", detail: "full" },
+        audit: {
+          kind: "audit",
+          detail: "full",
+          packageId: "pkg00001",
+          componentId: "cmp01",
+          sourceKinds: ["component"],
+          findingKinds: ["attribute"],
+          nameContains: "mystery",
+          pathContains: "component"
+        }
+      }
+    }));
+    assert.equal(full.ok, true);
+    if (!full.ok) return;
+
+    const fullResources = full.data.results.resources;
+    if (fullResources?.ok) {
+      const item = (fullResources.data as {
+        items: Array<Record<string, unknown>>;
+      }).items[0]!;
+      assert.equal("path" in item, true);
+      assert.equal("exported" in item, true);
+    }
+    const fullComponents = full.data.results.components;
+    if (fullComponents?.ok) {
+      const item = (fullComponents.data as {
+        items: Array<Record<string, unknown>>;
+      }).items[0]!;
+      assert.equal("width" in item, true);
+      assert.equal("height" in item, true);
+    }
+    const fullDom = full.data.results.dom;
+    if (fullDom?.ok) {
+      const data = fullDom.data as {
+        document: { root: { children: Array<{ content: unknown }> } };
+        stateModel: { gears: Array<Record<string, unknown>> };
+        projections: Array<{
+          component: { nodeCount: number };
+          dom?: unknown;
+        }>;
+      };
+      assert.equal("content" in data.document.root.children[0]!, true);
+      assert.equal("values" in data.stateModel.gears[0]!, true);
+      assert.equal(data.projections[0]?.component.nodeCount, 1);
+      assert.equal("dom" in data.projections[0]!, false);
+    }
+    const fullCapabilities = full.data.results.capabilities;
+    if (fullCapabilities?.ok) {
+      const item = (fullCapabilities.data as {
+        items: Array<Record<string, unknown>>;
+      }).items[0]!;
+      assert.equal("fidelity" in item, true);
+    }
+    const fullAudit = full.data.results.audit;
+    if (fullAudit?.ok) {
+      const data = fullAudit.data as {
+        total: number;
+        returned: number;
+        items: Array<{
+          sourceKind: string;
+          kind: string;
+          name: string;
+        }>;
+      };
+      assert.equal(data.total, 1);
+      assert.equal(data.returned, 1);
+      assert.deepEqual(data.items.map((item) => ({
+        sourceKind: item.sourceKind,
+        kind: item.kind,
+        name: item.name
+      })), [{
+        sourceKind: "component",
+        kind: "attribute",
+        name: "mysteryComponent"
+      }]);
     }
   }
   finally {

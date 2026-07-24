@@ -8,6 +8,11 @@ import {
 import {
   CAPABILITY_REGISTRY
 } from "../contracts/capabilities.js";
+import type {
+  FairyDomDocument,
+  FairyDomNode,
+  FairyDomStyle
+} from "../contracts/dom.js";
 import {
   fail,
   ok,
@@ -23,7 +28,8 @@ import {
 import {
   DomProjectionError,
   projectComponentInstances,
-  toFairyDomDocument
+  toFairyDomDocument,
+  type ComponentInstanceProjection
 } from "../dom/openfairygui-adapter.js";
 import {
   matchFairyDomSelector,
@@ -32,7 +38,10 @@ import {
 import {
   ProjectRegistry
 } from "../project/project-registry.js";
-import { buildComponentStateModel } from "./state-model.js";
+import {
+  buildComponentStateModel,
+  type ComponentStateModel
+} from "./state-model.js";
 
 export type QueryItemResult = SuccessEnvelope<unknown> | ErrorEnvelope;
 
@@ -115,6 +124,7 @@ function paginated<T>(
 ): {
   items: T[];
   total: number;
+  returned: number;
   nextCursor?: string;
 } {
   const offset = request.cursor ? decodeCursor(request.cursor, kind) : 0;
@@ -125,19 +135,181 @@ function paginated<T>(
       suggestedFix: "从不带 cursor 的第一页重新查询"
     });
   }
-  const limit = request.limit ?? 100;
+  const limit = request.limit ?? 50;
   const pageItems = items.slice(offset, offset + limit);
   const nextOffset = offset + pageItems.length;
   const data: {
     items: T[];
     total: number;
+    returned: number;
     nextCursor?: string;
   } = {
     items: pageItems,
-    total: items.length
+    total: items.length,
+    returned: pageItems.length
   };
   if (nextOffset < items.length) data.nextCursor = encodeCursor(kind, nextOffset);
   return data;
+}
+
+function summaryResourceData(
+  resource: ReturnType<typeof resourceData>
+): Pick<
+  ReturnType<typeof resourceData>,
+  "packageId" | "resourceId" | "type" | "name"
+> {
+  return {
+    packageId: resource.packageId,
+    resourceId: resource.resourceId,
+    type: resource.type,
+    name: resource.name
+  };
+}
+
+function summaryStyle(style: FairyDomStyle): FairyDomStyle {
+  return Object.fromEntries(
+    (["left", "top", "width", "height", "visible"] as const)
+      .filter((key) => style[key] !== undefined)
+      .map((key) => [key, style[key]])
+  );
+}
+
+function summaryNode(node: FairyDomNode): {
+  id: string;
+  type: FairyDomNode["type"];
+  name: string;
+  groupId?: string;
+  style: FairyDomStyle;
+  readOnly?: true;
+  capability?: string;
+  resource?: { packageId: string; resourceId: string };
+  relationCount: number;
+} {
+  const content = node.content as {
+    resource?: { packageId: string; resourceId: string };
+  };
+  return {
+    id: node.id,
+    type: node.type,
+    name: node.name,
+    ...(node.groupId === undefined ? {} : { groupId: node.groupId }),
+    style: summaryStyle(node.style),
+    ...("readOnly" in node && node.readOnly === true
+      ? { readOnly: true as const }
+      : {}),
+    ...("capability" in node && typeof node.capability === "string"
+      ? { capability: node.capability }
+      : {}),
+    ...(content.resource === undefined ? {} : { resource: content.resource }),
+    relationCount: node.relations.length
+  };
+}
+
+function summaryDocument(document: FairyDomDocument): {
+  schemaVersion: 1;
+  packageId: string;
+  componentId: string;
+  root: {
+    type: "component-root";
+    id: string;
+    name: string;
+    style: FairyDomStyle;
+    content: FairyDomDocument["root"]["content"];
+    relationCount: number;
+    childCount: number;
+    children: ReturnType<typeof summaryNode>[];
+  };
+} {
+  return {
+    schemaVersion: document.schemaVersion,
+    packageId: document.packageId,
+    componentId: document.componentId,
+    root: {
+      type: "component-root",
+      id: document.root.id,
+      name: document.root.name,
+      style: summaryStyle(document.root.style),
+      content: document.root.content,
+      relationCount: document.root.relations.length,
+      childCount: document.root.children.length,
+      children: document.root.children.map(summaryNode)
+    }
+  };
+}
+
+function summaryStateModel(model: ComponentStateModel): {
+  controllers: ComponentStateModel["controllers"];
+  gears: Array<Omit<
+    ComponentStateModel["gears"][number],
+    "values" | "defaultValue" | "pageValues"
+  >>;
+  effectiveVisibility: ComponentStateModel["effectiveVisibility"];
+} {
+  return {
+    controllers: model.controllers,
+    gears: model.gears.map(({
+      values: _values,
+      defaultValue: _defaultValue,
+      pageValues: _pageValues,
+      ...gear
+    }) => gear),
+    effectiveVisibility: model.effectiveVisibility
+  };
+}
+
+function summaryProjection(
+  projection: ComponentInstanceProjection
+): {
+  instanceId: string;
+  instancePath: string[];
+  source: ComponentInstanceProjection["source"];
+  readOnly: true;
+  component: {
+    id: string;
+    name: string;
+    width?: number;
+    height?: number;
+    nodeCount: number;
+  };
+} {
+  const { dom } = projection;
+  return {
+    instanceId: projection.instanceId,
+    instancePath: projection.instancePath,
+    source: projection.source,
+    readOnly: true,
+    component: {
+      id: dom.componentId,
+      name: dom.root.name,
+      ...(dom.root.style.width === undefined
+        ? {}
+        : { width: dom.root.style.width }),
+      ...(dom.root.style.height === undefined
+        ? {}
+        : { height: dom.root.style.height }),
+      nodeCount: dom.root.children.length
+    }
+  };
+}
+
+function auditMatches(
+  finding: AuditFinding,
+  request: Extract<QueryRequest, { kind: "audit" }>
+): boolean {
+  const sourceKinds = request.sourceKinds
+    ? new Set(request.sourceKinds)
+    : undefined;
+  const findingKinds = request.findingKinds
+    ? new Set(request.findingKinds)
+    : undefined;
+  return (
+    (!request.packageId || finding.packageId === request.packageId)
+    && (!request.componentId || finding.componentId === request.componentId)
+    && (!sourceKinds || sourceKinds.has(finding.sourceKind))
+    && (!findingKinds || findingKinds.has(finding.kind))
+    && containsName(finding.name, request.nameContains)
+    && containsName(finding.path, request.pathContains)
+  );
 }
 
 function containsName(name: string, needle: string | undefined): boolean {
@@ -319,7 +491,13 @@ export class QueryService {
             { path: "packageId", actual: request.packageId }
           );
         }
-        return paginated(items, request, "resources");
+        return paginated(
+          request.detail === "full"
+            ? items
+            : items.map(summaryResourceData),
+          request,
+          "resources"
+        );
       }
       case "components": {
         if (
@@ -332,7 +510,7 @@ export class QueryService {
             { path: "packageId", actual: request.packageId }
           );
         }
-        const items = document.getRoot().listPackages()
+        const fullItems = document.getRoot().listPackages()
           .filter((pkg) => !request.packageId || pkg.getId() === request.packageId)
           .flatMap((pkg) =>
             pkg.listComponents().map((component) => ({
@@ -352,6 +530,13 @@ export class QueryService {
             a.packageId.localeCompare(b.packageId)
             || a.componentId.localeCompare(b.componentId)
           );
+        const items = request.detail === "full"
+          ? fullItems
+          : fullItems.map((component) => ({
+            packageId: component.packageId,
+            componentId: component.componentId,
+            name: component.name
+          }));
         return paginated(items, request, "components");
       }
       case "dom": {
@@ -374,27 +559,62 @@ export class QueryService {
             }
           );
         }
+        const stateModel = buildComponentStateModel(component);
         const data: {
-          document: typeof documentProjection;
-          stateModel: ReturnType<typeof buildComponentStateModel>;
-          matches?: ReturnType<typeof matchFairyDomSelector>;
-          projections?: ReturnType<typeof projectComponentInstances>;
+          document:
+            | typeof documentProjection
+            | ReturnType<typeof summaryDocument>;
+          stateModel:
+            | typeof stateModel
+            | ReturnType<typeof summaryStateModel>;
+          matches?: unknown[];
+          projections?: Array<
+            | ComponentInstanceProjection
+            | ReturnType<typeof summaryProjection>
+          >;
         } = {
-          document: documentProjection,
-          stateModel: buildComponentStateModel(component)
+          document: request.detail === "full"
+            ? documentProjection
+            : summaryDocument(documentProjection),
+          stateModel: request.detail === "full"
+            ? stateModel
+            : summaryStateModel(stateModel)
         };
         if (request.selector) {
-          data.matches = matchFairyDomSelector(
+          const matches = matchFairyDomSelector(
             documentProjection.root,
             request.selector
           );
+          data.matches = matches.map((node) => {
+            if (node.type === "component-root") {
+              return request.detail === "full"
+                ? documentProjection.root
+                : summaryDocument(documentProjection).root;
+            }
+            const fullNode = documentProjection.root.children.find(
+              (candidate) => candidate.id === node.id
+            );
+            if (!fullNode) {
+              throw new QueryItemError(
+                "INVALID_DOM",
+                `选择器结果无法映射回 DOM 节点：${node.id}`,
+                { path: "selector", actual: node }
+              );
+            }
+            return request.detail === "full"
+              ? fullNode
+              : summaryNode(fullNode);
+          });
         }
-        if (request.resolvedPreview) {
-          data.projections = projectComponentInstances(
+        if (request.instanceProjection !== "none") {
+          const projections = projectComponentInstances(
             document,
             request.packageId,
             request.componentId
           );
+          data.projections = request.instanceProjection === "full"
+            ? projections
+            : projections.map(summaryProjection);
         }
         return data;
       }
@@ -425,10 +645,19 @@ export class QueryService {
         );
       }
       case "capabilities":
-        return { items: CAPABILITY_REGISTRY };
+        return {
+          items: request.detail === "full"
+            ? CAPABILITY_REGISTRY
+            : CAPABILITY_REGISTRY.map(({ id, state, access }) => ({
+              id,
+              state,
+              access
+            }))
+        };
       case "audit": {
-        const findings = auditFindings(document);
-        if (!request.includeOpaque) {
+        const findings = auditFindings(document)
+          .filter((finding) => auditMatches(finding, request));
+        if (request.detail === "summary") {
           const counts = findings.reduce<Record<string, number>>(
             (result, finding) => {
               const key = `${finding.sourceKind}:${finding.kind}`;

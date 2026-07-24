@@ -49,6 +49,7 @@ const paginationShape = {
   cursor: z.string().min(1).optional(),
   limit: z.number().int().min(1).max(500).optional()
 } as const;
+const queryDetail = z.enum(["summary", "full"]).default("summary");
 
 export const QueryRequestSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -60,12 +61,14 @@ export const QueryRequestSchema = z.discriminatedUnion("kind", [
     packageId: nonEmptyId.optional(),
     resourceTypes: z.array(z.string().min(1)).min(1).optional(),
     nameContains: z.string().min(1).optional(),
+    detail: queryDetail,
     ...paginationShape
   }).strict(),
   z.object({
     kind: z.literal("components"),
     packageId: nonEmptyId.optional(),
     nameContains: z.string().min(1).optional(),
+    detail: queryDetail,
     ...paginationShape
   }).strict(),
   z.object({
@@ -73,7 +76,12 @@ export const QueryRequestSchema = z.discriminatedUnion("kind", [
     packageId: nonEmptyId,
     componentId: nonEmptyId,
     selector: selector.optional(),
-    resolvedPreview: z.boolean().optional()
+    detail: queryDetail,
+    instanceProjection: z.enum([
+      "none",
+      "summary",
+      "full"
+    ]).default("none")
   }).strict(),
   z.object({
     kind: z.literal("references"),
@@ -82,11 +90,23 @@ export const QueryRequestSchema = z.discriminatedUnion("kind", [
     ...paginationShape
   }).strict(),
   z.object({
-    kind: z.literal("capabilities")
+    kind: z.literal("capabilities"),
+    detail: queryDetail
   }).strict(),
   z.object({
     kind: z.literal("audit"),
-    includeOpaque: z.boolean().optional(),
+    detail: queryDetail,
+    packageId: nonEmptyId.optional(),
+    componentId: nonEmptyId.optional(),
+    sourceKinds: z.array(z.enum([
+      "project",
+      "package",
+      "branch",
+      "component"
+    ])).min(1).optional(),
+    findingKinds: z.array(z.enum(["attribute", "element"])).min(1).optional(),
+    nameContains: z.string().min(1).optional(),
+    pathContains: z.string().min(1).optional(),
     ...paginationShape
   }).strict()
 ]);

@@ -16,6 +16,7 @@ import {
   type BrowserContextOptions,
   type LaunchOptions
 } from "playwright";
+import sharp from "sharp";
 import { RenderComponentInputSchema } from "../../src/contracts/tools.js";
 import { ProjectRegistry } from "../../src/project/project-registry.js";
 import {
@@ -72,6 +73,53 @@ async function createProject(): Promise<string> {
   return directory;
 }
 
+async function createRuntimeInstanceProject(): Promise<string> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-runtime-render-"));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(
+    path.join(directory, "Demo.fairy"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="runtime-render-project" type="DOM" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "package.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <component id="card1" name="Card.xml" path="/"/>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "Card.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="100,60">
+  <displayList>
+    <graph id="n0" name="fill" xy="0,0" size="100,60" type="rect"
+      fillColor="#e11d48" lineColor="#e11d48" lineSize="0"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "Main.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="120,80">
+  <displayList>
+    <component id="n0" name="card" src="card1" fileName="Card.xml"
+      xy="10,10" size="100,60"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  return directory;
+}
+
 async function openRenderer(options: {
   browserType?: RenderBrowserType;
 } = {}): Promise<{
@@ -90,7 +138,7 @@ async function openRenderer(options: {
   };
 }
 
-test("render_component returns a FairyGUI-dom structural PNG preview", async () => {
+test("render_component returns a FairyGUI-dom runtime PNG preview", async () => {
   const { registry, renderer, projectId } = await openRenderer();
   try {
     const result = await renderer.render(RenderComponentInputSchema.parse({
@@ -102,7 +150,7 @@ test("render_component returns a FairyGUI-dom structural PNG preview", async () 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
     assert.equal(result.data.backend, "fairygui-dom");
-    assert.equal(result.data.fidelity, "structural-preview");
+    assert.equal(result.data.fidelity, "runtime-preview");
     assert.equal(result.data.packageId, "pkg00001");
     assert.equal(result.data.componentId, "cmp01");
     assert.deepEqual(result.data.bounds, {
@@ -125,6 +173,45 @@ test("render_component returns a FairyGUI-dom structural PNG preview", async () 
       result.data.diagnostics.some((diagnostic) =>
         diagnostic.code === "EXTERNAL_RESOURCE_BLOCKED"
       )
+    );
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component resolves nested component instances through the runtime package", async () => {
+  const directory = await createRuntimeInstanceProject();
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+
+  try {
+    const result = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01"
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    const png = Buffer.from(result.data.image.data, "base64");
+    const decoded = await sharp(png)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const sampleX = 60;
+    const sampleY = 40;
+    const offset = (sampleY * decoded.info.width + sampleX)
+      * decoded.info.channels;
+    const red = decoded.data[offset] ?? 0;
+    const green = decoded.data[offset + 1] ?? 0;
+    const blue = decoded.data[offset + 2] ?? 0;
+
+    assert.ok(
+      red > 190 && green < 70 && blue < 110,
+      `嵌套组件中心像素应为红色，实际为 rgb(${red}, ${green}, ${blue})`
     );
   }
   finally {

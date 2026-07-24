@@ -20,7 +20,7 @@ export type RenderImage = z.infer<typeof RenderImageSchema>;
 
 export const RenderComponentDataSchema = z.object({
   backend: z.literal("fairygui-dom"),
-  fidelity: z.literal("structural-preview"),
+  fidelity: z.literal("runtime-preview"),
   rendererVersion: z.string().min(1),
   packageId: z.string().min(1),
   componentId: z.string().min(1),

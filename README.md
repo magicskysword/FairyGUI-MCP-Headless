@@ -2,7 +2,7 @@
 
 面向 AI Agent 的本地 FairyGUI 无头创作 MCP。它把 FairyGUI 工程映射为受限、
 强类型的 DOM 中间模型，让 Agent 复用 HTML/CSS 的树、选择器和样式知识完成批量
-查询、原子编辑、结构预览与校验，但不声称兼容浏览器 DOM 或完整 CSS。
+查询、原子编辑、运行时预览与校验，但不声称兼容浏览器 DOM 或完整 CSS。
 
 V1 使用 Node.js 24、TypeScript ESM、本地 stdio、FairyGUI-dom 和 Playwright
 Chromium。Windows 是唯一正式开发、测试和截图基线；源码不依赖 Windows-only
@@ -105,20 +105,24 @@ Undo/Redo、revision、ifMatch、文件锁、历史或 Git 操作。同工程写
 非普通文件。成功事务消费源文件，失败保留。冲突策略为
 `reject|rename|replace`；删除策略为 `reject|cascade|force`。
 
-## 结构预览
+## 运行时预览
 
-`fairygui.render_component` 使用常驻 Chromium，每次任务创建隔离
-BrowserContext，并通过 `http://fairygui.internal/` 路由拦截加载包内资源；
-所有外部网络请求被阻断。结果明确声明：
+`fairygui.render_component` 会从未发布的源工程在内存中编译临时 `.fui` 与图集，
+不会要求先在 FairyGUI Editor 中执行发布，也不会把临时运行时产物写回工程。
+随后使用常驻 Chromium，每次任务创建隔离 BrowserContext，并通过
+`http://fairygui.internal/` 路由拦截加载这些内存资源；所有外部网络请求被阻断。
+结果明确声明：
 
 ```json
 {
   "backend": "fairygui-dom",
-  "fidelity": "structural-preview"
+  "fidelity": "runtime-preview"
 }
 ```
 
-它适合结构与布局反馈，不是 Unity 像素真值。Windows 是固定截图基线平台。
+它执行真实 FairyGUI-dom 包加载、组件构造、资源解析和布局，目标是让位置、显示、
+图片与颜色在肉眼上接近 Editor；由于渲染后端、字体栅格化等差异，它仍不是 Unity
+像素真值。Windows 是固定截图基线平台。
 
 ## 本地开发与验证
 

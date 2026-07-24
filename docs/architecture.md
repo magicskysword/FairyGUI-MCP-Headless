@@ -36,7 +36,7 @@ V1 使用四个正式 npm 包：
 |---|---|---|
 | OpenFairyGUI | `@magicskysword/openfairygui-core` | 工程模型、XML、ID、引用索引、受影响文件序列化 |
 | OpenFairyGUI | `@magicskysword/openfairygui-functions` | 可组合发布与转换函数 |
-| FairyGUI-dom | `@magicskysword/fairygui-dom` | DOM 结构预览运行时 |
+| FairyGUI-dom | `@magicskysword/fairygui-dom` | 内存包加载与真实 DOM 运行时预览 |
 | FairyGUI-MCP-Headless | `@magicskysword/fairygui-mcp-headless` | MCP、会话、事务、渲染和 AI Skill |
 
 MCP 是独立单包仓库。`package.json` 只使用正常 SemVer，不使用
@@ -203,19 +203,25 @@ MCP 级别保证失败后全部回滚；不承诺其他进程永远观察不到�
 
 Playwright Chromium 常驻，每个任务创建隔离 BrowserContext。预览资源通过
 `http://fairygui.internal/` 路由拦截加载，不启动 localhost 服务器，并阻断所有
-外部网络。浏览器断连后下一次调用会重新启动 Chromium。
+外部网络。浏览器断连后下一次调用会重新启动 Chromium。渲染前从最新磁盘快照
+重新读取独立工程模型，通过 OpenFairyGUI 在内存中编译临时 `.fui` 和图集；
+编译产物只存在于进程内，不要求 Editor 预发布，也不会落盘或污染工程快照。
+BrowserContext 加载全部内存包后，按包 ID 和组件 ID 构造真实 FairyGUI-dom
+对象，并等待包资源就绪后截图。
 
 结果固定声明：
 
 ```json
 {
   "backend": "fairygui-dom",
-  "fidelity": "structural-preview"
+  "fidelity": "runtime-preview"
 }
 ```
 
-它是结构与布局预览，不是 Unity 像素真值。可选 `saveToFile:true` 将 PNG 保存
-到系统临时目录；默认以内联 MCP image content 返回。
+它覆盖真实包解析、组件实例、图片、文本、控制器/Gear 与运行时布局，视觉验收
+目标是肉眼接近 FairyGUI Editor；浏览器与 Unity/Editor 的字体栅格化和后端差异
+仍可能产生微量像素抖动，因此不承诺 Unity 像素真值。可选 `saveToFile:true`
+将 PNG 保存到系统临时目录；默认以内联 MCP image content 返回。
 
 ## 9. 验证、测试与发布
 
@@ -258,7 +264,7 @@ pnpm test:pack
 2. `fairygui.query` 批量查询并检查能力。
 3. `fairygui.apply_dom_patch` 或
    `fairygui.apply_resource_operations` 原子写入。
-4. `fairygui.render_component` 获取 structural-preview。
+4. `fairygui.render_component` 获取内存编译后的 runtime-preview。
 5. 根据反馈继续调整。
 6. `fairygui.validate` 校验并关闭会话。
 

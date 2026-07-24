@@ -6,7 +6,10 @@ import {
 
 export type CapabilityState = "implemented" | "planned";
 export type CapabilityAccess = "read-write" | "read-only";
-export type CapabilityFidelity = "project-model" | "structural-preview";
+export type CapabilityFidelity =
+  | "project-model"
+  | "runtime-preview"
+  | "structural-preview";
 
 export interface Capability {
   readonly id: string;
@@ -47,10 +50,10 @@ export const CAPABILITY_REGISTRY: readonly Capability[] = Object.freeze([
   capability("resource.reference-index", "implemented", "read-only"),
   capability("transaction.recovery", "implemented", "read-write"),
   capability(
-    "render.structural-preview",
+    "render.runtime-preview",
     "implemented",
     "read-only",
-    "structural-preview"
+    "runtime-preview"
   ),
   capability("validate.quick", "implemented", "read-only"),
   capability("validate.roundtrip", "implemented", "read-only"),
@@ -106,4 +109,3 @@ export function requireWritableCapability(
   }
   return ok(capabilityEntry);
 }
-

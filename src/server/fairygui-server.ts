@@ -43,7 +43,7 @@ export const SERVER_INSTRUCTIONS = [
   "磁盘始终是唯一事实来源；每次调用前会刷新外部变更，写操作会原子落盘且不提供草稿、Undo/Redo、revision 或 Git。",
   "DOM 使用受限的 HTML/CSS 风格知识：仅支持已声明的节点、样式名和选择器，不等同于浏览器 DOM/CSS。",
   "尽量把同一意图合并到 query、apply_dom_patch 或 apply_resource_operations 的一个批次中；写目标必须提供 expectedMatches。",
-  "render_component 是 fairygui-dom 的 structural-preview，不是 Unity 像素真值。"
+  "render_component 会在内存中编译未发布工程并使用 fairygui-dom runtime-preview；它不是 Unity 像素真值。"
 ].join("\n");
 
 interface DomPatchHandler {
@@ -111,7 +111,7 @@ const TOOL_DESCRIPTIONS: Record<FairyGuiToolName, string> = {
   "fairygui.apply_resource_operations":
     "原子执行包与资源创建、收件箱导入、替换、重命名、包内移动和删除；批次绝不部分成功。",
   "fairygui.render_component":
-    "用常驻 Playwright Chromium 和隔离上下文显式渲染组件，返回 fairygui-dom 结构预览 PNG、边界和诊断。",
+    "在内存中编译未发布工程，用常驻 Playwright Chromium 和隔离上下文执行 FairyGUI-dom runtime 渲染，返回 PNG、边界和诊断。",
   "fairygui.validate":
     "执行 quick、roundtrip、publish 或 full 校验。工程问题仍是成功调用，并在 data.valid 中返回 false。"
 };

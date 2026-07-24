@@ -235,7 +235,7 @@ test("shipped documentation explains installation, tools and V1 boundaries", asy
   for (const content of [readme, architecture]) {
     assert.match(content, /Node\.js 24/);
     assert.match(content, /Windows/);
-    assert.match(content, /structural-preview/);
+    assert.match(content, /runtime-preview/);
     assert.match(content, /pnpm exec playwright install chromium/);
     for (const toolName of [
       "fairygui.project",

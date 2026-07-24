@@ -35,6 +35,10 @@ import {
   PREVIEW_ORIGIN,
   PREVIEW_SCRIPT
 } from "./preview-runtime.js";
+import {
+  compileRuntimeArtifacts,
+  type CompiledRuntimeArtifacts
+} from "./runtime-compiler.js";
 
 const MAX_RENDER_DIMENSION = 4096;
 const DEFAULT_RENDER_DIMENSION = 1;
@@ -69,12 +73,28 @@ interface PreviewState {
 }
 
 interface PreviewPayload {
-  dom: FairyDomDocument;
+  packages: Array<{
+    packageId: string;
+    packageName: string;
+    url: string;
+  }>;
+  packageId: string;
+  componentId: string;
   viewport: {
     width: number;
     height: number;
   };
   background?: string;
+}
+
+interface PreparedRender {
+  dom: FairyDomDocument;
+  runtime: CompiledRuntimeArtifacts;
+}
+
+interface RuntimeCompilationCacheEntry {
+  generation: number;
+  compilation: Promise<CompiledRuntimeArtifacts>;
 }
 
 function projectionFailure(error: DomProjectionError): ResultEnvelope<never> {
@@ -132,6 +152,10 @@ export class RenderService {
   private browser: Browser | undefined;
   private browserLaunch: Promise<Browser> | undefined;
   private runtimeScript: Promise<string> | undefined;
+  private readonly runtimeCompilations = new Map<
+    string,
+    RuntimeCompilationCacheEntry
+  >();
 
   public constructor(
     projects: ProjectRegistry,
@@ -147,13 +171,35 @@ export class RenderService {
   public async render(
     input: RenderComponentInput
   ): Promise<ResultEnvelope<RenderComponentData>> {
-    const projected = await this.projects.read(input.projectId, (document) => {
+    const prepared = await this.projects.read(input.projectId, async (document) => {
       try {
-        return ok(toFairyDomDocument(
+        const dom = toFairyDomDocument(
           document,
           input.packageId,
           input.componentId
-        ));
+        );
+        const summary = this.projects.status(input.projectId);
+        if (!summary.ok) return summary;
+        try {
+          const runtime = await this.getRuntimeCompilation(
+            input.projectId,
+            summary.data.generation,
+            summary.data.projectFile,
+            summary.data.projectDirectory
+          );
+          return ok<PreparedRender>({ dom, runtime });
+        }
+        catch (error) {
+          return fail(
+            "RUNTIME_COMPILE_FAILED",
+            "无法从未发布工程编译 FairyGUI runtime 预览数据",
+            {
+              path: summary.data.projectFile,
+              actual: error instanceof Error ? error.message : String(error),
+              suggestedFix: "检查源资源、包引用和运行时二进制诊断后重试"
+            }
+          );
+        }
       }
       catch (error) {
         if (error instanceof DomProjectionError) {
@@ -162,10 +208,10 @@ export class RenderService {
         throw error;
       }
     });
-    if (!projected.ok) return projected;
-    if (!projected.data.ok) return projected.data;
+    if (!prepared.ok) return prepared;
+    if (!prepared.data.ok) return prepared.data;
 
-    const dom = projected.data.data;
+    const { dom, runtime } = prepared.data.data;
     const width = dimension(input.width, dom.root.style.width);
     const height = dimension(input.height, dom.root.style.height);
     const diagnostics = externalResourceDiagnostics(dom.root.children);
@@ -187,12 +233,17 @@ export class RenderService {
 
     let context: BrowserContext | undefined;
     try {
+      const background = input.background ?? dom.root.content.backgroundColor;
       const payload: PreviewPayload = {
-        dom,
+        packages: runtime.packages.map((pkg) => ({
+          packageId: pkg.packageId,
+          packageName: pkg.packageName,
+          url: `/packages/${encodeURIComponent(pkg.fileName)}`
+        })),
+        packageId: input.packageId,
+        componentId: input.componentId,
         viewport: { width, height },
-        ...(input.background === undefined
-          ? {}
-          : { background: input.background })
+        ...(background === undefined ? {} : { background })
       };
       const runtimeScript = await this.loadRuntimeScript();
       context = await browserResult.data.newContext({
@@ -201,7 +252,7 @@ export class RenderService {
         serviceWorkers: "block",
         colorScheme: "light"
       });
-      await this.installRoutes(context, runtimeScript, payload);
+      await this.installRoutes(context, runtimeScript, payload, runtime);
       const page = await context.newPage();
       page.setDefaultTimeout(RENDER_TIMEOUT_MS);
       await page.goto(`${PREVIEW_ORIGIN}/preview.html`, {
@@ -219,7 +270,7 @@ export class RenderService {
           .__fairyguiPreview
       );
       if (previewState.status !== "ready") {
-        return fail("RENDER_FAILED", "FairyGUI-dom 结构预览运行失败", {
+        return fail("RENDER_FAILED", "FairyGUI-dom runtime 预览运行失败", {
           actual: previewState.details
         });
       }
@@ -227,7 +278,7 @@ export class RenderService {
       const root = page.locator('[data-fairy-component-root="true"]');
       const bounds = await root.boundingBox();
       if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
-        return fail("RENDER_FAILED", "FairyGUI-dom 未生成可截图的组件边界", {
+        return fail("RENDER_FAILED", "FairyGUI-dom runtime 未生成可截图的组件边界", {
           actual: bounds
         });
       }
@@ -244,7 +295,7 @@ export class RenderService {
 
       return ok({
         backend: "fairygui-dom",
-        fidelity: "structural-preview",
+        fidelity: "runtime-preview",
         rendererVersion: PACKAGE_VERSION,
         packageId: input.packageId,
         componentId: input.componentId,
@@ -266,9 +317,9 @@ export class RenderService {
     }
     catch (error) {
       if (isBrowserMissingError(error)) return this.browserMissing(error);
-      return fail("RENDER_FAILED", "FairyGUI-dom 结构预览失败", {
+      return fail("RENDER_FAILED", "FairyGUI-dom runtime 预览失败", {
         actual: error instanceof Error ? error.message : String(error),
-        suggestedFix: "检查组件 DOM 与渲染诊断后重试"
+        suggestedFix: "检查运行时包、资源和组件渲染诊断后重试"
       });
     }
     finally {
@@ -281,7 +332,31 @@ export class RenderService {
     this.browserLaunch = undefined;
     const browser = this.browser ?? await pending?.catch(() => undefined);
     this.browser = undefined;
+    this.runtimeCompilations.clear();
     await browser?.close().catch(() => undefined);
+  }
+
+  private getRuntimeCompilation(
+    projectId: string,
+    generation: number,
+    projectFile: string,
+    projectDirectory: string
+  ): Promise<CompiledRuntimeArtifacts> {
+    const cached = this.runtimeCompilations.get(projectId);
+    if (cached?.generation === generation) return cached.compilation;
+
+    const compilation = compileRuntimeArtifacts(
+      projectFile,
+      projectDirectory
+    );
+    const entry = { generation, compilation };
+    this.runtimeCompilations.set(projectId, entry);
+    void compilation.catch(() => {
+      if (this.runtimeCompilations.get(projectId) === entry) {
+        this.runtimeCompilations.delete(projectId);
+      }
+    });
+    return compilation;
   }
 
   private async getBrowser(): Promise<ResultEnvelope<Browser>> {
@@ -344,8 +419,12 @@ export class RenderService {
   private async installRoutes(
     context: BrowserContext,
     runtimeScript: string,
-    payload: PreviewPayload
+    payload: PreviewPayload,
+    runtime: CompiledRuntimeArtifacts
   ): Promise<void> {
+    const artifacts = new Map(
+      runtime.artifacts.map((artifact) => [artifact.fileName, artifact] as const)
+    );
     await context.route("**/*", async (route: Route) => {
       const requestUrl = route.request().url();
       let url: URL;
@@ -391,6 +470,34 @@ export class RenderService {
           });
           return;
         default:
+          if (
+            url.pathname.startsWith("/packages/")
+            || url.pathname.startsWith("/assets/")
+          ) {
+            let fileName: string;
+            try {
+              fileName = decodeURIComponent(
+                url.pathname.slice(url.pathname.lastIndexOf("/") + 1)
+              );
+            }
+            catch {
+              await route.fulfill({ status: 400, body: "Invalid artifact path" });
+              return;
+            }
+            const artifact = artifacts.get(fileName);
+            if (artifact) {
+              await route.fulfill({
+                status: 200,
+                contentType: artifact.mediaType,
+                body: Buffer.from(
+                  artifact.data.buffer,
+                  artifact.data.byteOffset,
+                  artifact.data.byteLength
+                )
+              });
+              return;
+            }
+          }
           await route.fulfill({ status: 404, body: "Not found" });
       }
     });

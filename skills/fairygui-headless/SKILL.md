@@ -1,6 +1,6 @@
 ---
 name: fairygui-headless
-description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染并校验本地 FairyGUI 工程。适用于 AI 直接创作 FairyGUI UI、批量修改组件 DOM、导入资源以及通过 PNG 结构预览循环调整。
+description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染并校验本地 FairyGUI 工程。适用于 AI 直接创作 FairyGUI UI、批量修改组件 DOM、导入资源以及通过 PNG 运行时预览循环调整。
 ---
 
 # FairyGUI Headless
@@ -13,7 +13,7 @@ description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染并校验本�
 2. 用一次 `fairygui.query` 放入多个命名查询，批量查询包、组件、目标 DOM、资源引用和能力矩阵。不要为每个字段单独调用工具。
 3. 编辑前检查 `capabilities`。`implemented` 才可写；`planned` 或 `read-only` 不要尝试绕过。
 4. 组件内容修改使用一次 `fairygui.apply_dom_patch` 批量提交相关操作；包和资源修改使用一次 `fairygui.apply_resource_operations`。
-5. 写入成功后顺序调用 `fairygui.render_component` 查看 PNG 结构预览，再根据视觉反馈批量调整。
+5. 写入成功后顺序调用 `fairygui.render_component` 查看内存编译的 PNG 运行时预览，再根据视觉反馈批量调整。
 6. 完成局部修改后用 `fairygui.validate` 的 `quick` 校验；交付前使用 `roundtrip`、`publish` 或 `full` 校验。
 
 磁盘是唯一事实来源。工具会在读取、写入和渲染前刷新外部修改；没有草稿、Undo/Redo、revision、文件锁或 Git 操作。不要假设并发渲染能观察到尚未完成的写入。
@@ -65,10 +65,10 @@ description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染并校验本�
 `fairygui.render_component` 返回：
 
 - `backend: "fairygui-dom"`
-- `fidelity: "structural-preview"`
+- `fidelity: "runtime-preview"`
 - PNG、边界、诊断和渲染器版本
 
-这是布局与结构反馈，不是 Unity 像素真值。遇到外部资源、计划能力或渲染差异时先阅读 diagnostics，再决定修改。浏览器缺失时按 `BROWSER_NOT_INSTALLED.suggestedFix` 安装 Playwright Chromium；工具不会静默下载或回退到系统浏览器。
+工具会直接从未发布的工程在内存中编译运行时包，并执行真实 FairyGUI-dom 组件与资源加载；临时运行时产物不会写入源工程。预览应在位置、显示、图片和颜色上肉眼接近 Editor，但因浏览器与 Unity/Editor 的渲染后端不同，仍不是像素真值。遇到外部资源、计划能力或渲染差异时先阅读 diagnostics，再决定修改。浏览器缺失时按 `BROWSER_NOT_INSTALLED.suggestedFix` 安装 Playwright Chromium；工具不会静默下载或回退到系统浏览器。
 
 `fairygui.validate` 发现工程问题时仍是合法成功结果：检查 `data.valid`，不要只看 MCP `isError`。非法参数、找不到目标、能力越界或基础设施故障会返回 `{ ok:false, error }` 并设置 `isError:true`。
 

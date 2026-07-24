@@ -202,6 +202,46 @@ async function createRichTextColorProject(): Promise<string> {
   return directory;
 }
 
+async function createAutoSizeRelationProject(): Promise<string> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-text-relation-"));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(
+    path.join(directory, "Demo.fairy"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="text-relation-project" type="DOM" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "package.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "Main.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="360,48" bgColorEnabled="true" bgColor="#383838">
+  <displayList>
+    <richtext id="title" name="title" xy="10,8" size="166,24"
+      fontSize="16" color="#68baba" ubb="true" singleLine="true"
+      text="[url=open]FairyGUI-Unity-Demo[/url]"/>
+    <text id="path" name="path" xy="185,10" size="160,20"
+      fontSize="13" color="#ffcc00" autoSize="none" text="PATH">
+      <relation target="title" sidePair="leftext-right"/>
+    </text>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  return directory;
+}
+
 async function openRenderer(options: {
   browserType?: RenderBrowserType;
 } = {}): Promise<{
@@ -340,6 +380,48 @@ test("render_component preserves a rich-text field color inside default UBB link
     }
     assert.ok(sourceColorPixels > 100, `源文本色像素过少：${sourceColorPixels}`);
     assert.equal(browserBluePixels, 0);
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component initializes text measurement before applying auto-size relations", async () => {
+  const directory = await createAutoSizeRelationProject();
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+
+  try {
+    const result = await renderer.render(RenderComponentInputSchema.parse({
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01"
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let pathPixels = 0;
+    let misplacedPathPixels = 0;
+    for (let y = 0; y < decoded.info.height; y++) {
+      for (let x = 0; x < decoded.info.width; x++) {
+        const offset = (y * decoded.info.width + x) * decoded.info.channels;
+        const red = decoded.data[offset] ?? 0;
+        const green = decoded.data[offset + 1] ?? 0;
+        const blue = decoded.data[offset + 2] ?? 0;
+        if (red > 200 && green > 150 && blue < 80) {
+          pathPixels++;
+          if (x < 150) misplacedPathPixels++;
+        }
+      }
+    }
+    assert.ok(pathPixels > 5, `未找到路径文本像素：${pathPixels}`);
+    assert.equal(misplacedPathPixels, 0);
   }
   finally {
     await renderer.close();

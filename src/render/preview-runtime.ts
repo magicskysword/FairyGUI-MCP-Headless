@@ -281,6 +281,16 @@ export const PREVIEW_SCRIPT = String.raw`
           + payload.componentId
       );
     }
+
+    // GRoot creates Stage and installs FairyGUI-dom's measurement CSS.
+    // It must exist before component construction, otherwise auto-size text
+    // is measured as an unstyled inline span and reports a zero logical size.
+    const root = fgui.GRoot.inst;
+    while (root.numChildren > 0) {
+      root.removeChildAt(root.numChildren - 1, true);
+    }
+    root.setSize(payload.viewport.width, payload.viewport.height);
+
     const view = pkg.internalCreateObject(item);
     if (!(view instanceof fgui.GComponent)) {
       throw new Error(
@@ -291,11 +301,6 @@ export const PREVIEW_SCRIPT = String.raw`
       );
     }
 
-    const root = fgui.GRoot.inst;
-    while (root.numChildren > 0) {
-      root.removeChildAt(root.numChildren - 1, true);
-    }
-    root.setSize(payload.viewport.width, payload.viewport.height);
     view.setPosition(0, 0);
     view.setSize(payload.viewport.width, payload.viewport.height);
     view.element.dataset.fairyComponentRoot = "true";

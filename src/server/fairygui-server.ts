@@ -220,31 +220,33 @@ function invalidArguments(
   });
 }
 
-function textEnvelope(result: ResultEnvelope<unknown>): unknown {
-  if (
-    result.ok
-    && typeof result.data === "object"
-    && result.data !== null
-    && "image" in result.data
-  ) {
-    const data = result.data as {
-      image: {
-        data: string;
-        [key: string]: unknown;
-      };
-      [key: string]: unknown;
-    };
-    const { data: _inlinePng, ...imageMetadata } = data.image;
-    return {
-      ...result,
-      data: {
-        ...data,
-        image: {
-          ...imageMetadata,
-          data: "<PNG 已作为 MCP image content 返回>"
-        }
-      }
-    };
+interface InlineImageContent {
+  mimeType: "image/png";
+  data: string;
+}
+
+function prepareMcpPayload(
+  value: unknown,
+  images: InlineImageContent[]
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => prepareMcpPayload(entry, images));
+  }
+  if (typeof value !== "object" || value === null) return value;
+
+  const source = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(source)) {
+    if (
+      key === "data"
+      && source.mediaType === "image/png"
+      && typeof entry === "string"
+    ) {
+      images.push({ mimeType: "image/png", data: entry });
+      result.contentIndex = images.length;
+      continue;
+    }
+    result[key] = prepareMcpPayload(entry, images);
   }
   return result;
 }
@@ -252,36 +254,25 @@ function textEnvelope(result: ResultEnvelope<unknown>): unknown {
 function toCallToolResult(
   result: ResultEnvelope<unknown>
 ): CallToolResult {
+  const images: InlineImageContent[] = [];
+  const structured = prepareMcpPayload(result, images) as Record<
+    string,
+    unknown
+  >;
   const content: CallToolResult["content"] = [{
     type: "text",
-    text: JSON.stringify(textEnvelope(result))
+    text: JSON.stringify(structured)
   }];
-  if (
-    result.ok
-    && typeof result.data === "object"
-    && result.data !== null
-    && "image" in result.data
-  ) {
-    const image = (result.data as {
-      image?: {
-        mediaType?: unknown;
-        data?: unknown;
-      };
-    }).image;
-    if (
-      image?.mediaType === "image/png"
-      && typeof image.data === "string"
-    ) {
-      content.push({
-        type: "image",
-        mimeType: "image/png",
-        data: image.data
-      });
-    }
+  for (const image of images) {
+    content.push({
+      type: "image",
+      mimeType: image.mimeType,
+      data: image.data
+    });
   }
   return {
     content,
-    structuredContent: result as unknown as Record<string, unknown>,
+    structuredContent: structured,
     isError: !result.ok
   };
 }

@@ -422,132 +422,113 @@ const renderControllerStateBase = {
   controller: z.string().min(1)
 } as const;
 
-export const RenderControllerStateSchema = z.union([
-  z.object({
-    ...renderControllerStateBase,
-    selectedIndex: z.number().int().nonnegative()
-  }).strict(),
-  z.object({
-    ...renderControllerStateBase,
-    pageId: z.string().min(1)
-  }).strict(),
-  z.object({
-    ...renderControllerStateBase,
-    pageName: z.string()
-  }).strict()
-]);
+const RenderControllerPageSchema = z.object({
+  index: z.number().int().nonnegative().optional(),
+  id: z.string().min(1).optional(),
+  name: z.string().optional()
+}).strict().superRefine((page, context) => {
+  const count = Number(page.index !== undefined)
+    + Number(page.id !== undefined)
+    + Number(page.name !== undefined);
+  if (count !== 1) {
+    context.addIssue({
+      code: "custom",
+      path: [],
+      message: "page 必须且只能指定 index、id 或 name"
+    });
+  }
+});
+
+export const RenderControllerStateSchema = z.object({
+  ...renderControllerStateBase,
+  page: RenderControllerPageSchema
+}).strict();
 export type RenderControllerState = z.infer<
   typeof RenderControllerStateSchema
 >;
 
-const renderScrollStateBase = {
-  selector,
-  expectedMatches
-} as const;
 const renderScrollPosition = z.number().finite().nonnegative();
+const RenderScrollPositionSchema = z.object({
+  x: renderScrollPosition.optional(),
+  y: renderScrollPosition.optional()
+}).strict().superRefine((position, context) => {
+  if (position.x === undefined && position.y === undefined) {
+    context.addIssue({
+      code: "custom",
+      path: [],
+      message: "position 至少需要指定 x 或 y"
+    });
+  }
+});
 
-export const RenderScrollStateSchema = z.union([
-  z.object({
-    ...renderScrollStateBase,
-    x: renderScrollPosition
-  }).strict(),
-  z.object({
-    ...renderScrollStateBase,
-    y: renderScrollPosition
-  }).strict(),
-  z.object({
-    ...renderScrollStateBase,
-    x: renderScrollPosition,
-    y: renderScrollPosition
-  }).strict()
-]);
+export const RenderScrollStateSchema = z.object({
+  selector,
+  expectedMatches,
+  position: RenderScrollPositionSchema
+}).strict();
 export type RenderScrollState = z.infer<typeof RenderScrollStateSchema>;
 
-const renderListStateBase = {
-  selector,
-  expectedMatches
-} as const;
 const renderListIndex = z.number().int().nonnegative();
 const renderListIndices = z.array(renderListIndex).max(100).refine(
   (indices) => new Set(indices).size === indices.length,
   { message: "selectedIndices 不能包含重复索引" }
 );
 
-export const RenderListStateSchema = z.union([
-  z.object({
-    ...renderListStateBase,
-    selectedIndex: z.number().int().min(-1)
-  }).strict(),
-  z.object({
-    ...renderListStateBase,
-    selectedIndices: renderListIndices
-  }).strict()
-]);
+export const RenderListStateSchema = z.object({
+  selector,
+  expectedMatches,
+  selectedIndices: renderListIndices
+}).strict();
 export type RenderListState = z.infer<typeof RenderListStateSchema>;
 
-const renderTreeStateBase = {
-  selector,
-  expectedMatches
-} as const;
 const renderTreeNodePath = z.array(z.number().int().nonnegative()).min(1).max(32);
 const renderTreeExpansions = z.array(z.object({
-  nodePath: renderTreeNodePath,
+  path: renderTreeNodePath,
   expanded: z.boolean()
 }).strict()).min(1).max(100).refine(
   (expansions) => {
-    const paths = expansions.map((entry) => entry.nodePath.join("/"));
+    const paths = expansions.map((entry) => entry.path.join("/"));
     return new Set(paths).size === paths.length;
   },
   { message: "expansions 不能重复指定同一个 nodePath" }
 );
 const renderTreeSelectedPath = renderTreeNodePath.nullable();
-const renderTreeStateFields = {
-  ...renderTreeStateBase,
+
+export const RenderTreeStateSchema = z.object({
+  selector,
+  expectedMatches,
   expansions: renderTreeExpansions.optional(),
   selectedPath: renderTreeSelectedPath.optional()
-} as const;
-
-export const RenderTreeStateSchema = z.union([
-  z.object({
-    ...renderTreeStateFields,
-    expansions: renderTreeExpansions
-  }).strict(),
-  z.object({
-    ...renderTreeStateFields,
-    selectedPath: renderTreeSelectedPath
-  }).strict()
-]);
+}).strict().superRefine((state, context) => {
+  if (state.expansions === undefined && state.selectedPath === undefined) {
+    context.addIssue({
+      code: "custom",
+      path: [],
+      message: "Tree 状态至少需要 expansions 或 selectedPath"
+    });
+  }
+});
 export type RenderTreeState = z.infer<typeof RenderTreeStateSchema>;
 
-const renderControllers = z.array(RenderControllerStateSchema).min(1).max(100);
-const renderScrolls = z.array(RenderScrollStateSchema).min(1).max(100);
-const renderLists = z.array(RenderListStateSchema).min(1).max(100);
-const renderTrees = z.array(RenderTreeStateSchema).min(1).max(100);
-const renderTransientStateFields = {
-  controllers: renderControllers.optional(),
-  scrolls: renderScrolls.optional(),
-  lists: renderLists.optional(),
-  trees: renderTrees.optional()
-} as const;
-
-export const RenderTransientStateSchema = z.union([
-  z.object({
-    ...renderTransientStateFields,
-    controllers: renderControllers
-  }).strict(),
-  z.object({
-    ...renderTransientStateFields,
-    scrolls: renderScrolls
-  }).strict(),
-  z.object({
-    ...renderTransientStateFields,
-    lists: renderLists
-  }).strict(),
-  z.object({
-    ...renderTransientStateFields,
-    trees: renderTrees
-  }).strict()
-]);
+export const RenderTransientStateSchema = z.object({
+  controllers: z.array(RenderControllerStateSchema).min(1).max(100).optional(),
+  scrolls: z.array(RenderScrollStateSchema).min(1).max(100).optional(),
+  lists: z.array(RenderListStateSchema).min(1).max(100).optional(),
+  trees: z.array(RenderTreeStateSchema).min(1).max(100).optional()
+}).strict().superRefine((state, context) => {
+  if (
+    state.controllers === undefined
+    && state.scrolls === undefined
+    && state.lists === undefined
+    && state.trees === undefined
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: [],
+      message: "state 至少需要一个状态类别"
+    });
+  }
+});
 export type RenderTransientState = z.infer<
   typeof RenderTransientStateSchema
 >;
@@ -563,7 +544,8 @@ export const RenderComponentInputSchema = z.object({
   ),
   background: z.string().min(1).optional(),
   state: RenderTransientStateSchema.optional(),
-  saveToFile: z.boolean().default(false)
+  imageResult: z.enum(["inline", "file", "both"]).default("inline"),
+  stateDetail: z.enum(["summary", "full"]).default("summary")
 }).strict();
 export type RenderComponentInput = z.infer<typeof RenderComponentInputSchema>;
 

@@ -294,14 +294,14 @@ export const PREVIEW_SCRIPT = String.raw`
           const nodePath = path
             + ".expansions["
             + expansionIndex
-            + "].nodePath";
-          const node = resolveTreeNode(target, expansion.nodePath, nodePath);
+            + "].path";
+          const node = resolveTreeNode(target, expansion.path, nodePath);
           if (!node.isFolder) {
             stateFailure({
               code: "TRANSIENT_STATE_INVALID",
               message: "Tree 叶节点没有可设置的展开状态",
               path: nodePath,
-              actual: expansion.nodePath,
+              actual: expansion.path,
               allowed: ["指向 folder 节点的 nodePath"]
             });
           }
@@ -376,16 +376,14 @@ export const PREVIEW_SCRIPT = String.raw`
           });
         }
 
-        const indices = entry.selection.indices;
+        const indices = entry.selectedIndices;
         for (let index = 0; index < indices.length; index++) {
           const selectedIndex = indices[index];
           if (selectedIndex < 0 || selectedIndex >= target.numItems) {
             stateFailure({
               code: "TRANSIENT_STATE_INVALID",
               message: "列表临时选择索引超出项目范围",
-              path: entry.selection.kind === "index"
-                ? path + ".selectedIndex"
-                : path + ".selectedIndices[" + index + "]",
+            path: path + ".selectedIndices[" + index + "]",
               actual: selectedIndex,
               allowed: {
                 min: -1,
@@ -487,26 +485,30 @@ export const PREVIEW_SCRIPT = String.raw`
         const scrollPane = target.scrollPane;
         const maxX = Math.max(0, scrollPane.contentWidth - scrollPane.viewWidth);
         const maxY = Math.max(0, scrollPane.contentHeight - scrollPane.viewHeight);
-        if (entry.x !== undefined && entry.x > maxX) {
+        if (entry.position.x !== undefined && entry.position.x > maxX) {
           stateFailure({
             code: "TRANSIENT_STATE_INVALID",
             message: "临时横向滚动位置超出实际可滚范围",
-            path: path + ".x",
-            actual: entry.x,
+            path: path + ".position.x",
+            actual: entry.position.x,
             allowed: { min: 0, max: maxX }
           });
         }
-        if (entry.y !== undefined && entry.y > maxY) {
+        if (entry.position.y !== undefined && entry.position.y > maxY) {
           stateFailure({
             code: "TRANSIENT_STATE_INVALID",
             message: "临时纵向滚动位置超出实际可滚范围",
-            path: path + ".y",
-            actual: entry.y,
+            path: path + ".position.y",
+            actual: entry.position.y,
             allowed: { min: 0, max: maxY }
           });
         }
-        if (entry.x !== undefined) scrollPane.setPosX(entry.x, false);
-        if (entry.y !== undefined) scrollPane.setPosY(entry.y, false);
+        if (entry.position.x !== undefined) {
+          scrollPane.setPosX(entry.position.x, false);
+        }
+        if (entry.position.y !== undefined) {
+          scrollPane.setPosY(entry.position.y, false);
+        }
       });
     });
   };

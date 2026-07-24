@@ -163,6 +163,7 @@ try {
       });
       continue;
     }
+    assert.ok(result.data.image.data);
     const pngHash = createHash("sha256")
       .update(Buffer.from(result.data.image.data, "base64"))
       .digest("hex");
@@ -181,6 +182,7 @@ try {
   }));
   assert.equal(repeated.ok, true, JSON.stringify(repeated));
   if (repeated.ok) {
+    assert.ok(repeated.data.image.data);
     assert.equal(
       createHash("sha256")
         .update(Buffer.from(repeated.data.image.data, "base64"))

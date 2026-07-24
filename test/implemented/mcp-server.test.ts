@@ -91,6 +91,19 @@ function structured(result: Awaited<ReturnType<Client["callTool"]>>): {
   };
 }
 
+function inlineToolImage(
+  result: Awaited<ReturnType<Client["callTool"]>>
+): string {
+  assert.ok("content" in result);
+  const content = result.content as Array<{
+    type: string;
+    data?: string;
+  }>;
+  const image = content.find((entry) => entry.type === "image");
+  assert.ok(image?.data);
+  return image.data;
+}
+
 test("MCP initialization advertises instructions and exactly seven strict tools", async () => {
   const { app, client } = await connectServer();
   try {
@@ -241,7 +254,21 @@ test("stdio-facing handlers complete the M1 open-query-render-validate loop", as
         componentId: "cmp01"
       }
     });
-    assert.equal(structured(rendered).ok, true);
+    const renderedEnvelope = structured(rendered);
+    assert.equal(renderedEnvelope.ok, true);
+    const renderedImage = renderedEnvelope.data?.image as {
+      mediaType: string;
+      contentIndex: number;
+      data?: string;
+    };
+    assert.deepEqual(renderedImage, {
+      mediaType: "image/png",
+      width: 200,
+      height: 100,
+      contentIndex: 1
+    });
+    assert.equal(JSON.stringify(renderedEnvelope).includes("data:image"), false);
+    assert.equal("data" in renderedImage, false);
     const renderedContent = "content" in rendered
       ? rendered.content as Array<{ type: string }>
       : [];
@@ -275,18 +302,17 @@ test("stdio-facing DOM patch handler atomically writes and immediately re-querie
     assert.equal(opened.ok, true);
     const projectId = String(opened.data?.projectId);
 
-    const beforeRender = structured(await client.callTool({
+    const beforeRenderResult = await client.callTool({
       name: "fairygui.render_component",
       arguments: {
         projectId,
         packageId: "pkg00001",
         componentId: "cmp01"
       }
-    }));
+    });
+    const beforeRender = structured(beforeRenderResult);
     assert.equal(beforeRender.ok, true);
-    const beforeImage = beforeRender.data?.image as {
-      data: string;
-    };
+    const beforeImage = inlineToolImage(beforeRenderResult);
 
     const result = await client.callTool({
       name: "fairygui.apply_dom_patch",
@@ -366,10 +392,11 @@ test("stdio-facing DOM patch handler atomically writes and immediately re-querie
     assert.equal(renderedEnvelope.data?.backend, "fairygui-dom");
     const renderedImage = renderedEnvelope.data?.image as {
       mediaType: string;
-      data: string;
+      contentIndex: number;
     };
     assert.equal(renderedImage.mediaType, "image/png");
-    assert.notEqual(renderedImage.data, beforeImage.data);
+    assert.equal(renderedImage.contentIndex, 1);
+    assert.notEqual(inlineToolImage(rendered), beforeImage);
     const renderedContent = "content" in rendered
       ? rendered.content as Array<{ type: string }>
       : [];

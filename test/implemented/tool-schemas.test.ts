@@ -346,7 +346,8 @@ test("render and validation schemas apply deterministic defaults and limits", ()
     packageId: "pkg00001",
     componentId: "cmp01",
     scale: 1,
-    saveToFile: false
+    imageResult: "inline",
+    stateDetail: "summary"
   });
   assert.equal(RenderComponentInputSchema.safeParse({
     projectId: "project-1",
@@ -363,13 +364,13 @@ test("render and validation schemas apply deterministic defaults and limits", ()
         selector: "component-root",
         expectedMatches: 1,
         controller: "mode",
-        selectedIndex: 1
+        page: { index: 1 }
       }]
     }
   }).success, true);
   for (const selection of [
-    { pageId: "page-1" },
-    { pageName: "" }
+    { id: "page-1" },
+    { name: "" }
   ]) {
     assert.equal(RenderComponentInputSchema.safeParse({
       projectId: "project-1",
@@ -380,7 +381,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
           selector: "#panel",
           expectedMatches: 1,
           controller: "mode",
-          ...selection
+          page: selection
         }]
       }
     }).success, true);
@@ -394,16 +395,14 @@ test("render and validation schemas apply deterministic defaults and limits", ()
         selector: "component-root",
         expectedMatches: 1,
         controller: "mode",
-        selectedIndex: 1,
-        pageId: "page-1"
+        page: { index: 1, id: "page-1" }
       }]
     }
   }).success, false);
-  for (const selection of [
-    { selectedIndex: 1 },
-    { selectedIndex: -1 },
-    { selectedIndices: [0, 2] },
-    { selectedIndices: [] }
+  for (const selectedIndices of [
+    [1],
+    [0, 2],
+    []
   ]) {
     assert.equal(RenderComponentInputSchema.safeParse({
       projectId: "project-1",
@@ -413,7 +412,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
         lists: [{
           selector: 'list[name="items"]',
           expectedMatches: 1,
-          ...selection
+          selectedIndices
         }]
       }
     }).success, true);
@@ -426,14 +425,13 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       lists: [{
         selector: 'list[name="items"]',
         expectedMatches: 1,
-        selectedIndex: 1,
-        selectedIndices: [1]
+        selectedIndices: [1, 1]
       }]
     }
   }).success, false);
   for (const treeState of [
     {
-      expansions: [{ nodePath: [0, 1], expanded: false }]
+      expansions: [{ path: [0, 1], expanded: false }]
     },
     {
       selectedPath: [0, 1]
@@ -442,7 +440,7 @@ test("render and validation schemas apply deterministic defaults and limits", ()
       selectedPath: null
     },
     {
-      expansions: [{ nodePath: [0], expanded: true }],
+      expansions: [{ path: [0], expanded: true }],
       selectedPath: [0, 1]
     }
   ]) {
@@ -487,23 +485,10 @@ test("render and validation schemas apply deterministic defaults and limits", ()
     packageId: "pkg00001",
     componentId: "cmp01",
     state: {
-      lists: [{
-        selector: 'list[name="items"]',
-        expectedMatches: 1,
-        selectedIndices: [1, 1]
-      }]
-    }
-  }).success, false);
-  assert.equal(RenderComponentInputSchema.safeParse({
-    projectId: "project-1",
-    packageId: "pkg00001",
-    componentId: "cmp01",
-    state: {
       scrolls: [{
         selector: 'instance[name="viewport"]',
         expectedMatches: 1,
-        x: 24,
-        y: 48
+        position: { x: 24, y: 48 }
       }]
     }
   }).success, true);
@@ -514,10 +499,18 @@ test("render and validation schemas apply deterministic defaults and limits", ()
     state: {
       scrolls: [{
         selector: "component-root",
-        expectedMatches: 1
+        expectedMatches: 1,
+        position: {}
       }]
     }
   }).success, false);
+  assert.equal(RenderComponentInputSchema.safeParse({
+    projectId: "project-1",
+    packageId: "pkg00001",
+    componentId: "cmp01",
+    imageResult: "file",
+    stateDetail: "full"
+  }).success, true);
   assert.equal(RenderComponentInputSchema.safeParse({
     projectId: "project-1",
     packageId: "pkg00001",

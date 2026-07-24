@@ -34,6 +34,11 @@ afterEach(async () => {
   );
 });
 
+function inlineImageData(data: { image: { data?: string } }): string {
+  assert.ok(data.image.data, "inline 渲染必须携带内部 PNG attachment");
+  return data.image.data;
+}
+
 async function createProject(): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-render-"));
   temporaryDirectories.push(directory);
@@ -529,7 +534,7 @@ test("render_component returns a FairyGUI-dom runtime PNG preview", async () => 
     assert.equal(result.data.image.height, 180);
     assert.equal(result.data.image.filePath, undefined);
     assert.equal(
-      Buffer.from(result.data.image.data, "base64")
+      Buffer.from(inlineImageData(result.data), "base64")
         .subarray(0, 8)
         .toString("hex"),
       "89504e470d0a1a0a"
@@ -562,7 +567,7 @@ test("render_component resolves nested component instances through the runtime p
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
-    const png = Buffer.from(result.data.image.data, "base64");
+    const png = Buffer.from(inlineImageData(result.data), "base64");
     const decoded = await sharp(png)
       .raw()
       .toBuffer({ resolveWithObject: true });
@@ -601,7 +606,10 @@ test("render_component preserves a rich-text field color inside default UBB link
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
-    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+    const decoded = await sharp(Buffer.from(
+      inlineImageData(result.data),
+      "base64"
+    ))
       .raw()
       .toBuffer({ resolveWithObject: true });
     let sourceColorPixels = 0;
@@ -646,7 +654,10 @@ test("render_component initializes text measurement before applying auto-size re
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
-    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+    const decoded = await sharp(Buffer.from(
+      inlineImageData(result.data),
+      "base64"
+    ))
       .raw()
       .toBuffer({ resolveWithObject: true });
     let pathPixels = 0;
@@ -690,14 +701,17 @@ test("render_component applies controller state in memory without writing the pr
           selector: "component-root",
           expectedMatches: 1,
           controller: "mode",
-          selectedIndex: 1
+          page: { index: 1 }
         }]
       }
     }));
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
-    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+    const decoded = await sharp(Buffer.from(
+      inlineImageData(result.data),
+      "base64"
+    ))
       .raw()
       .toBuffer({ resolveWithObject: true });
     const offset = (40 * decoded.info.width + 60) * decoded.info.channels;
@@ -733,7 +747,7 @@ test("render_component rejects invalid transient controller targets and pages cl
           selector: "#missing",
           expectedMatches: 1,
           controller: "mode",
-          selectedIndex: 1
+          page: { index: 1 }
         }]
       }
     }));
@@ -756,7 +770,7 @@ test("render_component rejects invalid transient controller targets and pages cl
           selector: "component-root",
           expectedMatches: 1,
           controller: "mode",
-          selectedIndex: 9
+          page: { index: 9 }
         }]
       }
     }));
@@ -793,14 +807,17 @@ test("render_component applies a validated transient scroll position without wri
         scrolls: [{
           selector: "component-root",
           expectedMatches: 1,
-          y: 80
+          position: { y: 80 }
         }]
       }
     }));
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
-    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+    const decoded = await sharp(Buffer.from(
+      inlineImageData(result.data),
+      "base64"
+    ))
       .raw()
       .toBuffer({ resolveWithObject: true });
     const offset = (40 * decoded.info.width + 50) * decoded.info.channels;
@@ -835,7 +852,7 @@ test("render_component rejects an unavailable or out-of-range transient scroll",
         scrolls: [{
           selector: "#red",
           expectedMatches: 1,
-          y: 1
+          position: { y: 1 }
         }]
       }
     }));
@@ -853,14 +870,14 @@ test("render_component rejects an unavailable or out-of-range transient scroll",
         scrolls: [{
           selector: "component-root",
           expectedMatches: 1,
-          y: 81
+          position: { y: 81 }
         }]
       }
     }));
     assert.equal(outOfRange.ok, false);
     if (!outOfRange.ok) {
       assert.equal(outOfRange.error.code, "TRANSIENT_STATE_INVALID");
-      assert.equal(outOfRange.error.path, "state.scrolls[0].y");
+      assert.equal(outOfRange.error.path, "state.scrolls[0].position.y");
       assert.deepEqual(outOfRange.error.allowed, { min: 0, max: 80 });
     }
   }
@@ -887,14 +904,17 @@ test("render_component applies transient list selection without writing the proj
         lists: [{
           selector: "#items",
           expectedMatches: 1,
-          selectedIndex: 1
+          selectedIndices: [1]
         }]
       }
     }));
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
-    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+    const decoded = await sharp(Buffer.from(
+      inlineImageData(result.data),
+      "base64"
+    ))
       .raw()
       .toBuffer({ resolveWithObject: true });
     const firstOffset = (20 * decoded.info.width + 50)
@@ -937,7 +957,7 @@ test("render_component rejects an invalid transient list target or index", async
           lists: [{
             selector: "#normal",
             expectedMatches: 2,
-            selectedIndex: 0
+            selectedIndices: [0]
           }]
         }
       })
@@ -956,14 +976,17 @@ test("render_component rejects an invalid transient list target or index", async
         lists: [{
           selector: "#items",
           expectedMatches: 1,
-          selectedIndex: 2
+          selectedIndices: [2]
         }]
       }
     }));
     assert.equal(invalidIndex.ok, false);
     if (!invalidIndex.ok) {
       assert.equal(invalidIndex.error.code, "TRANSIENT_STATE_INVALID");
-      assert.equal(invalidIndex.error.path, "state.lists[0].selectedIndex");
+      assert.equal(
+        invalidIndex.error.path,
+        "state.lists[0].selectedIndices[0]"
+      );
       assert.deepEqual(invalidIndex.error.allowed, {
         min: -1,
         max: 1,
@@ -995,7 +1018,7 @@ test("render_component applies transient tree expansion and selection without wr
           selector: "#tree",
           expectedMatches: 1,
           expansions: [{
-            nodePath: [0],
+            path: [0],
             expanded: false
           }],
           selectedPath: [0]
@@ -1005,7 +1028,10 @@ test("render_component applies transient tree expansion and selection without wr
 
     assert.equal(result.ok, true, JSON.stringify(result));
     if (!result.ok) return;
-    const decoded = await sharp(Buffer.from(result.data.image.data, "base64"))
+    const decoded = await sharp(Buffer.from(
+      inlineImageData(result.data),
+      "base64"
+    ))
       .raw()
       .toBuffer({ resolveWithObject: true });
     const parentOffset = (20 * decoded.info.width + 50)
@@ -1103,7 +1129,7 @@ test("render_component applies explicit viewport scale and only saves on request
       height: 100,
       scale: 2,
       background: "#ffffff",
-      saveToFile: true
+      imageResult: "both"
     }));
 
     assert.equal(result.ok, true, JSON.stringify(result));
@@ -1118,8 +1144,21 @@ test("render_component applies explicit viewport scale and only saves on request
     await access(result.data.image.filePath!);
     assert.deepEqual(
       await readFile(result.data.image.filePath!),
-      Buffer.from(result.data.image.data, "base64")
+      Buffer.from(inlineImageData(result.data), "base64")
     );
+
+    const fileOnly = await renderer.render(RenderComponentInputSchema.parse({
+      projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01",
+      imageResult: "file"
+    }));
+    assert.equal(fileOnly.ok, true, JSON.stringify(fileOnly));
+    if (fileOnly.ok) {
+      assert.equal(fileOnly.data.image.data, undefined);
+      assert.ok(fileOnly.data.image.filePath);
+      await access(fileOnly.data.image.filePath!);
+    }
   }
   finally {
     await renderer.close();
@@ -1169,8 +1208,14 @@ test("render_component selects implicit high-resolution resources at scale 2 wit
       { width: atTwo.image.width, height: atTwo.image.height },
       { width: 64, height: 64 }
     );
-    assert.deepEqual(await sampleCenter(atOne.image.data), [220, 20, 60, 255]);
-    assert.deepEqual(await sampleCenter(atTwo.image.data), [30, 100, 230, 255]);
+    assert.deepEqual(
+      await sampleCenter(inlineImageData(atOne)),
+      [220, 20, 60, 255]
+    );
+    assert.deepEqual(
+      await sampleCenter(inlineImageData(atTwo)),
+      [30, 100, 230, 255]
+    );
     const sourceAfter = await Promise.all(sourceFiles.map((file) => readFile(file)));
     assert.deepEqual(sourceAfter, sourceBefore);
   }
@@ -1256,8 +1301,8 @@ test("render_component relaunches Chromium after a disconnected browser", async 
     assert.equal(launchCount, 2);
     if (first.ok && second.ok) {
       assert.equal(
-        second.data.image.data,
-        first.data.image.data
+        inlineImageData(second.data),
+        inlineImageData(first.data)
       );
     }
   }

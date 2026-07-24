@@ -16,7 +16,9 @@ import {
   type Route
 } from "playwright";
 import type { FairyDomDocument, FairyDomNode } from "../contracts/dom.js";
-import type { RenderComponentData } from "../contracts/render.js";
+import type {
+  RenderComponentTransportData
+} from "../contracts/render.js";
 import {
   fail,
   ok,
@@ -103,24 +105,23 @@ interface PreviewControllerState {
 interface PreviewScrollState {
   selector: ParsedFairyDomSelector;
   expectedMatches: number;
-  x?: number;
-  y?: number;
+  position: {
+    x?: number;
+    y?: number;
+  };
 }
 
 interface PreviewListState {
   selector: ParsedFairyDomSelector;
   expectedMatches: number;
-  selection: {
-    kind: "index" | "indices";
-    indices: number[];
-  };
+  selectedIndices: number[];
 }
 
 interface PreviewTreeState {
   selector: ParsedFairyDomSelector;
   expectedMatches: number;
   expansions: Array<{
-    nodePath: number[];
+    path: number[];
     expanded: boolean;
   }>;
   selectedPath?: number[] | null;
@@ -217,11 +218,11 @@ function prepareTransientState(
         selector: parseFairyDomSelector(entry.selector),
         expectedMatches: entry.expectedMatches,
         controller: entry.controller,
-        selection: "selectedIndex" in entry
-          ? { kind: "index", value: entry.selectedIndex }
-          : "pageId" in entry
-            ? { kind: "pageId", value: entry.pageId }
-            : { kind: "pageName", value: entry.pageName }
+        selection: entry.page.index !== undefined
+          ? { kind: "index", value: entry.page.index }
+          : entry.page.id !== undefined
+            ? { kind: "pageId", value: entry.page.id }
+            : { kind: "pageName", value: entry.page.name! }
       });
     }
     catch (error) {
@@ -242,8 +243,10 @@ function prepareTransientState(
       scrolls.push({
         selector: parseFairyDomSelector(entry.selector),
         expectedMatches: entry.expectedMatches,
-        ...("x" in entry ? { x: entry.x } : {}),
-        ...("y" in entry ? { y: entry.y } : {})
+        position: {
+          ...(entry.position.x === undefined ? {} : { x: entry.position.x }),
+          ...(entry.position.y === undefined ? {} : { y: entry.position.y })
+        }
       });
     }
     catch (error) {
@@ -264,12 +267,7 @@ function prepareTransientState(
       lists.push({
         selector: parseFairyDomSelector(entry.selector),
         expectedMatches: entry.expectedMatches,
-        selection: "selectedIndex" in entry
-          ? {
-              kind: "index",
-              indices: entry.selectedIndex === -1 ? [] : [entry.selectedIndex]
-            }
-          : { kind: "indices", indices: entry.selectedIndices }
+        selectedIndices: entry.selectedIndices
       });
     }
     catch (error) {
@@ -337,7 +335,7 @@ export class RenderService {
 
   public async render(
     input: RenderComponentInput
-  ): Promise<ResultEnvelope<RenderComponentData>> {
+  ): Promise<ResultEnvelope<RenderComponentTransportData>> {
     const preparedState = prepareTransientState(input.state);
     if (!preparedState.ok) return preparedState;
 
@@ -477,7 +475,7 @@ export class RenderService {
         timeout: RENDER_TIMEOUT_MS
       });
       let filePath: string | undefined;
-      if (input.saveToFile) {
+      if (input.imageResult === "file" || input.imageResult === "both") {
         await mkdir(this.temporaryRoot, { recursive: true });
         filePath = path.join(this.temporaryRoot, `${randomUUID()}.png`);
         await writeFile(filePath, png);
@@ -498,10 +496,12 @@ export class RenderService {
         diagnostics,
         image: {
           mediaType: "image/png",
-          data: png.toString("base64"),
           width: Math.round(bounds.width * input.scale),
           height: Math.round(bounds.height * input.scale),
-          ...(filePath === undefined ? {} : { filePath })
+          ...(filePath === undefined ? {} : { filePath }),
+          ...(input.imageResult === "file"
+            ? {}
+            : { data: png.toString("base64") })
         }
       });
     }

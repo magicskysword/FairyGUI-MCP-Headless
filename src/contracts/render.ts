@@ -11,12 +11,16 @@ export type RenderBounds = z.infer<typeof RenderBoundsSchema>;
 
 export const RenderImageSchema = z.object({
   mediaType: z.literal("image/png"),
-  data: z.string().min(1),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
-  filePath: z.string().min(1).optional()
+  filePath: z.string().min(1).optional(),
+  contentIndex: z.number().int().nonnegative().optional()
 }).strict();
 export type RenderImage = z.infer<typeof RenderImageSchema>;
+
+export interface RenderTransportImage extends RenderImage {
+  data?: string;
+}
 
 export const RenderComponentDataSchema = z.object({
   backend: z.literal("fairygui-dom"),
@@ -29,3 +33,10 @@ export const RenderComponentDataSchema = z.object({
   image: RenderImageSchema
 }).strict();
 export type RenderComponentData = z.infer<typeof RenderComponentDataSchema>;
+
+export interface RenderComponentTransportData extends Omit<
+  RenderComponentData,
+  "image"
+> {
+  image: RenderTransportImage;
+}

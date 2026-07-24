@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  lstat,
   mkdtemp,
   mkdir,
   readFile,
@@ -11,6 +12,7 @@ import path from "node:path";
 import { afterEach, test } from "node:test";
 import { ApplyResourceOperationsInputSchema } from "../../src/contracts/tools.js";
 import { ProjectRegistry } from "../../src/project/project-registry.js";
+import type { EmptyDirectoryCleaner } from "../../src/resources/empty-directory-cleaner.js";
 import { ResourceOperationsService } from "../../src/resources/resource-operations-service.js";
 import { ProjectCommitCoordinator } from "../../src/write/commit-coordinator.js";
 import { FileTransactionManager } from "../../src/write/file-transaction.js";
@@ -84,6 +86,7 @@ async function writeInboxFile(
 async function setup(options: {
   transactions?: FileTransactionManager;
   coordinator?: ProjectCommitCoordinator;
+  directoryCleaner?: EmptyDirectoryCleaner;
 } = {}) {
   const project = await createProject();
   const logDirectory = await mkdtemp(path.join(os.tmpdir(), "fgui-resource-log-"));
@@ -105,7 +108,10 @@ async function setup(options: {
       temporaryRoot: roundtripDirectory,
       ...(options.coordinator === undefined
         ? {}
-        : { coordinator: options.coordinator })
+        : { coordinator: options.coordinator }),
+      ...(options.directoryCleaner === undefined
+        ? {}
+        : { directoryCleaner: options.directoryCleaner })
     })
   };
 }
@@ -562,6 +568,107 @@ test("resource dry-run validates full changes without writing or consuming inbox
   }
 });
 
+test("resource deletion predicts and removes only safe empty asset directories", async () => {
+  const context = await setup();
+  const iconsDirectory = path.dirname(context.project.imageFile);
+  try {
+    const request = {
+      projectId: context.projectId,
+      dryRun: true,
+      operations: [{
+        op: "delete-resource" as const,
+        packageId: "pkg00001",
+        resourceId: "img01",
+        mode: "reject" as const
+      }]
+    };
+    const preview = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse(request)
+    );
+
+    assert.equal(preview.ok, true);
+    if (!preview.ok) return;
+    assert.deepEqual(preview.data.wouldRemoveDirectories, [
+      "assets/Demo/icons"
+    ]);
+    assert.equal(preview.data.removedDirectories, undefined);
+    assert.equal((await lstat(iconsDirectory)).isDirectory(), true);
+
+    const applied = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        ...request,
+        dryRun: false
+      })
+    );
+    assert.equal(applied.ok, true);
+    if (!applied.ok) return;
+    assert.equal(applied.data.wouldRemoveDirectories, undefined);
+    assert.deepEqual(applied.data.removedDirectories, [
+      "assets/Demo/icons"
+    ]);
+    await assert.rejects(lstat(iconsDirectory), { code: "ENOENT" });
+    assert.equal(
+      (await lstat(path.join(context.project.directory, "assets"))).isDirectory(),
+      true
+    );
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("empty-directory cleanup failure warns without rolling back resource commit", async () => {
+  const directoryCleaner: EmptyDirectoryCleaner = {
+    async preview() {
+      return { directories: [], warnings: [] };
+    },
+    async cleanup() {
+      return {
+        directories: [],
+        warnings: [{
+          severity: "warning",
+          code: "EMPTY_DIRECTORY_CLEANUP_FAILED",
+          message: "injected cleanup failure",
+          path: "assets/Demo/icons"
+        }]
+      };
+    }
+  };
+  const context = await setup({ directoryCleaner });
+  try {
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "delete-resource",
+          packageId: "pkg00001",
+          resourceId: "img01",
+          mode: "reject"
+        }]
+      })
+    );
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(
+      result.warnings?.some((warning) =>
+        warning.code === "EMPTY_DIRECTORY_CLEANUP_FAILED"
+      ),
+      true
+    );
+    await assert.rejects(readFile(context.project.imageFile), {
+      code: "ENOENT"
+    });
+    assert.doesNotMatch(
+      await readFile(context.project.packageFile, "utf8"),
+      /id="img01"/
+    );
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
 test("replace-resource preserves id and atomically changes the asset extension", async () => {
   const context = await setup();
   const inboxFile = await writeInboxFile(
@@ -784,6 +891,9 @@ test("resource cascade atomically updates references and deletes asset bytes", a
       unsupportedReferences: 0
     }]);
     assert.equal(result.data.projectMayBeInvalid, undefined);
+    assert.deepEqual(result.data.removedDirectories, [
+      "assets/Demo/icons"
+    ]);
     assert.doesNotMatch(
       await readFile(context.project.packageFile, "utf8"),
       /id="img01"/

@@ -17,6 +17,7 @@ import {
 import {
   fail,
   ok,
+  type Diagnostic,
   type ResultEnvelope
 } from "../contracts/result.js";
 import type { ApplyResourceOperationsInput } from "../contracts/tools.js";
@@ -34,6 +35,11 @@ import {
   readImportInboxFile,
   type ImportInboxFile
 } from "./import-inbox.js";
+import {
+  SafeEmptyDirectoryCleaner,
+  type EmptyDirectoryCleaner,
+  type EmptyDirectoryCleanupResult
+} from "./empty-directory-cleaner.js";
 import {
   ResourceOperationsEngine,
   type AffectedResourceReference,
@@ -58,6 +64,8 @@ export interface ResourceOperationsData {
   affectedPackageIds: string[];
   wouldConsumeInboxPaths?: string[];
   consumedInboxPaths?: string[];
+  wouldRemoveDirectories?: string[];
+  removedDirectories?: string[];
   deleteResults: ResourceDeleteResult[];
   projectMayBeInvalid?: boolean;
 }
@@ -75,6 +83,7 @@ export interface ResourceOperationsServiceOptions {
   coordinator?: ProjectCommitCoordinator;
   transactions?: FileTransactionManager;
   engine?: ResourceOperationsEngine;
+  directoryCleaner?: EmptyDirectoryCleaner;
   temporaryRoot?: string;
   maxFreshRetries?: number;
 }
@@ -258,6 +267,7 @@ export class ResourceOperationsService {
   readonly #coordinator: ProjectCommitCoordinator;
   readonly #transactions: FileTransactionManager;
   readonly #engine: ResourceOperationsEngine;
+  readonly #directoryCleaner: EmptyDirectoryCleaner;
   readonly #temporaryRoot: string;
   readonly #maxFreshRetries: number;
 
@@ -269,6 +279,8 @@ export class ResourceOperationsService {
     this.#coordinator = options.coordinator ?? new ProjectCommitCoordinator();
     this.#transactions = options.transactions ?? new FileTransactionManager();
     this.#engine = options.engine ?? new ResourceOperationsEngine();
+    this.#directoryCleaner = options.directoryCleaner
+      ?? new SafeEmptyDirectoryCleaner();
     this.#temporaryRoot = path.resolve(
       options.temporaryRoot
       ?? path.join(
@@ -293,11 +305,16 @@ export class ResourceOperationsService {
     if (!status.ok) return Promise.resolve(status);
 
     if (input.dryRun) {
-      return this.prepareAttempt(status.data, input).then((prepared) =>
-        prepared.ok
-          ? this.success(input, prepared.data)
-          : prepared
-      );
+      return this.prepareAttempt(status.data, input).then(async (prepared) => {
+        if (!prepared.ok) return prepared;
+        const fileChanges = plannedFileChanges(prepared.data);
+        const cleanup = await this.#directoryCleaner.preview(
+          status.data.projectDirectory,
+          fileChanges.deletes,
+          fileChanges.writes
+        );
+        return this.success(input, prepared.data, undefined, cleanup);
+      });
     }
 
     return this.#coordinator.runPrepared(
@@ -396,7 +413,17 @@ export class ResourceOperationsService {
 
       const reloaded = await this.#projects.read(input.projectId, () => true);
       if (!reloaded.ok) return reloaded;
-      return this.success(input, prepared.data, transaction.data);
+      const fileChanges = plannedFileChanges(prepared.data);
+      const cleanup = await this.#directoryCleaner.cleanup(
+        project.projectDirectory,
+        fileChanges.deletes
+      );
+      return this.success(
+        input,
+        prepared.data,
+        transaction.data,
+        cleanup
+      );
     }
 
     return fail(
@@ -728,7 +755,11 @@ export class ResourceOperationsService {
   private success(
     input: ApplyResourceOperationsInput,
     prepared: PreparedResourceOperations,
-    transaction?: FileTransactionData
+    transaction?: FileTransactionData,
+    cleanup: EmptyDirectoryCleanupResult = {
+      directories: [],
+      warnings: []
+    }
   ): ResultEnvelope<ResourceOperationsData> {
     const fileChanges = plannedFileChanges(prepared);
     const data: ResourceOperationsData = {
@@ -752,47 +783,52 @@ export class ResourceOperationsService {
       affectedPackageIds: prepared.engine.affectedPackageIds,
       ...(input.dryRun
         ? {
-            wouldConsumeInboxPaths: prepared.engine.consumedInboxPaths
+            wouldConsumeInboxPaths: prepared.engine.consumedInboxPaths,
+            wouldRemoveDirectories: cleanup.directories
           }
         : {
-            consumedInboxPaths: prepared.engine.consumedInboxPaths
+            consumedInboxPaths: prepared.engine.consumedInboxPaths,
+            removedDirectories: cleanup.directories
           }),
       deleteResults: prepared.engine.deleteResults,
       ...(prepared.engine.projectMayBeInvalid
         ? { projectMayBeInvalid: true }
         : {})
     };
-    const warnings = prepared.engine.deleteResults.flatMap((result) => {
-      if (result.effectiveMode === "cascade-with-force-fallback") {
-        return [{
-          severity: "warning" as const,
-          code: "CASCADE_FORCE_FALLBACK",
-          message:
-            "级联删除遇到只读引用并已保留该引用，工程可能处于无效状态",
-          details: {
-            packageId: result.packageId,
-            ...(result.resourceId === undefined
-              ? {}
-              : { resourceId: result.resourceId }),
-            unsupportedReferences: result.unsupportedReferences
-          }
-        }];
+    const warnings: Diagnostic[] = prepared.engine.deleteResults.flatMap(
+      (result) => {
+        if (result.effectiveMode === "cascade-with-force-fallback") {
+          return [{
+            severity: "warning" as const,
+            code: "CASCADE_FORCE_FALLBACK",
+            message:
+              "级联删除遇到只读引用并已保留该引用，工程可能处于无效状态",
+            details: {
+              packageId: result.packageId,
+              ...(result.resourceId === undefined
+                ? {}
+                : { resourceId: result.resourceId }),
+              unsupportedReferences: result.unsupportedReferences
+            }
+          }];
+        }
+        if (result.effectiveMode === "force") {
+          return [{
+            severity: "warning" as const,
+            code: "FORCE_DELETE_MAY_INVALIDATE_PROJECT",
+            message: "强制删除跳过了引用扫描，工程可能处于无效状态",
+            details: {
+              packageId: result.packageId,
+              ...(result.resourceId === undefined
+                ? {}
+                : { resourceId: result.resourceId })
+            }
+          }];
+        }
+        return [];
       }
-      if (result.effectiveMode === "force") {
-        return [{
-          severity: "warning" as const,
-          code: "FORCE_DELETE_MAY_INVALIDATE_PROJECT",
-          message: "强制删除跳过了引用扫描，工程可能处于无效状态",
-          details: {
-            packageId: result.packageId,
-            ...(result.resourceId === undefined
-              ? {}
-              : { resourceId: result.resourceId })
-          }
-        }];
-      }
-      return [];
-    });
+    );
+    warnings.push(...cleanup.warnings);
     return ok(data, warnings);
   }
 }

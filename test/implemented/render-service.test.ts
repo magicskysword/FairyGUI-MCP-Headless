@@ -85,6 +85,7 @@ async function createProject(): Promise<string> {
 <packageDescription id="pkg00001">
   <resources>
     <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+    <component id="hid01" name="Hidden.xml" path="/"/>
   </resources>
 </packageDescription>`,
     "utf8"
@@ -100,6 +101,17 @@ async function createProject(): Promise<string> {
       text="Hello FairyGUI" fontSize="24" color="#ffffff"/>
     <loader id="n2" name="remote" xy="20,80" size="100,40"
       url="https://example.invalid/blocked.png"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "Hidden.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="160,90">
+  <displayList>
+    <text id="n0" name="title" xy="10,20" size="140,40"
+      text="Unexported preview" fontSize="18" color="#ffffff"/>
   </displayList>
 </component>`,
     "utf8"
@@ -573,6 +585,42 @@ test("render_component returns a FairyGUI-dom runtime PNG preview", async () => 
         diagnostic.code === "EXTERNAL_RESOURCE_BLOCKED"
       )
     );
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component previews an unexported component without changing settings", async () => {
+  const projectDirectory = await createProject();
+  const packageFile = path.join(
+    projectDirectory,
+    "assets",
+    "Demo",
+    "package.xml"
+  );
+  const before = await readFile(packageFile, "utf8");
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(projectDirectory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+  try {
+    const result = await renderSingle(renderer, {
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "hid01"
+    });
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    assert.equal(
+      Buffer.from(inlineImageData(result.data), "base64")
+        .subarray(0, 8)
+        .toString("hex"),
+      "89504e470d0a1a0a"
+    );
+    assert.equal(await readFile(packageFile, "utf8"), before);
   }
   finally {
     await renderer.close();

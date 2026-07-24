@@ -48,7 +48,15 @@ export async function compileRuntimeArtifacts(
   projectDirectory: string
 ): Promise<CompiledRuntimeArtifacts> {
   const document = await new NodeIO().readProject(projectFile);
-  const packages = document.getRoot().listPackages().map((pkg) => ({
+  const sourcePackages = document.getRoot().listPackages();
+  // 预览编译使用独立模型；临时导出全部组件，避免把 Editor 发布范围
+  // 错当成“是否允许预览”，且绝不把该状态写回工程。
+  for (const pkg of sourcePackages) {
+    for (const component of pkg.listComponents()) {
+      component.setExported(true);
+    }
+  }
+  const packages = sourcePackages.map((pkg) => ({
     packageId: pkg.getId(),
     packageName: pkg.getName(),
     fileName: `${pkg.getPublishName() || pkg.getName()}.fui`

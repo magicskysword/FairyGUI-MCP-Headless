@@ -460,6 +460,108 @@ test("resource import writes bytes, updates package metadata and consumes inbox"
   }
 });
 
+test("resource dry-run validates full changes without writing or consuming inbox", async () => {
+  const context = await setup();
+  const inboxFile = await writeInboxFile(
+    context.project.directory,
+    "preview/badge.png",
+    [7, 8, 9]
+  );
+  try {
+    const packageBefore = await readFile(context.project.packageFile);
+    const mainBefore = await readFile(context.project.mainFile);
+    const imageBefore = await readFile(context.project.imageFile);
+    const inboxBefore = await readFile(inboxFile);
+    const request = {
+      projectId: context.projectId,
+      dryRun: true,
+      operations: [{
+        op: "import" as const,
+        packageId: "pkg00001",
+        clientRef: "badge",
+        inboxPath: "preview/badge.png",
+        name: "Badge",
+        path: "/items/",
+        conflict: "reject" as const
+      }]
+    };
+
+    const preview = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse(request)
+    );
+
+    assert.equal(preview.ok, true);
+    if (!preview.ok) return;
+    assert.equal(preview.data.dryRun, true);
+    assert.equal(preview.data.transactionId, undefined);
+    assert.deepEqual(preview.data.wouldConsumeInboxPaths, [
+      ".fairygui-mcp/import-inbox/preview/badge.png"
+    ]);
+    assert.equal(preview.data.consumedInboxPaths, undefined);
+    assert.deepEqual(preview.data.fileChanges, {
+      writes: [
+        "assets/Demo/items/Badge.png",
+        "assets/Demo/package.xml"
+      ],
+      moves: [],
+      deletes: []
+    });
+    assert.deepEqual(preview.data.operationResults, [{
+      index: 0,
+      op: "import",
+      before: null,
+      after: {
+        kind: "resource",
+        packageId: "pkg00001",
+        resourceId: preview.data.clientRefs.badge!.resourceId,
+        name: "Badge",
+        type: "ImageResource",
+        path: "/items/",
+        exported: false,
+        fileName: "Badge.png"
+      }
+    }]);
+    assert.deepEqual(await readFile(context.project.packageFile), packageBefore);
+    assert.deepEqual(await readFile(context.project.mainFile), mainBefore);
+    assert.deepEqual(await readFile(context.project.imageFile), imageBefore);
+    assert.deepEqual(await readFile(inboxFile), inboxBefore);
+    await assert.rejects(readFile(path.join(
+      context.project.directory,
+      "assets",
+      "Demo",
+      "items",
+      "Badge.png"
+    )), { code: "ENOENT" });
+
+    const applied = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        ...request,
+        dryRun: false
+      })
+    );
+    assert.equal(applied.ok, true);
+    if (!applied.ok) return;
+    assert.equal(applied.data.dryRun, false);
+    assert.match(applied.data.transactionId ?? "", /^tx_/);
+    assert.equal(applied.data.wouldConsumeInboxPaths, undefined);
+    assert.deepEqual(applied.data.consumedInboxPaths, [
+      ".fairygui-mcp/import-inbox/preview/badge.png"
+    ]);
+    assert.deepEqual(applied.data.fileChanges, preview.data.fileChanges);
+    await assert.rejects(readFile(inboxFile), { code: "ENOENT" });
+    assert.deepEqual([...await readFile(path.join(
+      context.project.directory,
+      "assets",
+      "Demo",
+      "items",
+      "Badge.png"
+    ))], [7, 8, 9]);
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
 test("replace-resource preserves id and atomically changes the asset extension", async () => {
   const context = await setup();
   const inboxFile = await writeInboxFile(

@@ -263,6 +263,115 @@ test("resource deletion cascade clears supported references and exposes fallback
   assert.deepEqual(result.data.deletedAssetFiles, [
     "assets/Demo/icons/Icon.png"
   ]);
+  assert.deepEqual(result.data.operationResults, [{
+    index: 0,
+    op: "delete-resource",
+    before: {
+      kind: "resource",
+      packageId: PACKAGE_ID,
+      resourceId: "img01",
+      name: "Icon",
+      type: "ImageResource",
+      path: "/icons/",
+      exported: false,
+      fileName: "Icon.png"
+    },
+    after: null
+  }]);
+  assert.equal(
+    result.data.affectedReferences.some((change) =>
+      change.change === "removed"
+      && change.reference.target.packageId === PACKAGE_ID
+      && change.reference.target.resourceId === "img01"
+      && change.reference.source.objectId === "n0"
+    ),
+    true
+  );
+});
+
+test("resource operation summaries follow same-batch client refs", () => {
+  const document = fixture();
+  const result = new ResourceOperationsEngine().apply(document, input([
+    {
+      op: "create-package",
+      clientRef: "widgets",
+      name: "Widgets"
+    },
+    {
+      op: "create-component",
+      packageRef: "widgets",
+      clientRef: "dialog",
+      name: "Dialog",
+      path: "/screens/",
+      width: 640,
+      height: 360
+    },
+    {
+      op: "rename-resource",
+      packageId: PACKAGE_ID,
+      resourceId: "img01",
+      name: "Badge"
+    }
+  ]));
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const widgetsId = result.data.clientRefs.widgets!.packageId;
+  const dialogId = result.data.clientRefs.dialog!.resourceId!;
+  assert.deepEqual(result.data.operationResults, [
+    {
+      index: 0,
+      op: "create-package",
+      before: null,
+      after: {
+        kind: "package",
+        packageId: widgetsId,
+        name: "Widgets",
+        resourceCount: 0,
+        componentCount: 0
+      }
+    },
+    {
+      index: 1,
+      op: "create-component",
+      before: null,
+      after: {
+        kind: "resource",
+        packageId: widgetsId,
+        resourceId: dialogId,
+        name: "Dialog",
+        type: "Component",
+        path: "/screens/",
+        exported: false,
+        width: 640,
+        height: 360
+      }
+    },
+    {
+      index: 2,
+      op: "rename-resource",
+      before: {
+        kind: "resource",
+        packageId: PACKAGE_ID,
+        resourceId: "img01",
+        name: "Icon",
+        type: "ImageResource",
+        path: "/icons/",
+        exported: false,
+        fileName: "Icon.png"
+      },
+      after: {
+        kind: "resource",
+        packageId: PACKAGE_ID,
+        resourceId: "img01",
+        name: "Badge",
+        type: "ImageResource",
+        path: "/icons/",
+        exported: false,
+        fileName: "Badge.png"
+      }
+    }
+  ]);
 });
 
 test("component cascade removes instances and clears list item references", () => {

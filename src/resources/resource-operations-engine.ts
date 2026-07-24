@@ -30,8 +30,47 @@ export interface ResourceOperationClientRef {
   resourceId?: string;
 }
 
+export interface ResourceOperationPackageSnapshot {
+  kind: "package";
+  packageId: string;
+  name: string;
+  resourceCount: number;
+  componentCount: number;
+}
+
+export interface ResourceOperationResourceSnapshot {
+  kind: "resource";
+  packageId: string;
+  resourceId: string;
+  name: string;
+  type: string;
+  path: string;
+  exported: boolean;
+  fileName?: string;
+  width?: number;
+  height?: number;
+}
+
+export type ResourceOperationSnapshot =
+  | ResourceOperationPackageSnapshot
+  | ResourceOperationResourceSnapshot;
+
+export interface ResourceOperationResult {
+  index: number;
+  op: ResourceOperation["op"];
+  before: ResourceOperationSnapshot | null;
+  after: ResourceOperationSnapshot | null;
+}
+
+export interface AffectedResourceReference {
+  change: "added" | "removed";
+  reference: ResourceReference;
+}
+
 export interface ResourceOperationsEngineData {
   appliedOperations: number;
+  operationResults: ResourceOperationResult[];
+  affectedReferences: AffectedResourceReference[];
   clientRefs: Record<string, ResourceOperationClientRef>;
   affectedPackageIds: string[];
   affectedComponents: Array<{
@@ -74,6 +113,150 @@ export interface ResourceDeleteResult {
 
 export interface ResourceOperationsEngineOptions {
   importFiles?: ReadonlyMap<number, ImportInboxFile>;
+}
+
+function packageSnapshot(
+  document: Document,
+  packageId: string
+): ResourceOperationPackageSnapshot | null {
+  const pkg = document.getRoot().getPackageById(packageId);
+  if (!pkg) return null;
+  return {
+    kind: "package",
+    packageId,
+    name: pkg.getName(),
+    resourceCount: pkg.listResources().length,
+    componentCount: pkg.listComponents().length
+  };
+}
+
+function resourceSnapshot(
+  document: Document,
+  packageId: string,
+  resourceId: string
+): ResourceOperationResourceSnapshot | null {
+  const resource = document.getRoot()
+    .getPackageById(packageId)
+    ?.getResourceById(resourceId);
+  if (!resource) return null;
+  const optional = resource as unknown as {
+    getFileName?: () => string;
+    getWidth?: () => number;
+    getHeight?: () => number;
+  };
+  return {
+    kind: "resource",
+    packageId,
+    resourceId,
+    name: resource.getName(),
+    type: resource.propertyType,
+    path: resource.getPath(),
+    exported: resource.getExported(),
+    ...(typeof optional.getFileName === "function"
+      ? { fileName: optional.getFileName() }
+      : {}),
+    ...(resource.propertyType === PropertyType.COMPONENT
+      && typeof optional.getWidth === "function"
+      && typeof optional.getHeight === "function"
+      ? {
+          width: optional.getWidth(),
+          height: optional.getHeight()
+        }
+      : {})
+  };
+}
+
+function clientRefSnapshot(
+  document: Document,
+  data: ResourceOperationsEngineData,
+  clientRef: string
+): ResourceOperationSnapshot | null {
+  const target = data.clientRefs[clientRef];
+  if (!target) return null;
+  return target.resourceId === undefined
+    ? packageSnapshot(document, target.packageId)
+    : resourceSnapshot(document, target.packageId, target.resourceId);
+}
+
+function operationSnapshot(
+  document: Document,
+  operation: ResourceOperation,
+  data: ResourceOperationsEngineData,
+  phase: "before" | "after"
+): ResourceOperationSnapshot | null {
+  switch (operation.op) {
+    case "create-package":
+    case "create-component":
+      return phase === "before"
+        ? null
+        : clientRefSnapshot(document, data, operation.clientRef);
+    case "import":
+      if (phase === "before") {
+        return operation.conflict === "replace" && operation.resourceId
+          ? resourceSnapshot(
+              document,
+              operation.packageId,
+              operation.resourceId
+            )
+          : null;
+      }
+      return clientRefSnapshot(document, data, operation.clientRef);
+    case "replace-resource":
+    case "rename-resource":
+    case "move-resource":
+      return resourceSnapshot(
+        document,
+        operation.packageId,
+        operation.resourceId
+      );
+    case "rename-package":
+      return packageSnapshot(document, operation.packageId);
+    case "delete-resource":
+      return phase === "after"
+        ? null
+        : resourceSnapshot(
+            document,
+            operation.packageId,
+            operation.resourceId
+          );
+    case "delete-package":
+      return phase === "after"
+        ? null
+        : packageSnapshot(document, operation.packageId);
+  }
+}
+
+function referenceChanges(
+  before: ResourceReference[],
+  after: ResourceReference[]
+): AffectedResourceReference[] {
+  const beforeByKey = new Map(
+    before.map((reference) => [JSON.stringify(reference), reference])
+  );
+  const afterByKey = new Map(
+    after.map((reference) => [JSON.stringify(reference), reference])
+  );
+  return [
+    ...[...beforeByKey]
+      .filter(([key]) => !afterByKey.has(key))
+      .map(([key, reference]) => ({
+        key,
+        change: "removed" as const,
+        reference
+      })),
+    ...[...afterByKey]
+      .filter(([key]) => !beforeByKey.has(key))
+      .map(([key, reference]) => ({
+        key,
+        change: "added" as const,
+        reference
+      }))
+  ]
+    .sort((left, right) =>
+      left.change.localeCompare(right.change)
+      || left.key.localeCompare(right.key)
+    )
+    .map(({ change, reference }) => ({ change, reference }));
 }
 
 class ResourceOperationError extends Error {
@@ -1245,8 +1428,11 @@ export class ResourceOperationsEngine {
   ): ResultEnvelope<ResourceOperationsEngineData> {
     const initialFilePaths = modelFilePaths(document);
     const initialAssetPaths = modelAssetPaths(document);
+    const initialReferences = buildResourceReferenceIndex(document).list();
     const data: ResourceOperationsEngineData = {
       appliedOperations: 0,
+      operationResults: [],
+      affectedReferences: [],
       clientRefs: {},
       affectedPackageIds: [],
       affectedComponents: [],
@@ -1262,6 +1448,12 @@ export class ResourceOperationsEngine {
     try {
       input.operations.forEach((operation, index) => {
         const operationPath = `operations[${index}]`;
+        const before = operationSnapshot(
+          document,
+          operation,
+          data,
+          "before"
+        );
         switch (operation.op) {
           case "create-package":
             applyCreatePackage(document, operation, operationPath, data);
@@ -1325,6 +1517,12 @@ export class ResourceOperationsEngine {
               }
             );
         }
+        data.operationResults.push({
+          index,
+          op: operation.op,
+          before,
+          after: operationSnapshot(document, operation, data, "after")
+        });
         data.appliedOperations++;
       });
       data.affectedPackageIds = [...new Set(data.affectedPackageIds)]
@@ -1378,6 +1576,10 @@ export class ResourceOperationsEngine {
         left.relativePath.localeCompare(right.relativePath)
       );
       data.consumedInboxPaths.sort();
+      data.affectedReferences = referenceChanges(
+        initialReferences,
+        buildResourceReferenceIndex(document).list()
+      );
       return ok(data);
     }
     catch (error) {

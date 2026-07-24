@@ -36,8 +36,10 @@ import {
 } from "./import-inbox.js";
 import {
   ResourceOperationsEngine,
+  type AffectedResourceReference,
   type ResourceDeleteResult,
   type ResourceOperationClientRef,
+  type ResourceOperationResult,
   type ResourceOperationsEngineData
 } from "./resource-operations-engine.js";
 
@@ -45,14 +47,28 @@ const DEFAULT_FRESH_RETRIES = 3;
 
 export interface ResourceOperationsData {
   projectId: string;
-  transactionId: string;
+  dryRun: boolean;
+  transactionId?: string;
   affectedFiles: string[];
   appliedOperations: number;
+  operationResults: ResourceOperationResult[];
+  affectedReferences: AffectedResourceReference[];
+  fileChanges: ResourceFileChanges;
   clientRefs: Record<string, ResourceOperationClientRef>;
   affectedPackageIds: string[];
-  consumedInboxPaths: string[];
+  wouldConsumeInboxPaths?: string[];
+  consumedInboxPaths?: string[];
   deleteResults: ResourceDeleteResult[];
   projectMayBeInvalid?: boolean;
+}
+
+export interface ResourceFileChanges {
+  writes: string[];
+  moves: Array<{
+    from: string;
+    to: string;
+  }>;
+  deletes: string[];
 }
 
 export interface ResourceOperationsServiceOptions {
@@ -77,6 +93,41 @@ interface PreparedResourceOperations {
   }>;
   deletedFiles: string[];
   sourceStates: SourceFileState[];
+}
+
+function plannedFileChanges(
+  prepared: PreparedResourceOperations
+): ResourceFileChanges {
+  const moves = [
+    ...prepared.engine.fileMoves,
+    ...prepared.engine.assetMoves
+  ]
+    .filter((move, index, values) =>
+      values.findIndex((candidate) =>
+        candidate.from === move.from && candidate.to === move.to
+      ) === index
+    )
+    .sort((left, right) =>
+      left.from.localeCompare(right.from)
+      || left.to.localeCompare(right.to)
+    );
+  return {
+    writes: [
+      ...new Set([
+        ...prepared.files.map((file) => file.relativePath),
+        ...prepared.assetWrites.map((write) => write.relativePath)
+      ])
+    ].sort(),
+    moves,
+    deletes: [
+      ...new Set([
+        ...prepared.engine.fileMoves.map((move) => move.from),
+        ...prepared.engine.deletedFiles,
+        ...prepared.engine.assetMoves.map((move) => move.from),
+        ...prepared.engine.deletedAssetFiles
+      ])
+    ].sort()
+  };
 }
 
 function projectFilePath(
@@ -240,6 +291,14 @@ export class ResourceOperationsService {
   ): Promise<ResultEnvelope<ResourceOperationsData>> {
     const status = this.#projects.status(input.projectId);
     if (!status.ok) return Promise.resolve(status);
+
+    if (input.dryRun) {
+      return this.prepareAttempt(status.data, input).then((prepared) =>
+        prepared.ok
+          ? this.success(input, prepared.data)
+          : prepared
+      );
+    }
 
     return this.#coordinator.runPrepared(
       input.projectId,
@@ -669,16 +728,35 @@ export class ResourceOperationsService {
   private success(
     input: ApplyResourceOperationsInput,
     prepared: PreparedResourceOperations,
-    transaction: FileTransactionData
+    transaction?: FileTransactionData
   ): ResultEnvelope<ResourceOperationsData> {
+    const fileChanges = plannedFileChanges(prepared);
     const data: ResourceOperationsData = {
       projectId: input.projectId,
-      transactionId: transaction.transactionId,
-      affectedFiles: transaction.affectedFiles,
+      dryRun: input.dryRun,
+      ...(transaction === undefined
+        ? {}
+        : { transactionId: transaction.transactionId }),
+      affectedFiles: transaction?.affectedFiles ?? [
+        ...new Set([
+          ...fileChanges.writes,
+          ...fileChanges.deletes,
+          ...prepared.engine.consumedInboxPaths
+        ])
+      ].sort(),
       appliedOperations: prepared.engine.appliedOperations,
+      operationResults: prepared.engine.operationResults,
+      affectedReferences: prepared.engine.affectedReferences,
+      fileChanges,
       clientRefs: prepared.engine.clientRefs,
       affectedPackageIds: prepared.engine.affectedPackageIds,
-      consumedInboxPaths: prepared.engine.consumedInboxPaths,
+      ...(input.dryRun
+        ? {
+            wouldConsumeInboxPaths: prepared.engine.consumedInboxPaths
+          }
+        : {
+            consumedInboxPaths: prepared.engine.consumedInboxPaths
+          }),
       deleteResults: prepared.engine.deleteResults,
       ...(prepared.engine.projectMayBeInvalid
         ? { projectMayBeInvalid: true }

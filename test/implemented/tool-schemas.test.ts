@@ -365,7 +365,14 @@ test("resource operation schema fixes collision and deletion policies", () => {
     ]
   };
 
-  assert.deepEqual(ApplyResourceOperationsInputSchema.parse(input), input);
+  assert.deepEqual(ApplyResourceOperationsInputSchema.parse(input), {
+    ...input,
+    dryRun: false
+  });
+  assert.equal(ApplyResourceOperationsInputSchema.parse({
+    ...input,
+    dryRun: true
+  }).dryRun, true);
   assert.equal(ApplyResourceOperationsInputSchema.safeParse({
     projectId: "project-1",
     operations: [{

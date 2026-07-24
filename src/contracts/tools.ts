@@ -405,6 +405,7 @@ export type ResourceOperation = z.infer<typeof ResourceOperationSchema>;
 
 export const ApplyResourceOperationsInputSchema = z.object({
   projectId: nonEmptyId,
+  dryRun: z.boolean().default(false),
   operations: z.array(ResourceOperationSchema).min(1).max(200)
 }).strict().superRefine((value, context) => {
   value.operations.forEach((operation, index) => {

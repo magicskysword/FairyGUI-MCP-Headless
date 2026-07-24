@@ -230,28 +230,52 @@ test("package exposes an isolated tarball installation smoke test", async () => 
   }
 });
 
-test("npm trusted publishing is tokenless, version-gated, and standalone", async () => {
+test("npm trusted publishing builds fixed GitHub dependency sources", async () => {
   const workflow = await readFile(publishWorkflowPath, "utf8");
 
   assert.match(workflow, /tags:\s*\r?\n\s*-\s*["']npm-v\*["']/);
   assert.match(workflow, /id-token:\s*write/);
   assert.match(workflow, /contents:\s*read/);
   assert.match(workflow, /actions\/checkout@v6/);
+  assert.match(workflow, /name:\s*Checkout Headless[\s\S]*path:\s*FairyGUI-MCP-Headless/);
+  assert.match(
+    workflow,
+    /repository:\s*magicskysword\/OpenFairyGUI[\s\S]*ref:\s*["']v0\.2\.1["'][\s\S]*path:\s*OpenFairyGUI/
+  );
+  assert.match(
+    workflow,
+    /repository:\s*magicskysword\/FairyGUI-dom[\s\S]*ref:\s*["']v1\.1\.1["'][\s\S]*path:\s*FairyGUI-dom/
+  );
+  assert.match(workflow, /pnpm\/action-setup@v4/);
+  assert.match(workflow, /version:\s*["']10\.14\.0["']/);
   assert.match(workflow, /actions\/setup-node@v6/);
   assert.match(workflow, /node-version:\s*["']24["']/);
   assert.match(workflow, /package-manager-cache:\s*false/);
-  assert.match(workflow, /package\.json/);
+  assert.match(workflow, /FairyGUI-MCP-Headless\/package\.json/);
   assert.match(workflow, /-run\\\./);
-  assert.match(workflow, /Wait for published dependencies/);
-  assert.match(workflow, /openfairygui-core/);
-  assert.match(workflow, /openfairygui-functions/);
-  assert.match(workflow, /fairygui-dom/);
-  assert.match(workflow, /sleep 10/);
-  assert.match(workflow, /npm install --ignore-scripts/);
+  assert.match(workflow, /Verify source dependency versions/);
+  assert.match(workflow, /pnpm --dir OpenFairyGUI install --frozen-lockfile/);
+  assert.match(
+    workflow,
+    /pnpm --dir OpenFairyGUI --filter @magicskysword\/openfairygui-core build/
+  );
+  assert.match(
+    workflow,
+    /pnpm --dir OpenFairyGUI --filter @magicskysword\/openfairygui-functions build/
+  );
+  assert.match(workflow, /pnpm --dir FairyGUI-dom install --frozen-lockfile/);
+  assert.match(workflow, /pnpm --dir FairyGUI-dom build/);
+  assert.match(
+    workflow,
+    /pnpm --dir FairyGUI-MCP-Headless install --frozen-lockfile/
+  );
+  assert.doesNotMatch(workflow, /Wait for published dependencies/);
+  assert.doesNotMatch(workflow, /dependency_tarballs/);
+  assert.doesNotMatch(workflow, /npm install --ignore-scripts/);
   assert.match(workflow, /playwright install --with-deps chromium/);
-  assert.match(workflow, /npm run typecheck/);
-  assert.match(workflow, /npm run test:implemented/);
-  assert.match(workflow, /npm run build/);
+  assert.match(workflow, /pnpm --dir FairyGUI-MCP-Headless typecheck/);
+  assert.match(workflow, /pnpm --dir FairyGUI-MCP-Headless test:implemented/);
+  assert.match(workflow, /pnpm --dir FairyGUI-MCP-Headless build/);
   assert.match(workflow, /npm publish \. --access public/);
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|--provenance/);
 });

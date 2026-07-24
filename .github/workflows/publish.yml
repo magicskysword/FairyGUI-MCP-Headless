@@ -16,8 +16,29 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Checkout Headless
         uses: actions/checkout@v6
+        with:
+          path: FairyGUI-MCP-Headless
+
+      - name: Checkout OpenFairyGUI
+        uses: actions/checkout@v6
+        with:
+          repository: magicskysword/OpenFairyGUI
+          ref: 'v0.2.1'
+          path: OpenFairyGUI
+
+      - name: Checkout FairyGUI-dom
+        uses: actions/checkout@v6
+        with:
+          repository: magicskysword/FairyGUI-dom
+          ref: 'v1.1.1'
+          path: FairyGUI-dom
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.14.0'
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -29,7 +50,7 @@ jobs:
       - name: Verify release tag
         shell: bash
         run: |
-          package_version=$(node -p "require('./package.json').version")
+          package_version=$(node -p "require('./FairyGUI-MCP-Headless/package.json').version")
           expected_tag="npm-v${package_version}"
           retry_suffix="${GITHUB_REF_NAME#"$expected_tag"}"
 
@@ -41,53 +62,77 @@ jobs:
             exit 1
           fi
 
-      - name: Wait for published dependencies
+      - name: Verify source dependency versions
         shell: bash
         run: |
-          dependency_names=(
-            "@magicskysword/openfairygui-core"
-            "@magicskysword/openfairygui-functions"
-            "@magicskysword/fairygui-dom"
-          )
-          deadline=$((SECONDS + 300))
+          verify_dependency() {
+            local dependency_name="$1"
+            local source_manifest="$2"
+            local dependency_range
+            local expected_version
+            local source_version
 
-          for dependency_name in "${dependency_names[@]}"; do
-            dependency_range=$(node -p "require('./package.json').dependencies['${dependency_name}']")
-            dependency_version="${dependency_range#^}"
-            dependency_version="${dependency_version#~}"
+            dependency_range=$(node -p "require('./FairyGUI-MCP-Headless/package.json').dependencies['${dependency_name}']")
+            expected_version="${dependency_range#^}"
+            expected_version="${expected_version#~}"
+            source_version=$(node -p "require('./${source_manifest}').version")
 
-            until npm view "${dependency_name}@${dependency_version}" version >/dev/null 2>&1; do
-              if (( SECONDS >= deadline )); then
-                echo "::error::${dependency_name}@${dependency_version} was not visible after 5 minutes"
-                exit 1
-              fi
-              echo "Waiting for ${dependency_name}@${dependency_version} to propagate..."
-              sleep 10
-            done
-          done
+            if [[ "$source_version" != "$expected_version" ]]; then
+              echo "::error::${dependency_name} expects ${expected_version}, but ${source_manifest} provides ${source_version}"
+              exit 1
+            fi
+          }
 
-      - name: Install dependencies
+          verify_dependency \
+            "@magicskysword/openfairygui-core" \
+            "OpenFairyGUI/packages/core/package.json"
+          verify_dependency \
+            "@magicskysword/openfairygui-functions" \
+            "OpenFairyGUI/packages/functions/package.json"
+          verify_dependency \
+            "@magicskysword/fairygui-dom" \
+            "FairyGUI-dom/package.json"
+
+      - name: Build OpenFairyGUI packages
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-        run: npm install --ignore-scripts
+        run: |
+          pnpm --dir OpenFairyGUI install --frozen-lockfile
+          pnpm --dir OpenFairyGUI --filter @magicskysword/openfairygui-core build
+          pnpm --dir OpenFairyGUI --filter @magicskysword/openfairygui-functions build
+
+      - name: Build FairyGUI-dom
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          pnpm --dir FairyGUI-dom install --frozen-lockfile
+          pnpm --dir FairyGUI-dom build
+
+      - name: Install Headless dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: pnpm --dir FairyGUI-MCP-Headless install --frozen-lockfile
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: pnpm --dir FairyGUI-MCP-Headless exec playwright install --with-deps chromium
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm --dir FairyGUI-MCP-Headless typecheck
 
       - name: Run implemented tests
-        run: npm run test:implemented
+        run: pnpm --dir FairyGUI-MCP-Headless test:implemented
 
       - name: Build package
-        run: npm run build
+        run: pnpm --dir FairyGUI-MCP-Headless build
 
       - name: Publish package
+        working-directory: FairyGUI-MCP-Headless
         shell: bash
         run: |
           package_version=$(node -p "require('./package.json').version")
-          if npm view "@magicskysword/fairygui-mcp-headless@${package_version}" version >/dev/null 2>&1; then
+          tarball_url="https://registry.npmjs.org/@magicskysword/fairygui-mcp-headless/-/fairygui-mcp-headless-${package_version}.tgz"
+
+          if curl --fail --silent --show-error --head "$tarball_url" >/dev/null; then
             echo "@magicskysword/fairygui-mcp-headless@${package_version} is already published"
           else
             npm publish . --access public

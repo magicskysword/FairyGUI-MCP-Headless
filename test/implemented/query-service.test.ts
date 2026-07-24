@@ -44,9 +44,23 @@ async function createProject(): Promise<string> {
     path.join(packageDirectory, "Main.xml"),
     `<?xml version="1.0" encoding="utf-8"?>
 <component size="800,600" mysteryComponent="yes">
+  <controller name="start" pages="0,hidden,1,shown" selected="0"/>
   <displayList>
-    <image id="n0" name="hero" src="img01" xy="10,20" size="64,64"/>
-    <text id="n1" name="title" xy="100,20" size="200,40" text="Hello"/>
+    <image id="n0" name="hero" src="img01" xy="10,20" size="64,64">
+      <gearDisplay controller="start" pages="0"/>
+    </image>
+    <text id="n1" name="title" xy="100,20" size="200,40" text="Hello">
+      <gearDisplay controller="start" pages="1"/>
+      <gearXY controller="start" pages="0,1" values="100,20|120,20"/>
+      <gearSize controller="start" pages="0,1" values="200,40,1,1|240,40,1,1"/>
+      <gearLook controller="start" pages="0,1" values="1,0,0,0|0.5,0,0,0"/>
+      <gearColor controller="start" pages="0,1" values="#ffffff,#000000|#ff0000,#000000"/>
+      <gearAni controller="start" pages="0,1" values="true,0|false,1"/>
+      <gearText controller="start" pages="0,1" values="Hello|Shown"/>
+      <gearIcon controller="start" pages="0,1" values="ui://pkg00001img01|ui://pkg00001img01"/>
+      <gearDisplay2 controller="start" pages="0" condition="0"/>
+      <gearFontSize controller="start" pages="0,1" values="12|18"/>
+    </text>
     <component id="n2" name="card" src="card1" xy="100,100" size="100,50"/>
   </displayList>
 </component>`,
@@ -113,7 +127,7 @@ test("named query batches return packages, resources, DOM, refs and capabilities
     assert.equal(results.packages?.ok, true);
     assert.equal(results.resources?.ok, true);
     assert.equal(results.components?.ok, true);
-    assert.equal(results.dom?.ok, true);
+    assert.equal(results.dom?.ok, true, JSON.stringify(results.dom));
     assert.equal(results.refs?.ok, true);
     assert.equal(results.capabilities?.ok, true);
     assert.equal(results.audit?.ok, true);
@@ -131,7 +145,10 @@ test("named query batches return packages, resources, DOM, refs and capabilities
       const data = results.refs.data as {
         items: Array<{ source: { objectId?: string } }>;
       };
-      assert.deepEqual(data.items.map((item) => item.source.objectId), ["n0"]);
+      assert.deepEqual(
+        data.items.map((item) => item.source.objectId),
+        ["n0", "n1"]
+      );
     }
     if (results.audit?.ok) {
       const data = results.audit.data as {
@@ -175,6 +192,96 @@ test("one failed query preserves successful siblings in PARTIAL_QUERY_FAILURE", 
         ? undefined
         : result.data.results.missing?.error.code,
       "COMPONENT_NOT_FOUND"
+    );
+  }
+  finally {
+    await registry.closeAll();
+  }
+});
+
+test("DOM query explains controllers, all gear types and effective visibility", async () => {
+  const { registry, service, projectId } = await openService();
+  try {
+    const result = await service.execute(QueryInputSchema.parse({
+      projectId,
+      queries: {
+        dom: {
+          kind: "dom",
+          packageId: "pkg00001",
+          componentId: "cmp01"
+        }
+      }
+    }));
+
+    assert.equal(result.ok, true);
+    if (!result.ok || !result.data.results.dom?.ok) return;
+    const stateModel = (result.data.results.dom.data as {
+      stateModel: {
+        controllers: Array<{
+          name: string;
+          selectedIndex: number;
+          selectedPage: { id: string; name: string } | null;
+          pages: Array<{ id: string; name: string }>;
+        }>;
+        gears: Array<{
+          nodeId: string;
+          type: string;
+          controller: string | null;
+          pages: string[];
+          active: { status: string; pageId?: string; value?: unknown };
+        }>;
+        effectiveVisibility: Array<{
+          nodeId: string;
+          baseVisible: boolean;
+          value: boolean | "unknown";
+          hiddenBy: Array<{ type: string; controller: string | null }>;
+        }>;
+      };
+    }).stateModel;
+
+    assert.deepEqual(stateModel.controllers, [{
+      name: "start",
+      selectedIndex: 0,
+      selectedPage: { id: "0", name: "hidden" },
+      pages: [
+        { id: "0", name: "hidden" },
+        { id: "1", name: "shown" }
+      ]
+    }]);
+    assert.deepEqual(
+      stateModel.gears
+        .filter((gear) => gear.nodeId === "n1")
+        .map((gear) => gear.type),
+      [
+        "display",
+        "xy",
+        "size",
+        "look",
+        "color",
+        "animation",
+        "text",
+        "icon",
+        "display2",
+        "font-size"
+      ]
+    );
+    assert.deepEqual(
+      stateModel.gears.find((gear) =>
+        gear.nodeId === "n1" && gear.type === "text"
+      )?.active,
+      { status: "resolved", pageId: "0", value: "Hello" }
+    );
+    assert.deepEqual(
+      stateModel.effectiveVisibility.map((entry) => ({
+        nodeId: entry.nodeId,
+        value: entry.value,
+        hiddenBy: entry.hiddenBy.map((reason) => reason.type)
+      })),
+      [
+        { nodeId: "n0", value: true, hiddenBy: [] },
+        { nodeId: "n1", value: false, hiddenBy: ["display"] },
+        { nodeId: "n2", value: true, hiddenBy: [] }
+      ]
     );
   }
   finally {

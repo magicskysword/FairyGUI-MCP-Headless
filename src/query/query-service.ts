@@ -32,6 +32,7 @@ import {
 import {
   ProjectRegistry
 } from "../project/project-registry.js";
+import { buildComponentStateModel } from "./state-model.js";
 
 export type QueryItemResult = SuccessEnvelope<unknown> | ErrorEnvelope;
 
@@ -359,11 +360,29 @@ export class QueryService {
           request.packageId,
           request.componentId
         );
+        const component = document.getRoot()
+          .getPackageById(request.packageId)
+          ?.listComponents()
+          .find((candidate) => candidate.getId() === request.componentId);
+        if (!component) {
+          throw new QueryItemError(
+            "COMPONENT_NOT_FOUND",
+            `组件不存在：${request.packageId}/${request.componentId}`,
+            {
+              path: "componentId",
+              actual: request.componentId
+            }
+          );
+        }
         const data: {
           document: typeof documentProjection;
+          stateModel: ReturnType<typeof buildComponentStateModel>;
           matches?: ReturnType<typeof matchFairyDomSelector>;
           projections?: ReturnType<typeof projectComponentInstances>;
-        } = { document: documentProjection };
+        } = {
+          document: documentProjection,
+          stateModel: buildComponentStateModel(component)
+        };
         if (request.selector) {
           data.matches = matchFairyDomSelector(
             documentProjection.root,

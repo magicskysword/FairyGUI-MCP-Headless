@@ -200,74 +200,7 @@ test("query schema accepts named heterogeneous batches and rejects empty batches
   }).success, false);
 });
 
-test("DOM patch schema requires expected match counts and one mutation mode", () => {
-  const operations = {
-    projectId: "project-1",
-    packageId: "pkg00001",
-    componentId: "cmp01",
-    operations: [
-      {
-        op: "set-style",
-        selector: "#n0",
-        expectedMatches: 1,
-        changes: { left: 10, opacity: 0.5 }
-      },
-      {
-        op: "set-text",
-        targetRef: "new-image",
-        expectedMatches: 1,
-        text: "New title"
-      },
-      {
-        op: "insert",
-        parentSelector: "component-root",
-        expectedMatches: 1,
-        clientRef: "new-image",
-        node: {
-          type: "image",
-          name: "hero",
-          style: { left: 0, top: 0, width: 64, height: 64 },
-          content: {},
-          relations: []
-        }
-      }
-    ]
-  };
-
-  assert.deepEqual(ApplyDomPatchInputSchema.parse(operations), operations);
-  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
-    ...operations,
-    operations: [{
-      op: "remove",
-      selector: "#n0"
-    }]
-  }).success, false);
-  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
-    ...operations,
-    operations: [{
-      op: "remove",
-      selector: "#n0",
-      targetRef: "new-title",
-      expectedMatches: 1
-    }]
-  }).success, false);
-  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
-    ...operations,
-    operations: [{
-      op: "remove",
-      expectedMatches: 1
-    }]
-  }).success, false);
-  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
-    ...operations,
-    replace: {
-      domain: "displayTree",
-      value: []
-    }
-  }).success, false);
-});
-
-test("DOM patch schema makes single targets and client references unambiguous", () => {
+test("DOM patch public schema exposes only five shallow generic operations", () => {
   const base = {
     projectId: "project-1",
     packageId: "pkg00001",
@@ -280,24 +213,85 @@ test("DOM patch schema makes single targets and client references unambiguous", 
     content: { text: "" },
     relations: []
   };
+  const input = {
+    ...base,
+    operations: [
+      {
+        op: "insert",
+        parentSelector: "component-root",
+        expectedMatches: 1,
+        clientRef: "title",
+        node: newText
+      },
+      {
+        op: "update",
+        targetRef: "title",
+        expectedMatches: 1,
+        changes: { content: { text: "Created" } }
+      },
+      {
+        op: "move",
+        targetRef: "title",
+        expectedMatches: 1,
+        toIndex: 0
+      },
+      {
+        op: "replace",
+        selector: "#n0",
+        expectedMatches: 1,
+        node: newText
+      },
+      {
+        op: "remove",
+        selector: "[name=\"obsolete\"]",
+        expectedMatches: 2
+      }
+    ]
+  };
 
+  assert.deepEqual(ApplyDomPatchInputSchema.parse(input), input);
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse(input).success, true);
+  for (const legacy of ["set-text", "set-style", "replace-node"]) {
+    assert.equal(ApplyDomPatchInputSchema.safeParse({
+      ...base,
+      operations: [{
+        op: legacy,
+        selector: "#n0",
+        expectedMatches: 1
+      }]
+    }).success, false);
+  }
+  assert.equal(ApplyDomPatchInputSchema.safeParse({
+    ...base,
+    replace: { domain: "displayTree", value: [] }
+  }).success, false);
+});
+
+test("DOM patch validates targets and client references internally", () => {
+  const base = {
+    projectId: "project-1",
+    packageId: "pkg00001",
+    componentId: "cmp01"
+  };
+  const remove = {
+    op: "remove" as const,
+    expectedMatches: 1
+  };
   assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...base,
-    operations: [{
-      op: "insert",
-      parentSelector: "component-root",
-      expectedMatches: 2,
-      clientRef: "title",
-      node: newText
-    }]
+    operations: [{ ...remove, selector: "#n0", targetRef: "new-node" }]
+  }).success, false);
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
+    ...base,
+    operations: [remove]
   }).success, false);
   assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...base,
     operations: [{
-      op: "move",
-      selector: "text",
-      expectedMatches: 2,
-      toIndex: 0
+      op: "update",
+      targetRef: "transient-reference",
+      expectedMatches: 1,
+      changes: { name: "No target" }
     }]
   }).success, false);
   assert.equal(InternalApplyDomPatchInputSchema.safeParse({
@@ -308,65 +302,79 @@ test("DOM patch schema makes single targets and client references unambiguous", 
         parentSelector: "component-root",
         expectedMatches: 1,
         clientRef: "duplicate",
-        node: newText
+        node: {
+          type: "text",
+          name: "first",
+          style: {},
+          content: { text: "" },
+          relations: []
+        }
       },
       {
         op: "insert",
         parentSelector: "component-root",
         expectedMatches: 1,
         clientRef: "duplicate",
-        node: newText
+        node: {
+          type: "text",
+          name: "second",
+          style: {},
+          content: { text: "" },
+          relations: []
+        }
       }
     ]
   }).success, false);
-  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
-    ...base,
-    operations: [{
-      op: "set-text",
-      targetRef: "not-declared-in-this-batch",
-      expectedMatches: 1,
-      text: "No target"
-    }]
-  }).success, false);
 });
 
-test("replace mode permits one explicit content domain per call", () => {
+test("DOM patch keeps node and changes shallow publicly but strict internally", () => {
   const base = {
     projectId: "project-1",
     packageId: "pkg00001",
     componentId: "cmp01"
   };
-  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
+  const loose = {
     ...base,
-    replace: {
-      domain: "displayTree",
-      value: []
-    }
-  }).success, true);
-  assert.equal(InternalApplyDomPatchInputSchema.safeParse({
-    ...base,
-    replace: {
-      domain: "relations",
+    operations: [{
+      op: "update",
       selector: "#n0",
       expectedMatches: 1,
-      value: []
-    }
-  }).success, true);
+      changes: {
+        style: { left: "10px" },
+        id: "forbidden"
+      }
+    }]
+  };
+  assert.equal(ApplyDomPatchInputSchema.safeParse(loose).success, true);
+  assert.equal(InternalApplyDomPatchInputSchema.safeParse(loose).success, false);
+
+  for (const forbidden of ["id", "readOnly", "capability"]) {
+    assert.equal(InternalApplyDomPatchInputSchema.safeParse({
+      ...base,
+      operations: [{
+        op: "insert",
+        parentSelector: "component-root",
+        expectedMatches: 1,
+        clientRef: "node",
+        node: {
+          type: "text",
+          name: "title",
+          style: {},
+          relations: [],
+          content: { text: "" },
+          [forbidden]: forbidden === "readOnly" ? true : "forbidden"
+        }
+      }]
+    }).success, false);
+  }
   assert.equal(InternalApplyDomPatchInputSchema.safeParse({
     ...base,
-    replace: {
-      domain: "relations",
-      targetRef: "transient-reference",
+    operations: [{
+      op: "update",
+      selector: "#n0",
       expectedMatches: 1,
-      value: []
-    }
-  }).success, false);
-  assert.equal(ApplyDomPatchInputSchema.safeParse({
-    ...base,
-    replace: [
-      { domain: "displayTree", value: [] },
-      { domain: "relations", value: [] }
-    ]
+      changes: { type: "graph" }
+    }]
   }).success, false);
 });
 

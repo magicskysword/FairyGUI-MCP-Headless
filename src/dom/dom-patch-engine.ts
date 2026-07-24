@@ -7,7 +7,6 @@ import {
   generateChildId,
   GraphType,
   GroupLayoutType,
-  inspectOpaqueProjectXml,
   ListLayoutType,
   LoaderFillType,
   OverflowType,
@@ -21,6 +20,9 @@ import {
 } from "@magicskysword/openfairygui-core";
 import {
   FAIRYGUI_RELATION_TYPES,
+  FairyDomComponentRootSchema,
+  FairyDomNewNodeSchema,
+  type FairyDomComponentRoot,
   type FairyDomDocument,
   type FairyDomListItem,
   type FairyDomNewNode,
@@ -38,8 +40,8 @@ import {
 } from "../contracts/result.js";
 import type {
   ApplyDomPatchInput,
-  DomContentReplacement,
-  DomPatchOperation
+  DomPatchOperation,
+  DomUpdateChanges
 } from "../contracts/tools.js";
 import { InternalApplyDomPatchInputSchema } from "../contracts/tools.js";
 import {
@@ -87,8 +89,16 @@ interface EngineContext {
 
 export interface DomPatchEngineData {
   appliedOperations: number;
+  operationResults: DomPatchOperationResult[];
+  affectedNodeIds: string[];
   clientRefs: Record<string, string>;
   dom: FairyDomDocument;
+}
+
+export interface DomPatchOperationResult {
+  index: number;
+  op: DomPatchOperation["op"];
+  affectedNodeIds: string[];
 }
 
 class DomPatchEngineError extends Error {
@@ -180,7 +190,7 @@ function invalidPatchValidation(
   input: ApplyDomPatchInput,
   issues: readonly PatchValidationIssue[]
 ): ResultEnvelope<never> {
-  const expectedRoot = "operations" in input ? "operations" : "replace";
+  const expectedRoot = "operations";
   const leaves = validationLeaves(issues);
   const relevant = leaves.filter((issue) =>
     String(issue.path[0] ?? "") === expectedRoot
@@ -197,6 +207,69 @@ function invalidPatchValidation(
     allowed: issue ? patchAllowed(issue) : "有效的 FairyGUI DOM 补丁",
     suggestedFix:
       "先使用 query 的 detail:\"full\" 取得完整 DOM 字段，再按该节点类型修正补丁"
+  });
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function cloneJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(cloneJsonValue);
+  if (isJsonObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, cloneJsonValue(child)])
+    );
+  }
+  return value;
+}
+
+function mergeJsonObject(
+  target: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const merged = cloneJsonValue(target) as Record<string, unknown>;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) {
+      delete merged[key];
+    }
+    else if (isJsonObject(value)) {
+      merged[key] = mergeJsonObject(
+        isJsonObject(merged[key]) ? merged[key] : {},
+        value
+      );
+    }
+    else {
+      merged[key] = cloneJsonValue(value);
+    }
+  }
+  return merged;
+}
+
+function mergedPatchError(
+  operationIndex: number,
+  changes: DomUpdateChanges,
+  issues: readonly PatchValidationIssue[]
+): never {
+  const leaves = validationLeaves(issues);
+  const issue = [...leaves]
+    .sort((left, right) => right.path.length - left.path.length)[0];
+  const issuePath = issue?.path ?? [];
+  const path = [
+    "operations",
+    operationIndex,
+    "changes",
+    ...issuePath
+  ];
+  patchError("INVALID_PATCH", "update 结果未通过目标节点的强类型校验", {
+    path: patchIssuePath(path),
+    actual: {
+      value: patchValueAtPath(changes, issuePath),
+      issue: issue?.message ?? "合并后的节点结构不合法"
+    },
+    allowed: issue ? patchAllowed(issue) : "与目标节点类型兼容的 Merge Patch",
+    suggestedFix:
+      "先使用 query 的 detail:\"full\" 查询目标，再只修改该节点类型已有的可写字段"
   });
 }
 
@@ -469,32 +542,41 @@ function assertWritableTarget(target: PatchTarget, path: string): void {
   }
 }
 
+const ROOT_STYLE_FIELDS = new Set<keyof FairyDomStyle>([
+  "width",
+  "height",
+  "minWidth",
+  "maxWidth",
+  "minHeight",
+  "maxHeight",
+  "pivotX",
+  "pivotY",
+  "pivotAsAnchor"
+]);
+
+function assertRootStyleFields(
+  changes: FairyDomStyle,
+  path: string
+): void {
+  const invalid = Object.keys(changes).find(
+    (field) => !ROOT_STYLE_FIELDS.has(field as keyof FairyDomStyle)
+  );
+  if (invalid !== undefined) {
+    patchError("INVALID_PATCH", `组件根不支持样式字段 ${invalid}`, {
+      path: `${path}.${invalid}`,
+      actual: invalid,
+      allowed: [...ROOT_STYLE_FIELDS]
+    });
+  }
+}
+
 function applyStyleToRoot(
   component: Component,
   changes: FairyDomStyle,
   path: string
 ): void {
   const owner = component as Component & Record<string, unknown>;
-  const allowed = new Set([
-    "width",
-    "height",
-    "minWidth",
-    "maxWidth",
-    "minHeight",
-    "maxHeight",
-    "pivotX",
-    "pivotY",
-    "pivotAsAnchor"
-  ]);
-  const invalid = Object.keys(changes).find((field) => !allowed.has(field));
-  if (invalid !== undefined) {
-    patchError("INVALID_PATCH", `组件根不支持样式字段 ${invalid}`, {
-      path: `${path}.${invalid}`,
-      actual: invalid,
-      allowed: [...allowed]
-    });
-  }
-
+  assertRootStyleFields(changes, path);
   if (changes.width !== undefined || changes.height !== undefined) {
     invoke(owner, "setSize", [
       changes.width ?? component.getWidth(),
@@ -639,10 +721,15 @@ function applyTextContent(
     lineSpacing?: number | undefined;
     letterSpacing?: number | undefined;
   },
-  path: string
+  path: string,
+  fields?: ReadonlySet<string>
 ): void {
-  invoke(owner, "setText", [content.text], `${path}.text`);
-  if (content.font !== undefined) {
+  const includes = (field: string): boolean =>
+    fields === undefined || fields.has(field);
+  if (includes("text")) {
+    invoke(owner, "setText", [content.text], `${path}.text`);
+  }
+  if (includes("font") && content.font !== undefined) {
     assertResource(
       context.document,
       content.font,
@@ -664,9 +751,11 @@ function applyTextContent(
   ] as const;
   for (const [field, method] of scalars) {
     const value = content[field];
-    if (value !== undefined) invoke(owner, method, [value], `${path}.${field}`);
+    if (includes(field) && value !== undefined) {
+      invoke(owner, method, [value], `${path}.${field}`);
+    }
   }
-  if (content.align !== undefined) {
+  if (includes("align") && content.align !== undefined) {
     const values = {
       left: AlignType.Left,
       center: AlignType.Center,
@@ -674,7 +763,7 @@ function applyTextContent(
     };
     invoke(owner, "setAlign", [values[content.align]], `${path}.align`);
   }
-  if (content.verticalAlign !== undefined) {
+  if (includes("verticalAlign") && content.verticalAlign !== undefined) {
     const values = {
       top: VertAlignType.Top,
       middle: VertAlignType.Middle,
@@ -687,7 +776,7 @@ function applyTextContent(
       `${path}.verticalAlign`
     );
   }
-  if (content.autoSize !== undefined) {
+  if (includes("autoSize") && content.autoSize !== undefined) {
     const values = {
       none: AutoSizeType.None,
       both: AutoSizeType.Both,
@@ -756,13 +845,11 @@ function setNodeRelations(
   invoke(owner, "setRelations", [relationsFor(context, relations, path)], path);
 }
 
-function setNodeGroup(
+function resolveGroupId(
   context: EngineContext,
-  object: GObject,
-  groupId: string | undefined,
+  groupId: string,
   path: string
-): void {
-  if (groupId === undefined) return;
+): string {
   const resolved = resolveReferenceId(context, groupId, path);
   const existing = context.component.getChildById(resolved);
   const referencedClient = Object.entries(context.clientRefs)
@@ -780,6 +867,17 @@ function setNodeGroup(
       allowed: ["group node id", "group insert clientRef"]
     });
   }
+  return resolved;
+}
+
+function setNodeGroup(
+  context: EngineContext,
+  object: GObject,
+  groupId: string | undefined,
+  path: string
+): void {
+  if (groupId === undefined) return;
+  const resolved = resolveGroupId(context, groupId, path);
   invoke(object as MutableObject, "setGroup", [resolved], path);
 }
 
@@ -787,12 +885,15 @@ function applyNodeContent(
   context: EngineContext,
   object: GObject,
   node: FairyDomNewNode,
-  path: string
+  path: string,
+  fields?: ReadonlySet<string>
 ): void {
   const owner = object as MutableObject;
+  const includes = (field: string): boolean =>
+    fields === undefined || fields.has(field);
   switch (node.type) {
     case "image": {
-      if (node.content.resource !== undefined) {
+      if (includes("resource") && node.content.resource !== undefined) {
         setPrimaryResource(
           context,
           object,
@@ -800,7 +901,7 @@ function applyNodeContent(
           `${path}.resource`
         );
       }
-      if (node.content.flip !== undefined) {
+      if (includes("flip") && node.content.flip !== undefined) {
         const values = {
           none: FlipType.None,
           horizontal: FlipType.Horizontal,
@@ -814,7 +915,7 @@ function applyNodeContent(
           `${path}.flip`
         );
       }
-      if (node.content.fillMethod !== undefined) {
+      if (includes("fillMethod") && node.content.fillMethod !== undefined) {
         const values = {
           none: FillMethod.None,
           horizontal: FillMethod.Horizontal,
@@ -830,7 +931,7 @@ function applyNodeContent(
           `${path}.fillMethod`
         );
       }
-      if (node.content.fillAmount !== undefined) {
+      if (includes("fillAmount") && node.content.fillAmount !== undefined) {
         invoke(
           owner,
           "setFillAmount",
@@ -838,17 +939,17 @@ function applyNodeContent(
           `${path}.fillAmount`
         );
       }
-      if (node.content.color !== undefined) {
+      if (includes("color") && node.content.color !== undefined) {
         invoke(owner, "setColor", [node.content.color], `${path}.color`);
       }
       return;
     }
     case "text":
-      applyTextContent(context, owner, node.content, path);
+      applyTextContent(context, owner, node.content, path, fields);
       return;
     case "rich-text":
-      applyTextContent(context, owner, node.content, path);
-      if (node.content.ubb !== undefined) {
+      applyTextContent(context, owner, node.content, path, fields);
+      if (includes("ubb") && node.content.ubb !== undefined) {
         invoke(
           owner,
           "setUbbEnabled",
@@ -858,7 +959,7 @@ function applyNodeContent(
       }
       return;
     case "input-text":
-      applyTextContent(context, owner, node.content, path);
+      applyTextContent(context, owner, node.content, path, fields);
       for (const [field, method] of [
         ["prompt", "setPromptText"],
         ["restrict", "setRestrict"],
@@ -866,11 +967,11 @@ function applyNodeContent(
         ["password", "setPassword"]
       ] as const) {
         const value = node.content[field];
-        if (value !== undefined) {
+        if (includes(field) && value !== undefined) {
           invoke(owner, method, [value], `${path}.${field}`);
         }
       }
-      if (node.content.keyboardType !== undefined) {
+      if (includes("keyboardType") && node.content.keyboardType !== undefined) {
         const values = {
           default: 0,
           number: 1,
@@ -888,6 +989,8 @@ function applyNodeContent(
       return;
     case "loader": {
       if (
+        fields === undefined
+        &&
         node.content.resource !== undefined
         && node.content.externalUrl !== undefined
       ) {
@@ -897,7 +1000,7 @@ function applyNodeContent(
           { path }
         );
       }
-      if (node.content.resource !== undefined) {
+      if (includes("resource") && node.content.resource !== undefined) {
         setPrimaryResource(
           context,
           object,
@@ -905,7 +1008,10 @@ function applyNodeContent(
           `${path}.resource`
         );
       }
-      else if (node.content.externalUrl !== undefined) {
+      else if (
+        includes("externalUrl")
+        && node.content.externalUrl !== undefined
+      ) {
         invoke(
           owner,
           "setUrl",
@@ -913,7 +1019,7 @@ function applyNodeContent(
           `${path}.externalUrl`
         );
       }
-      if (node.content.fill !== undefined) {
+      if (includes("fill") && node.content.fill !== undefined) {
         const values = {
           none: LoaderFillType.None,
           scale: LoaderFillType.Scale,
@@ -924,7 +1030,7 @@ function applyNodeContent(
         };
         invoke(owner, "setFill", [values[node.content.fill]], `${path}.fill`);
       }
-      if (node.content.align !== undefined) {
+      if (includes("align") && node.content.align !== undefined) {
         const values = {
           left: AlignType.Left,
           center: AlignType.Center,
@@ -937,7 +1043,10 @@ function applyNodeContent(
           `${path}.align`
         );
       }
-      if (node.content.verticalAlign !== undefined) {
+      if (
+        includes("verticalAlign")
+        && node.content.verticalAlign !== undefined
+      ) {
         const values = {
           top: VertAlignType.Top,
           middle: VertAlignType.Middle,
@@ -956,7 +1065,7 @@ function applyNodeContent(
         ["frame", "setFrame"]
       ] as const) {
         const value = node.content[field];
-        if (value !== undefined) {
+        if (includes(field) && value !== undefined) {
           invoke(owner, method, [value], `${path}.${field}`);
         }
       }
@@ -970,12 +1079,14 @@ function applyNodeContent(
         polygon: GraphType.Polygon,
         "regular-polygon": GraphType.RegularPolygon
       };
-      invoke(
-        owner,
-        "setGraphType",
-        [types[node.content.shape]],
-        `${path}.shape`
-      );
+      if (includes("shape")) {
+        invoke(
+          owner,
+          "setGraphType",
+          [types[node.content.shape]],
+          `${path}.shape`
+        );
+      }
       for (const [field, method] of [
         ["fillColor", "setFillColor"],
         ["lineColor", "setLineColor"],
@@ -984,11 +1095,11 @@ function applyNodeContent(
         ["sides", "setSides"]
       ] as const) {
         const value = node.content[field];
-        if (value !== undefined) {
+        if (includes(field) && value !== undefined) {
           invoke(owner, method, [value], `${path}.${field}`);
         }
       }
-      if (node.content.points !== undefined) {
+      if (includes("points") && node.content.points !== undefined) {
         invoke(
           owner,
           "setPoints",
@@ -999,7 +1110,7 @@ function applyNodeContent(
       return;
     }
     case "movie-clip":
-      if (node.content.resource !== undefined) {
+      if (includes("resource") && node.content.resource !== undefined) {
         setPrimaryResource(
           context,
           object,
@@ -1013,7 +1124,7 @@ function applyNodeContent(
         ["color", "setColor"]
       ] as const) {
         const value = node.content[field];
-        if (value !== undefined) {
+        if (includes(field) && value !== undefined) {
           invoke(owner, method, [value], `${path}.${field}`);
         }
       }
@@ -1024,12 +1135,14 @@ function applyNodeContent(
         horizontal: GroupLayoutType.Horizontal,
         vertical: GroupLayoutType.Vertical
       };
-      invoke(
-        owner,
-        "setLayout",
-        [layouts[node.content.layout]],
-        `${path}.layout`
-      );
+      if (includes("layout")) {
+        invoke(
+          owner,
+          "setLayout",
+          [layouts[node.content.layout]],
+          `${path}.layout`
+        );
+      }
       for (const [field, method] of [
         ["lineGap", "setLineGap"],
         ["columnGap", "setColumnGap"],
@@ -1038,11 +1151,14 @@ function applyNodeContent(
         ["mainGridIndex", "setMainGridIndex"]
       ] as const) {
         const value = node.content[field];
-        if (value !== undefined) {
+        if (includes(field) && value !== undefined) {
           invoke(owner, method, [value], `${path}.${field}`);
         }
       }
-      if (node.content.mainGridMinSize !== undefined) {
+      if (
+        includes("mainGridMinSize")
+        && node.content.mainGridMinSize !== undefined
+      ) {
         patchError(
           "CAPABILITY_NOT_IMPLEMENTED",
           "工程 XML 不提供可安全往返的 Group mainGridMinSize 字段",
@@ -1062,13 +1178,18 @@ function applyNodeContent(
         "flow-vertical": ListLayoutType.FlowVertical,
         pagination: ListLayoutType.Pagination
       };
-      invoke(
-        owner,
-        "setLayout",
-        [layouts[node.content.layout]],
-        `${path}.layout`
-      );
-      if (node.content.defaultItem !== undefined) {
+      if (includes("layout")) {
+        invoke(
+          owner,
+          "setLayout",
+          [layouts[node.content.layout]],
+          `${path}.layout`
+        );
+      }
+      if (
+        includes("defaultItem")
+        && node.content.defaultItem !== undefined
+      ) {
         setPrimaryResource(
           context,
           object,
@@ -1084,11 +1205,11 @@ function applyNodeContent(
         ["autoResizeItem", "setAutoResizeItem"]
       ] as const) {
         const value = node.content[field];
-        if (value !== undefined) {
+        if (includes(field) && value !== undefined) {
           invoke(owner, method, [value], `${path}.${field}`);
         }
       }
-      if (node.content.align !== undefined) {
+      if (includes("align") && node.content.align !== undefined) {
         const values = {
           left: AlignType.Left,
           center: AlignType.Center,
@@ -1101,7 +1222,10 @@ function applyNodeContent(
           `${path}.align`
         );
       }
-      if (node.content.verticalAlign !== undefined) {
+      if (
+        includes("verticalAlign")
+        && node.content.verticalAlign !== undefined
+      ) {
         const values = {
           top: VertAlignType.Top,
           middle: VertAlignType.Middle,
@@ -1114,22 +1238,33 @@ function applyNodeContent(
           `${path}.verticalAlign`
         );
       }
-      invoke(
-        owner,
-        "setListItems",
-        [listItemsFor(context, node.content.items, `${path}.items`)],
-        `${path}.items`
-      );
+      if (includes("items")) {
+        invoke(
+          owner,
+          "setListItems",
+          [listItemsFor(context, node.content.items, `${path}.items`)],
+          `${path}.items`
+        );
+      }
       return;
     }
-    case "instance":
-      const extensionType = setPrimaryResource(
-        context,
-        object,
+    case "instance": {
+      const source = assertResource(
+        context.document,
         node.content.resource,
-        `${path}.resource`
-      ) ?? "";
-      if (node.content.text !== undefined) {
+        `${path}.resource`,
+        PropertyType.COMPONENT
+      ) as Component;
+      const extensionType = source.getExtensionType();
+      if (includes("resource")) {
+        setPrimaryResource(
+          context,
+          object,
+          node.content.resource,
+          `${path}.resource`
+        );
+      }
+      if (includes("text") && node.content.text !== undefined) {
         assertInstanceOverlay(extensionType, "text", `${path}.text`);
         invoke(
           owner,
@@ -1138,7 +1273,7 @@ function applyNodeContent(
           `${path}.text`
         );
       }
-      if (node.content.icon !== undefined) {
+      if (includes("icon") && node.content.icon !== undefined) {
         assertInstanceOverlay(extensionType, "icon", `${path}.icon`);
         assertResource(
           context.document,
@@ -1152,7 +1287,7 @@ function applyNodeContent(
           `${path}.icon`
         );
       }
-      if (node.content.selected !== undefined) {
+      if (includes("selected") && node.content.selected !== undefined) {
         assertInstanceOverlay(extensionType, "selected", `${path}.selected`);
         invoke(
           owner,
@@ -1162,6 +1297,8 @@ function applyNodeContent(
         );
       }
       if (
+        includes("properties")
+        &&
         node.content.properties !== undefined
         && Object.keys(node.content.properties).length > 0
       ) {
@@ -1176,6 +1313,7 @@ function applyNodeContent(
         );
       }
       return;
+    }
   }
 }
 
@@ -1336,32 +1474,596 @@ function operationTargets(
   );
 }
 
-function setText(target: PatchTarget, text: string, path: string): void {
-  if (target.kind === "root") {
-    patchError("INVALID_PATCH", "组件根没有 text 字段", { path });
+interface RootUpdatePlan {
+  kind: "root";
+  target: RootTarget;
+  value: FairyDomComponentRoot;
+}
+
+interface NodeUpdatePlan {
+  kind: "node";
+  target: NodeTarget;
+  value: FairyDomNewNode;
+}
+
+type UpdatePlan = RootUpdatePlan | NodeUpdatePlan;
+
+const STYLE_DEFAULTS = {
+  left: 0,
+  top: 0,
+  width: 0,
+  height: 0,
+  minWidth: 0,
+  maxWidth: 0,
+  minHeight: 0,
+  maxHeight: 0,
+  opacity: 1,
+  rotation: 0,
+  scaleX: 1,
+  scaleY: 1,
+  skewX: 0,
+  skewY: 0,
+  pivotX: 0,
+  pivotY: 0,
+  pivotAsAnchor: false,
+  visible: true,
+  touchable: true,
+  grayed: false
+} satisfies Record<keyof FairyDomStyle, number | boolean>;
+
+function styleUpdateValues(
+  rawChanges: Record<string, unknown>,
+  merged: FairyDomStyle
+): FairyDomStyle {
+  const values: Record<string, unknown> = {};
+  for (const key of Object.keys(rawChanges)) {
+    values[key] = rawChanges[key] === null
+      ? STYLE_DEFAULTS[key as keyof FairyDomStyle]
+      : merged[key as keyof FairyDomStyle];
   }
-  const owner = target.object as MutableObject;
-  switch (target.object.propertyType) {
-    case PropertyType.G_TEXT_FIELD:
-    case PropertyType.G_RICH_TEXT_FIELD:
-    case PropertyType.G_TEXT_INPUT:
-      invoke(owner, "setText", [text], path);
-      return;
-    case PropertyType.G_COMPONENT:
-    case PropertyType.G_BUTTON:
-    case PropertyType.G_LABEL:
-    case PropertyType.G_COMBO_BOX:
-    case PropertyType.G_PROGRESS_BAR:
-    case PropertyType.G_SLIDER:
-    case PropertyType.G_SCROLL_BAR:
-      invoke(owner, "setInstanceTitle", [text], path);
-      return;
-    default:
-      patchError("INVALID_PATCH", "目标节点类型不支持 text 字段", {
-        path,
-        actual: target.object.propertyType,
-        allowed: ["text", "rich-text", "input-text", "instance"]
+  return values as FairyDomStyle;
+}
+
+function editableNode(node: FairyDomNode): Record<string, unknown> {
+  const value = { ...node } as Record<string, unknown>;
+  delete value.id;
+  delete value.readOnly;
+  delete value.capability;
+  return value;
+}
+
+function prepareUpdatePlans(
+  context: EngineContext,
+  targets: readonly PatchTarget[],
+  changes: DomUpdateChanges,
+  operationIndex: number
+): UpdatePlan[] {
+  const dom = toFairyDomDocument(
+    context.document,
+    context.packageId,
+    context.componentId
+  );
+  const nodes = new Map(dom.root.children.map((node) => [node.id, node]));
+  return targets.map((target) => {
+    if (target.kind === "root") {
+      const merged = mergeJsonObject(
+        dom.root as unknown as Record<string, unknown>,
+        changes as Record<string, unknown>
+      );
+      const parsed = FairyDomComponentRootSchema.safeParse(merged);
+      if (!parsed.success) {
+        mergedPatchError(
+          operationIndex,
+          changes,
+          parsed.error.issues as PatchValidationIssue[]
+        );
+      }
+      return { kind: "root", target, value: parsed.data };
+    }
+
+    const current = nodes.get(target.object.getId());
+    if (!current) {
+      patchError("INVALID_PATCH", "update 目标无法从当前 DOM 投影中定位", {
+        path: `operations[${operationIndex}]`,
+        actual: target.object.getId()
       });
+    }
+    const merged = mergeJsonObject(
+      editableNode(current),
+      changes as Record<string, unknown>
+    );
+    const parsed = FairyDomNewNodeSchema.safeParse(merged);
+    if (!parsed.success) {
+      mergedPatchError(
+        operationIndex,
+        changes,
+        parsed.error.issues as PatchValidationIssue[]
+      );
+    }
+    return { kind: "node", target, value: parsed.data };
+  });
+}
+
+function changedObject(
+  value: Record<string, unknown> | null | undefined
+): Record<string, unknown> | undefined {
+  return value === null || value === undefined ? undefined : value;
+}
+
+function validateRootContent(
+  context: EngineContext,
+  value: FairyDomComponentRoot["content"],
+  path: string
+): void {
+  if (value.overflow !== "scroll" && value.scrollAxis !== undefined) {
+    patchError(
+      "INVALID_PATCH",
+      "scrollAxis 只能在 overflow 为 scroll 时设置",
+      {
+        path: `${path}.scrollAxis`,
+        actual: value.scrollAxis,
+        allowed: ["overflow: scroll"]
+      }
+    );
+  }
+  if (value.maskId !== undefined) {
+    const resolved = resolveReferenceId(
+      context,
+      value.maskId,
+      `${path}.maskId`
+    );
+    if (resolved === context.componentId) {
+      patchError("INVALID_PATCH", "组件根不能作为自身遮罩", {
+        path: `${path}.maskId`,
+        actual: resolved
+      });
+    }
+  }
+  if (value.reversedMask === true && value.maskId === undefined) {
+    patchError("INVALID_PATCH", "reversedMask 需要同时指定 maskId", {
+      path: `${path}.reversedMask`,
+      actual: true
+    });
+  }
+}
+
+function validateNodeContentUpdate(
+  context: EngineContext,
+  node: FairyDomNewNode,
+  rawChanges: Record<string, unknown>,
+  path: string
+): void {
+  const changed = new Set(Object.keys(rawChanges));
+  switch (node.type) {
+    case "image":
+      if (changed.has("resource") && node.content.resource !== undefined) {
+        assertResource(
+          context.document,
+          node.content.resource,
+          `${path}.resource`,
+          PropertyType.IMAGE_RESOURCE
+        );
+      }
+      return;
+    case "text":
+    case "rich-text":
+    case "input-text":
+      if (changed.has("font") && node.content.font !== undefined) {
+        assertResource(
+          context.document,
+          node.content.font,
+          `${path}.font`,
+          PropertyType.FONT_RESOURCE
+        );
+      }
+      return;
+    case "loader":
+      if (
+        node.content.resource !== undefined
+        && node.content.externalUrl !== undefined
+      ) {
+        patchError(
+          "INVALID_PATCH",
+          "Loader 的 resource 与 externalUrl 不能同时设置",
+          { path }
+        );
+      }
+      if (changed.has("resource") && node.content.resource !== undefined) {
+        assertResource(context.document, node.content.resource, `${path}.resource`);
+      }
+      return;
+    case "graph":
+      return;
+    case "movie-clip":
+      if (changed.has("resource") && node.content.resource !== undefined) {
+        assertResource(
+          context.document,
+          node.content.resource,
+          `${path}.resource`,
+          PropertyType.MOVIE_CLIP_RESOURCE
+        );
+      }
+      return;
+    case "group":
+      if (changed.has("mainGridMinSize")) {
+        patchError(
+          "CAPABILITY_NOT_IMPLEMENTED",
+          "工程 XML 不提供可安全往返的 Group mainGridMinSize 字段",
+          {
+            path: `${path}.mainGridMinSize`,
+            suggestedFix:
+              "省略 mainGridMinSize；运行时会依据主网格成员尺寸计算"
+          }
+        );
+      }
+      return;
+    case "list":
+      if (
+        changed.has("defaultItem")
+        && node.content.defaultItem !== undefined
+      ) {
+        assertResource(
+          context.document,
+          node.content.defaultItem,
+          `${path}.defaultItem`,
+          PropertyType.COMPONENT
+        );
+      }
+      if (changed.has("items")) {
+        listItemsFor(context, node.content.items, `${path}.items`);
+      }
+      return;
+    case "instance": {
+      const source = assertResource(
+        context.document,
+        node.content.resource,
+        `${path}.resource`,
+        PropertyType.COMPONENT
+      ) as Component;
+      const extensionType = source.getExtensionType();
+      if (changed.has("text")) {
+        assertInstanceOverlay(extensionType, "text", `${path}.text`);
+      }
+      if (changed.has("icon")) {
+        assertInstanceOverlay(extensionType, "icon", `${path}.icon`);
+        if (node.content.icon !== undefined) {
+          assertResource(context.document, node.content.icon, `${path}.icon`);
+        }
+      }
+      if (changed.has("selected")) {
+        assertInstanceOverlay(extensionType, "selected", `${path}.selected`);
+      }
+      if (changed.has("properties")) {
+        patchError(
+          "READ_ONLY_CAPABILITY",
+          "自定义组件实例属性在 V1 中只读",
+          {
+            path: `${path}.properties`,
+            actual: "extension.custom",
+            allowed: ["instance resource", "text", "icon", "selected"]
+          }
+        );
+      }
+      return;
+    }
+  }
+}
+
+function preflightUpdatePlans(
+  context: EngineContext,
+  plans: readonly UpdatePlan[],
+  changes: DomUpdateChanges,
+  operationIndex: number
+): void {
+  const path = `operations[${operationIndex}].changes`;
+  for (const plan of plans) {
+    if (plan.kind === "root") {
+      if (Object.hasOwn(changes, "name")) {
+        patchError("INVALID_PATCH", "组件根名称属于资源元数据", {
+          path: `${path}.name`,
+          suggestedFix: "使用 rename-resource 资源操作"
+        });
+      }
+      const styleChanges = changedObject(changes.style);
+      if (styleChanges) {
+        assertRootStyleFields(
+          styleUpdateValues(styleChanges, plan.value.style),
+          `${path}.style`
+        );
+      }
+      if (changes.relations !== undefined) {
+        relationsFor(context, plan.value.relations, `${path}.relations`);
+      }
+      if (changes.content !== undefined) {
+        validateRootContent(context, plan.value.content, `${path}.content`);
+      }
+      continue;
+    }
+
+    const styleChanges = changedObject(changes.style);
+    if (styleChanges) {
+      assertStyleMethods(
+        plan.target.object as MutableObject,
+        styleUpdateValues(styleChanges, plan.value.style),
+        `${path}.style`
+      );
+    }
+    if (Object.hasOwn(changes, "groupId") && plan.value.groupId !== undefined) {
+      resolveGroupId(context, plan.value.groupId, `${path}.groupId`);
+    }
+    if (changes.relations !== undefined) {
+      relationsFor(context, plan.value.relations, `${path}.relations`);
+    }
+    const contentChanges = changedObject(changes.content);
+    if (contentChanges) {
+      validateNodeContentUpdate(
+        context,
+        plan.value,
+        contentChanges,
+        `${path}.content`
+      );
+    }
+  }
+}
+
+function applyRootContent(
+  context: EngineContext,
+  value: FairyDomComponentRoot["content"],
+  path: string
+): void {
+  const overflowValues = {
+    visible: OverflowType.Visible,
+    hidden: OverflowType.Hidden,
+    scroll: OverflowType.Scroll
+  };
+  context.component.setOverflow(overflowValues[value.overflow]);
+  if (value.overflow === "scroll") {
+    const scrollValues = {
+      horizontal: ScrollType.Horizontal,
+      vertical: ScrollType.Vertical,
+      both: ScrollType.Both
+    };
+    context.component.setScrollType(
+      scrollValues[value.scrollAxis ?? "vertical"]
+    );
+  }
+  context.component.setOpaque(value.opaque ?? true);
+  context.component.setBgColor(value.backgroundColor ?? "");
+  context.component.setBgColorEnabled(value.backgroundColor !== undefined);
+  context.component.setMask(
+    value.maskId === undefined
+      ? ""
+      : resolveReferenceId(context, value.maskId, `${path}.maskId`)
+  );
+  context.component.setReversedMask(value.reversedMask ?? false);
+}
+
+function resetTextContentField(
+  owner: MutableObject,
+  field: string,
+  path: string
+): boolean {
+  const defaults: Record<string, readonly [string, unknown]> = {
+    font: ["setFont", ""],
+    fontSize: ["setFontSize", 12],
+    color: ["setColor", "#000000"],
+    align: ["setAlign", AlignType.Left],
+    verticalAlign: ["setVAlign", VertAlignType.Top],
+    autoSize: ["setAutoSize", AutoSizeType.Both],
+    singleLine: ["setSingleLine", false],
+    bold: ["setBold", false],
+    italic: ["setItalic", false],
+    underline: ["setUnderline", false],
+    strikethrough: ["setStrikethrough", false],
+    lineSpacing: ["setLeading", 3],
+    letterSpacing: ["setLetterSpacing", 0]
+  };
+  const entry = defaults[field];
+  if (!entry) return false;
+  invoke(owner, entry[0], [entry[1]], `${path}.${field}`);
+  return true;
+}
+
+function resetNodeContentFields(
+  context: EngineContext,
+  object: GObject,
+  node: FairyDomNewNode,
+  rawChanges: Record<string, unknown>,
+  path: string
+): void {
+  const nullFields = new Set(
+    Object.entries(rawChanges)
+      .filter(([, value]) => value === null)
+      .map(([field]) => field)
+  );
+  if (nullFields.size === 0) return;
+  const owner = object as MutableObject;
+  const reset = (
+    field: string,
+    method: string,
+    value: unknown
+  ): void => {
+    if (nullFields.has(field)) {
+      invoke(owner, method, [value], `${path}.${field}`);
+    }
+  };
+
+  switch (node.type) {
+    case "image":
+      if (nullFields.has("resource")) {
+        setPrimaryResource(context, object, null, `${path}.resource`);
+      }
+      reset("flip", "setFlip", FlipType.None);
+      reset("fillMethod", "setFillMethod", FillMethod.None);
+      reset("fillAmount", "setFillAmount", 1);
+      reset("color", "setColor", "#FFFFFF");
+      return;
+    case "text":
+    case "rich-text":
+    case "input-text":
+      for (const field of nullFields) {
+        resetTextContentField(owner, field, path);
+      }
+      if (node.type === "rich-text") {
+        reset("ubb", "setUbbEnabled", false);
+      }
+      if (node.type === "input-text") {
+        reset("prompt", "setPromptText", "");
+        reset("restrict", "setRestrict", "");
+        reset("maxLength", "setMaxLength", 0);
+        reset("password", "setPassword", false);
+        reset("keyboardType", "setKeyboardType", 0);
+      }
+      return;
+    case "loader":
+      if (
+        nullFields.has("resource")
+        || nullFields.has("externalUrl")
+      ) {
+        const url = node.content.resource
+          ? resourceUrl(node.content.resource)
+          : node.content.externalUrl ?? "";
+        invoke(owner, "setUrl", [url], path);
+      }
+      reset("fill", "setFill", LoaderFillType.None);
+      reset("align", "setAlign", AlignType.Left);
+      reset("verticalAlign", "setVAlign", VertAlignType.Top);
+      reset("autoSize", "setAutoSize", false);
+      reset("playing", "setPlaying", true);
+      reset("frame", "setFrame", 0);
+      return;
+    case "graph":
+      reset("fillColor", "setFillColor", "#FFFFFF");
+      reset("lineColor", "setLineColor", "#000000");
+      reset("lineSize", "setLineSize", 1);
+      reset("cornerRadius", "setCornerRadius", null);
+      reset("sides", "setSides", 0);
+      reset("points", "setPoints", null);
+      return;
+    case "movie-clip":
+      if (nullFields.has("resource")) {
+        setPrimaryResource(context, object, null, `${path}.resource`);
+      }
+      reset("playing", "setPlaying", true);
+      reset("frame", "setFrame", 0);
+      reset("color", "setColor", "#FFFFFF");
+      return;
+    case "group":
+      reset("lineGap", "setLineGap", 0);
+      reset("columnGap", "setColumnGap", 0);
+      reset("excludeInvisibles", "setExcludeInvisibles", false);
+      reset("autoSizeDisabled", "setAutoSizeDisabled", false);
+      reset("mainGridIndex", "setMainGridIndex", -1);
+      return;
+    case "list":
+      if (nullFields.has("defaultItem")) {
+        setPrimaryResource(context, object, null, `${path}.defaultItem`);
+      }
+      reset("lineGap", "setLineGap", 0);
+      reset("columnGap", "setColumnGap", 0);
+      reset("lineCount", "setLineCount", 0);
+      reset("columnCount", "setColumnCount", 0);
+      reset("autoResizeItem", "setAutoResizeItem", true);
+      reset("align", "setAlign", AlignType.Left);
+      reset("verticalAlign", "setVAlign", VertAlignType.Top);
+      return;
+    case "instance":
+      reset("text", "setInstanceTitle", "");
+      reset("icon", "setInstanceIcon", "");
+      reset("selected", "setInstanceChecked", false);
+      return;
+  }
+}
+
+function applyUpdatePlan(
+  context: EngineContext,
+  plan: UpdatePlan,
+  changes: DomUpdateChanges,
+  operationIndex: number
+): void {
+  const path = `operations[${operationIndex}].changes`;
+  const styleChanges = changedObject(changes.style);
+  if (plan.kind === "root") {
+    if (styleChanges) {
+      applyStyleToRoot(
+        plan.target.component,
+        styleUpdateValues(styleChanges, plan.value.style),
+        `${path}.style`
+      );
+    }
+    if (changes.relations !== undefined) {
+      setNodeRelations(
+        context,
+        plan.target.component as Component & Record<string, unknown>,
+        plan.value.relations,
+        `${path}.relations`
+      );
+    }
+    if (changes.content !== undefined) {
+      applyRootContent(context, plan.value.content, `${path}.content`);
+    }
+    return;
+  }
+
+  if (Object.hasOwn(changes, "name")) {
+    plan.target.object.setName(plan.value.name);
+  }
+  if (Object.hasOwn(changes, "groupId")) {
+    if (changes.groupId === null) {
+      invoke(
+        plan.target.object as MutableObject,
+        "setGroup",
+        [""],
+        `${path}.groupId`
+      );
+    }
+    else {
+      setNodeGroup(
+        context,
+        plan.target.object,
+        plan.value.groupId,
+        `${path}.groupId`
+      );
+    }
+  }
+  if (styleChanges) {
+    applyStyleToNode(
+      plan.target.object,
+      styleUpdateValues(styleChanges, plan.value.style),
+      `${path}.style`
+    );
+  }
+  if (changes.relations !== undefined) {
+    setNodeRelations(
+      context,
+      plan.target.object as MutableObject,
+      plan.value.relations,
+      `${path}.relations`
+    );
+  }
+  const contentChanges = changedObject(changes.content);
+  if (contentChanges) {
+    resetNodeContentFields(
+      context,
+      plan.target.object,
+      plan.value,
+      contentChanges,
+      `${path}.content`
+    );
+    const nonNullFields = new Set(
+      Object.entries(contentChanges)
+        .filter(([, value]) => value !== null)
+        .map(([field]) => field)
+    );
+    if (nonNullFields.size > 0) {
+      applyNodeContent(
+        context,
+        plan.target.object,
+        plan.value,
+        `${path}.content`,
+        nonNullFields
+      );
+    }
   }
 }
 
@@ -1404,7 +2106,7 @@ function executeOperation(
   context: EngineContext,
   operation: DomPatchOperation,
   index: number
-): void {
+): string[] {
   const path = `operations[${index}]`;
   if (operation.op === "insert") {
     const parents = selectTargets(
@@ -1456,13 +2158,30 @@ function executeOperation(
         }
       });
     }
-    return;
+    return [id];
   }
 
   const targets = operationTargets(context, operation, index);
   for (const target of targets) assertWritableTarget(target, path);
 
   switch (operation.op) {
+    case "update": {
+      const plans = prepareUpdatePlans(
+        context,
+        targets,
+        operation.changes,
+        index
+      );
+      preflightUpdatePlans(context, plans, operation.changes, index);
+      for (const plan of plans) {
+        applyUpdatePlan(context, plan, operation.changes, index);
+      }
+      return targets.map((target) =>
+        target.kind === "root"
+          ? context.componentId
+          : target.object.getId()
+      );
+    }
     case "remove": {
       if (targets.some((target) => target.kind === "root")) {
         patchError("INVALID_PATCH", "不能通过 DOM 补丁删除组件根", {
@@ -1477,7 +2196,7 @@ function executeOperation(
         context.component.removeChild(target.object);
       }
       cleanupRemovedReferences(context, removed);
-      return;
+      return [...removed];
     }
     case "move": {
       const target = targets[0]!;
@@ -1497,91 +2216,9 @@ function executeOperation(
           }
         });
       }
-      return;
+      return [target.object.getId()];
     }
-    case "set-name":
-      for (const target of targets) {
-        if (target.kind === "root") {
-          patchError("INVALID_PATCH", "组件根名称属于资源元数据", {
-            path,
-            suggestedFix: "使用 rename-resource 资源操作"
-          });
-        }
-        target.object.setName(operation.name);
-      }
-      return;
-    case "set-style":
-      for (const target of targets) {
-        if (target.kind === "root") {
-          applyStyleToRoot(
-            target.component,
-            operation.changes,
-            `${path}.changes`
-          );
-        }
-        else {
-          applyStyleToNode(
-            target.object,
-            operation.changes,
-            `${path}.changes`
-          );
-        }
-      }
-      return;
-    case "set-text":
-      for (const target of targets) {
-        setText(target, operation.text, `${path}.text`);
-      }
-      return;
-    case "set-resource":
-      for (const target of targets) {
-        if (target.kind === "root") {
-          patchError("INVALID_PATCH", "组件根没有主资源字段", { path });
-        }
-        setPrimaryResource(
-          context,
-          target.object,
-          operation.resource,
-          `${path}.resource`
-        );
-      }
-      return;
-    case "set-relations":
-      for (const target of targets) {
-        const owner = target.kind === "root"
-          ? target.component as Component & Record<string, unknown>
-          : target.object as MutableObject;
-        setNodeRelations(
-          context,
-          owner,
-          operation.relations,
-          `${path}.relations`
-        );
-      }
-      return;
-    case "set-list-items":
-      for (const target of targets) {
-        if (
-          target.kind === "root"
-          || target.object.propertyType !== PropertyType.G_LIST
-        ) {
-          patchError("INVALID_PATCH", "listItems 只能写入静态 List 节点", {
-            path,
-            actual: target.kind === "root"
-              ? "component-root"
-              : target.object.propertyType,
-            allowed: ["list"]
-          });
-        }
-        invoke(
-          target.object as MutableObject,
-          "setListItems",
-          [listItemsFor(context, operation.items, `${path}.items`)],
-          `${path}.items`
-        );
-      }
-      return;
-    case "replace-node": {
+    case "replace": {
       const target = targets[0]!;
       if (target.kind === "root") {
         patchError("INVALID_PATCH", "不能用普通节点替换组件根", { path });
@@ -1593,330 +2230,9 @@ function executeOperation(
         `${path}.node`
       );
       context.component.replaceChild(target.object, replacement);
-      return;
+      return [replacement.getId()];
     }
   }
-}
-
-type OpaqueFinding = ReturnType<typeof inspectOpaqueProjectXml>[number];
-
-function opaqueFindings(component: Component): OpaqueFinding[] {
-  const source = component.getExtras()._sourceComponentXml;
-  return typeof source === "string"
-    ? inspectOpaqueProjectXml("component", source)
-    : [];
-}
-
-function assertNoOpaqueDomainConflict(
-  component: Component,
-  domain: "displayTree" | "relations" | "listItems",
-  targetIds: readonly string[] = []
-): void {
-  const conflicts = opaqueFindings(component).filter((finding) => {
-    if (domain === "displayTree") {
-      return finding.path.startsWith("/component/displayList");
-    }
-    if (domain === "relations") {
-      return targetIds.some((id) =>
-        id === component.getId()
-          ? finding.path.startsWith("/component/relation")
-          : finding.path.includes(`#${id}/relation`)
-      );
-    }
-    return targetIds.some((id) => finding.path.includes(`#${id}/item`));
-  });
-  if (conflicts.length > 0) {
-    patchError(
-      "OPAQUE_CONTENT_CONFLICT",
-      `内容域 ${domain} 含有无法安全归属的未知 XML 结构`,
-      {
-        path: `replace.${domain}`,
-        actual: conflicts,
-        suggestedFix:
-          "改用增量 operations 保留未知结构，或先在 FairyGUI Editor 中移除冲突扩展"
-      }
-    );
-  }
-}
-
-function replacementNode(
-  node: FairyDomNode,
-  path: string
-): FairyDomNewNode {
-  if (node.type === "tree" || node.type === "loader3d") {
-    patchError(
-      "READ_ONLY_CAPABILITY",
-      `节点类型 ${node.type} 在 V1 中只读，不能参与整树替换`,
-      {
-        path,
-        actual: node.capability,
-        allowed: ["implemented/read-write"]
-      }
-    );
-  }
-  const { id: _id, ...value } = node;
-  return value;
-}
-
-function replacementContext(
-  document: Document,
-  packageId: string,
-  componentId: string,
-  component: Component,
-  nodes: readonly FairyDomNode[]
-): EngineContext {
-  return {
-    document,
-    packageId,
-    componentId,
-    component,
-    clientRefs: {},
-    clientRefTypes: new Map(),
-    reservedNodeTypes: new Map(
-      nodes
-        .filter((node) => node.type !== "tree" && node.type !== "loader3d")
-        .map((node) => [node.id, node.type] as const)
-    ),
-    replacementScope: true
-  };
-}
-
-function replaceDisplayTree(
-  context: EngineContext,
-  value: readonly FairyDomNode[]
-): void {
-  assertNoOpaqueDomainConflict(context.component, "displayTree");
-  const ids = value.map((node) => node.id);
-  if (new Set(ids).size !== ids.length) {
-    const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
-    patchError("INVALID_DOM", "displayTree 中的节点 ID 必须唯一", {
-      path: "replace.displayTree",
-      actual: duplicate
-    });
-  }
-
-  const next = value.map((node, index) =>
-    createNode(
-      context,
-      replacementNode(node, `replace.value[${index}]`),
-      node.id,
-      `replace.value[${index}]`
-    )
-  );
-  for (const child of context.component.listChildren()) {
-    context.component.removeChild(child);
-  }
-  for (const child of next) context.component.addChild(child);
-}
-
-function replaceComponentProperties(
-  context: EngineContext,
-  value: Extract<
-    DomContentReplacement,
-    { domain: "componentProperties" }
-  >["value"]
-): void {
-  applyStyleToRoot(context.component, value.style, "replace.value.style");
-  context.component
-    .setSize(value.style.width ?? 0, value.style.height ?? 0)
-    .setMinWidth(value.style.minWidth ?? 0)
-    .setMaxWidth(value.style.maxWidth ?? 0)
-    .setMinHeight(value.style.minHeight ?? 0)
-    .setMaxHeight(value.style.maxHeight ?? 0)
-    .setPivotX(value.style.pivotX ?? 0)
-    .setPivotY(value.style.pivotY ?? 0)
-    .setPivotAsAnchor(value.style.pivotAsAnchor ?? false);
-
-  const overflowValues = {
-    visible: OverflowType.Visible,
-    hidden: OverflowType.Hidden,
-    scroll: OverflowType.Scroll
-  };
-  if (
-    value.content.overflow !== "scroll"
-    && value.content.scrollAxis !== undefined
-  ) {
-    patchError(
-      "INVALID_DOM",
-      "scrollAxis 只能在 overflow 为 scroll 时设置",
-      {
-        path: "replace.value.content.scrollAxis",
-        actual: value.content.scrollAxis,
-        allowed: ["overflow: scroll"]
-      }
-    );
-  }
-  context.component.setOverflow(overflowValues[value.content.overflow]);
-  if (value.content.overflow === "scroll") {
-    const scrollValues = {
-      horizontal: ScrollType.Horizontal,
-      vertical: ScrollType.Vertical,
-      both: ScrollType.Both
-    };
-    context.component.setScrollType(
-      scrollValues[value.content.scrollAxis ?? "vertical"]
-    );
-  }
-  context.component.setOpaque(value.content.opaque ?? true);
-  context.component.setBgColor(value.content.backgroundColor ?? "");
-  context.component.setBgColorEnabled(
-    value.content.backgroundColor !== undefined
-  );
-  if (value.content.maskId !== undefined) {
-    const resolved = resolveReferenceId(
-      context,
-      value.content.maskId,
-      "replace.value.content.maskId"
-    );
-    if (resolved === context.componentId) {
-      patchError("INVALID_DOM", "组件根不能作为自身遮罩", {
-        path: "replace.value.content.maskId",
-        actual: resolved
-      });
-    }
-    context.component.setMask(resolved);
-  }
-  else {
-    context.component.setMask("");
-  }
-  if (
-    value.content.reversedMask === true
-    && value.content.maskId === undefined
-  ) {
-    patchError("INVALID_DOM", "reversedMask 需要同时指定 maskId", {
-      path: "replace.value.content.reversedMask",
-      actual: true
-    });
-  }
-  context.component.setReversedMask(value.content.reversedMask ?? false);
-}
-
-function targetIds(targets: readonly PatchTarget[]): string[] {
-  return targets.map((target) =>
-    target.kind === "root"
-      ? target.component.getId()
-      : target.object.getId()
-  );
-}
-
-function applyReplacement(
-  document: Document,
-  packageId: string,
-  componentId: string,
-  component: Component,
-  replace: DomContentReplacement
-): DomPatchEngineData {
-  if (
-    replace.domain === "gears"
-    || replace.domain === "controllers"
-    || replace.domain === "transitions"
-  ) {
-    const capability = replace.domain === "transitions"
-      ? "animation.transition"
-      : "layout.controller-gear";
-    patchError(
-      "READ_ONLY_CAPABILITY",
-      `内容域 ${replace.domain} 在 V1 中只读`,
-      {
-        path: "replace.domain",
-        actual: capability,
-        allowed: ["implemented/read-write"]
-      }
-    );
-  }
-
-  const context = replacementContext(
-    document,
-    packageId,
-    componentId,
-    component,
-    replace.domain === "displayTree" ? replace.value : []
-  );
-  switch (replace.domain) {
-    case "displayTree":
-      replaceDisplayTree(context, replace.value);
-      break;
-    case "componentProperties":
-      context.replacementScope = false;
-      replaceComponentProperties(context, replace.value);
-      break;
-    case "relations": {
-      context.replacementScope = false;
-      const targets = selectTargets(
-        context,
-        replace.selector,
-        replace.expectedMatches,
-        "replace.selector"
-      );
-      for (const target of targets) {
-        assertWritableTarget(target, "replace.selector");
-      }
-      assertNoOpaqueDomainConflict(
-        component,
-        "relations",
-        targetIds(targets)
-      );
-      for (const target of targets) {
-        setNodeRelations(
-          context,
-          target.kind === "root"
-            ? target.component as Component & Record<string, unknown>
-            : target.object as unknown as MutableObject,
-          replace.value,
-          "replace.value"
-        );
-      }
-      break;
-    }
-    case "listItems": {
-      context.replacementScope = false;
-      const targets = selectTargets(
-        context,
-        replace.selector,
-        replace.expectedMatches,
-        "replace.selector"
-      );
-      for (const target of targets) {
-        assertWritableTarget(target, "replace.selector");
-        if (
-          target.kind === "root"
-          || target.object.propertyType !== PropertyType.G_LIST
-        ) {
-          patchError(
-            "INVALID_PATCH",
-            "listItems 内容域只能替换静态 List 节点",
-            {
-              path: "replace.selector",
-              actual: target.kind === "root"
-                ? "component-root"
-                : target.object.propertyType,
-              allowed: ["list"]
-            }
-          );
-        }
-      }
-      assertNoOpaqueDomainConflict(
-        component,
-        "listItems",
-        targetIds(targets)
-      );
-      const items = listItemsFor(context, replace.value, "replace.value");
-      for (const target of targets) {
-        invoke(
-          (target as NodeTarget).object as unknown as MutableObject,
-          "setListItems",
-          [items],
-          "replace.value"
-        );
-      }
-      break;
-    }
-  }
-  return {
-    appliedOperations: 1,
-    clientRefs: {},
-    dom: toFairyDomDocument(document, packageId, componentId)
-  };
 }
 
 function findComponent(
@@ -1986,17 +2302,6 @@ export class DomPatchEngine {
         patch.packageId,
         patch.componentId
       );
-      if (!("operations" in patch)) {
-        return ok(
-          applyReplacement(
-            document,
-            patch.packageId,
-            patch.componentId,
-            component,
-            patch.replace
-          )
-        );
-      }
       const allocated = allocateClientRefs(component, patch.operations);
       const context: EngineContext = {
         document,
@@ -2012,11 +2317,20 @@ export class DomPatchEngine {
         ),
         replacementScope: false
       };
-      patch.operations.forEach((operation, index) => {
-        executeOperation(context, operation, index);
+      const affectedNodeIds = new Set<string>();
+      const operationResults = patch.operations.map((operation, index) => {
+        const affected = executeOperation(context, operation, index);
+        for (const id of affected) affectedNodeIds.add(id);
+        return {
+          index,
+          op: operation.op,
+          affectedNodeIds: affected
+        };
       });
       return ok({
         appliedOperations: patch.operations.length,
+        operationResults,
+        affectedNodeIds: [...affectedNodeIds],
         clientRefs: { ...context.clientRefs },
         dom: toFairyDomDocument(
           document,

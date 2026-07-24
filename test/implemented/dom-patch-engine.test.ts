@@ -137,16 +137,16 @@ test("DOM patch operations allocate stable ids and resolve forward client refere
         }
       },
       {
-        op: "set-text",
+        op: "update",
         targetRef: "label",
         expectedMatches: 1,
-        text: "Created"
+        changes: { content: { text: "Created" } }
       },
       {
-        op: "set-style",
+        op: "update",
         selector: 'text[name="created-label"]',
         expectedMatches: 1,
-        changes: { opacity: 0.75, left: 24 }
+        changes: { style: { opacity: 0.75, left: 24 } }
       },
       {
         op: "move",
@@ -161,6 +161,14 @@ test("DOM patch operations allocate stable ids and resolve forward client refere
 
   assert.equal(data.appliedOperations, 5);
   assert.deepEqual(data.clientRefs, { label: "n10", layout: "n11" });
+  assert.deepEqual(data.operationResults, [
+    { index: 0, op: "insert", affectedNodeIds: ["n10"] },
+    { index: 1, op: "insert", affectedNodeIds: ["n11"] },
+    { index: 2, op: "update", affectedNodeIds: ["n10"] },
+    { index: 3, op: "update", affectedNodeIds: ["n10"] },
+    { index: 4, op: "move", affectedNodeIds: ["n11"] }
+  ]);
+  assert.deepEqual(data.affectedNodeIds, ["n10", "n11"]);
   assert.deepEqual(
     main.listChildren().map((child) => child.getId()),
     ["n11", "n3", "n7", "n8", "n9", "n10"]
@@ -497,41 +505,46 @@ test("typed resource fields reject incompatible FairyGUI resource kinds", () => 
   }
 });
 
-test("set, move, remove and replace-node enforce compatible writable targets", () => {
+test("update, move, remove and replace enforce compatible writable targets", () => {
   const { document } = fixture();
   const engine = new DomPatchEngine();
   const input = parsePatch({
     operations: [
       {
-        op: "set-name",
+        op: "update",
         selector: "#n3",
         expectedMatches: 1,
-        name: "renamed"
+        changes: {
+          name: "renamed",
+          relations: [{
+            targetId: COMPONENT_ID,
+            type: "Center_Center",
+            percent: true
+          }]
+        }
       },
       {
-        op: "set-relations",
-        selector: "#n3",
-        expectedMatches: 1,
-        relations: [{
-          targetId: COMPONENT_ID,
-          type: "Center_Center",
-          percent: true
-        }]
-      },
-      {
-        op: "set-list-items",
+        op: "update",
         selector: "#n7",
         expectedMatches: 1,
-        items: [{ title: "One" }, { title: "Two" }]
+        changes: {
+          content: {
+            items: [{ title: "One" }, { title: "Two" }]
+          }
+        }
       },
       {
-        op: "set-resource",
+        op: "update",
         selector: "#n9",
         expectedMatches: 1,
-        resource: { packageId: PACKAGE_ID, resourceId: "card1" }
+        changes: {
+          content: {
+            resource: { packageId: PACKAGE_ID, resourceId: "card1" }
+          }
+        }
       },
       {
-        op: "replace-node",
+        op: "replace",
         selector: "#n3",
         expectedMatches: 1,
         node: {
@@ -552,7 +565,7 @@ test("set, move, remove and replace-node enforce compatible writable targets", (
 
   const data = successData(engine.apply(document, input));
 
-  assert.equal(data.appliedOperations, 6);
+  assert.equal(data.appliedOperations, 5);
   const replacement = data.dom.root.children.find((node) => node.id === "n3");
   assert.equal(replacement?.type, "graph");
   assert.equal(replacement?.name, "replacement");
@@ -565,55 +578,59 @@ test("DOM patch failures use stable selector, boundary and capability errors", (
   for (const expectation of [
     {
       operation: {
-        op: "set-text",
+        op: "update",
         selector: "text:hover",
         expectedMatches: 1,
-        text: "bad"
+        changes: { content: { text: "bad" } }
       },
       code: "INVALID_SELECTOR"
     },
     {
       operation: {
-        op: "set-text",
+        op: "update",
         selector: "text",
         expectedMatches: 2,
-        text: "bad"
+        changes: { content: { text: "bad" } }
       },
       code: "SELECTOR_MATCH_COUNT"
     },
     {
       operation: {
-        op: "set-style",
+        op: "update",
         selector: "#n8",
         expectedMatches: 1,
-        changes: { left: 1 }
+        changes: { style: { left: 1 } }
       },
       code: "READ_ONLY_CAPABILITY"
     },
     {
       operation: {
-        op: "set-text",
+        op: "update",
         selector: "instance > text",
         expectedMatches: 1,
-        text: "bad"
+        changes: { content: { text: "bad" } }
       },
       code: "INSTANCE_BOUNDARY"
     },
     {
       operation: {
-        op: "set-style",
+        op: "update",
         selector: "component-root",
         expectedMatches: 1,
-        changes: { opacity: 0.5 }
+        changes: { style: { opacity: 0.5 } }
       },
       code: "INVALID_PATCH"
     },
     {
       operation: {
-        op: "set-resource",
+        op: "update",
         selector: "#n9",
         expectedMatches: 1,
-        resource: { packageId: PACKAGE_ID, resourceId: "missing" }
+        changes: {
+          content: {
+            resource: { packageId: PACKAGE_ID, resourceId: "missing" }
+          }
+        }
       },
       code: "RESOURCE_NOT_FOUND"
     }
@@ -632,11 +649,11 @@ test("DOM patch performs strict internal validation with precise paths", () => {
   const { document } = fixture();
   const input = parsePatch({
     operations: [{
-      op: "set-style",
+      op: "update",
       selector: "#n3",
       expectedMatches: 1,
       changes: {
-        left: "10px"
+        style: { left: "10px" }
       }
     }]
   });
@@ -646,7 +663,7 @@ test("DOM patch performs strict internal validation with precise paths", () => {
   assert.equal(result.ok, false);
   if (result.ok) return;
   assert.equal(result.error.code, "INVALID_PATCH");
-  assert.equal(result.error.path, "operations[0].changes.left");
+  assert.equal(result.error.path, "operations[0].changes.style.left");
   assert.notEqual(result.error.actual, undefined);
   assert.notEqual(result.error.allowed, undefined);
   assert.match(result.error.suggestedFix ?? "", /detail.*full|完整 DOM/i);
@@ -657,10 +674,10 @@ test("an operation cannot target a clientRef before its insert executes", () => 
   const input = parsePatch({
     operations: [
       {
-        op: "set-text",
+        op: "update",
         targetRef: "later",
         expectedMatches: 1,
-        text: "Too early"
+        changes: { content: { text: "Too early" } }
       },
       {
         op: "insert",
@@ -687,60 +704,124 @@ test("an operation cannot target a clientRef before its insert executes", () => 
   }
 });
 
-test("replace displayTree preserves supplied stable ids, order and references", () => {
-  const { document, main } = fixture();
-  const input = parsePatch({
-    replace: {
-      domain: "displayTree",
-      value: [
-        {
-          id: "legacy-title",
-          type: "text",
-          name: "title",
-          groupId: "layout-group",
-          style: { left: 8, top: 9 },
-          relations: [{
-            targetId: "layout-group",
-            type: "Left_Left",
-            percent: false
-          }],
-          content: { text: "Replacement" }
-        },
-        {
-          id: "layout-group",
+test("update uses recursive Merge Patch, array replacement and null clearing", () => {
+  const { document } = fixture();
+  const result = new DomPatchEngine().apply(document, parsePatch({
+    operations: [
+      {
+        op: "insert",
+        parentSelector: "component-root",
+        expectedMatches: 1,
+        clientRef: "layout",
+        node: {
           type: "group",
           name: "layout",
           style: {},
           relations: [],
-          content: { layout: "vertical", lineGap: 5 }
+          content: { layout: "horizontal" }
         }
-      ]
-    }
-  });
+      },
+      {
+        op: "update",
+        selector: "#n3",
+        expectedMatches: 1,
+        changes: {
+          name: "updated-title",
+          groupId: "layout",
+          style: { left: 50, opacity: 0.4 },
+          relations: [{
+            targetId: "layout",
+            type: "Left_Left",
+            percent: false
+          }],
+          content: { text: "After", color: "#abcdef" }
+        }
+      },
+      {
+        op: "update",
+        selector: "#n3",
+        expectedMatches: 1,
+        changes: {
+          groupId: null,
+          style: { opacity: null },
+          content: { color: null }
+        }
+      },
+      {
+        op: "update",
+        selector: "#n7",
+        expectedMatches: 1,
+        changes: {
+          content: {
+            items: [{ title: "Only replacement" }]
+          }
+        }
+      }
+    ]
+  }));
 
-  const data = successData(new DomPatchEngine().apply(document, input));
-
-  assert.equal(data.appliedOperations, 1);
-  assert.deepEqual(data.clientRefs, {});
-  assert.deepEqual(
-    main.listChildren().map((child) => child.getId()),
-    ["legacy-title", "layout-group"]
-  );
-  assert.equal(data.dom.root.children[0]?.groupId, "layout-group");
-  assert.deepEqual(data.dom.root.children[0]?.relations, [{
-    targetId: "layout-group",
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const title = result.data.dom.root.children.find((node) => node.id === "n3");
+  assert.equal(title?.name, "updated-title");
+  assert.equal(title?.groupId, undefined);
+  assert.equal(title?.style.left, 50);
+  assert.equal(title?.style.opacity, 1);
+  assert.deepEqual(title?.relations, [{
+    targetId: result.data.clientRefs.layout,
     type: "Left_Left",
     percent: false
   }]);
+  assert.equal(
+    title?.type === "text" ? title.content.text : undefined,
+    "After"
+  );
+  assert.equal(
+    title?.type === "text" ? title.content.color : undefined,
+    "#000000"
+  );
+  const list = result.data.dom.root.children.find((node) => node.id === "n7");
+  assert.deepEqual(
+    list?.type === "list" ? list.content.items : undefined,
+    [{ title: "Only replacement" }]
+  );
 });
 
-test("replace componentProperties, relations and listItems update one complete domain", () => {
-  {
-    const { document, main } = fixture();
-    const data = successData(new DomPatchEngine().apply(document, parsePatch({
-      replace: {
-        domain: "componentProperties",
-        value: {
+test("update rejects clearing required fields without mutating its target", () => {
+  const { document, main } = fixture();
+  const before = main.getChildById("n3");
+  const result = new DomPatchEngine().apply(document, parsePatch({
+    operations: [{
+      op: "update",
+      selector: "#n3",
+      expectedMatches: 1,
+      changes: {
+        content: { text: null }
+      }
+    }]
+  }));
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "INVALID_PATCH");
+    assert.equal(result.error.path, "operations[0].changes.content.text");
+  }
+  assert.equal(main.getChildById("n3"), before);
+  assert.equal(
+    (main.getChildById("n3") as unknown as { getText(): string }).getText(),
+    "Before"
+  );
+});
+
+test("generic update writes component roots, relations and static List items", () => {
+  const { document, main } = fixture();
+  const data = successData(new DomPatchEngine().apply(document, parsePatch({
+    operations: [
+      {
+        op: "update",
+        selector: "component-root",
+        expectedMatches: 1,
+        changes: {
           style: {
             width: 640,
             height: 360,
@@ -758,73 +839,79 @@ test("replace componentProperties, relations and listItems update one complete d
             reversedMask: true
           }
         }
-      }
-    })));
-    assert.equal(data.dom.root.style.width, 640);
-    assert.equal(data.dom.root.style.height, 360);
-    assert.equal(main.getMinWidth(), 100);
-    assert.equal(main.getPivotX(), 0.5);
-    assert.equal(main.getPivotAsAnchor(), true);
-    assert.deepEqual(data.dom.root.content, {
-      overflow: "scroll",
-      scrollAxis: "both",
-      opaque: false,
-      backgroundColor: "#112233",
-      maskId: "n3",
-      reversedMask: true
-    });
-  }
-
-  {
-    const { document } = fixture();
-    const data = successData(new DomPatchEngine().apply(document, parsePatch({
-      replace: {
-        domain: "relations",
+      },
+      {
+        op: "update",
         selector: "#n3",
         expectedMatches: 1,
-        value: [{
-          targetId: COMPONENT_ID,
-          type: "Width",
-          percent: true
-        }]
-      }
-    })));
-    assert.deepEqual(
-      data.dom.root.children.find((node) => node.id === "n3")?.relations,
-      [{ targetId: COMPONENT_ID, type: "Width", percent: true }]
-    );
-  }
-
-  {
-    const { document } = fixture();
-    const data = successData(new DomPatchEngine().apply(document, parsePatch({
-      replace: {
-        domain: "listItems",
+        changes: {
+          relations: [{
+            targetId: COMPONENT_ID,
+            type: "Width",
+            percent: true
+          }]
+        }
+      },
+      {
+        op: "update",
         selector: "#n7",
         expectedMatches: 1,
-        value: [{ title: "A" }, { title: "B" }, { title: "C" }]
+        changes: {
+          content: {
+            items: [{ title: "A" }, { title: "B" }, { title: "C" }]
+          }
+        }
       }
-    })));
-    const list = data.dom.root.children.find((node) => node.id === "n7");
-    assert.equal(list?.type === "list" && list.content.items.length, 3);
-  }
+    ]
+  })));
+
+  assert.equal(data.dom.root.style.width, 640);
+  assert.equal(data.dom.root.style.height, 360);
+  assert.equal(main.getMinWidth(), 100);
+  assert.equal(main.getPivotX(), 0.5);
+  assert.equal(main.getPivotAsAnchor(), true);
+  assert.deepEqual(data.dom.root.content, {
+    overflow: "scroll",
+    scrollAxis: "both",
+    opaque: false,
+    backgroundColor: "#112233",
+    maskId: "n3",
+    reversedMask: true
+  });
+  assert.deepEqual(
+    data.dom.root.children.find((node) => node.id === "n3")?.relations,
+    [{ targetId: COMPONENT_ID, type: "Width", percent: true }]
+  );
+  const list = data.dom.root.children.find((node) => node.id === "n7");
+  assert.equal(list?.type === "list" && list.content.items.length, 3);
 });
 
-test("planned replacement domains return their declared read-only capabilities", () => {
-  for (const domain of ["gears", "controllers", "transitions"] as const) {
-    const { document } = fixture();
-    const result = new DomPatchEngine().apply(document, parsePatch({
-      replace: { domain, value: [] }
-    }));
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.error.code, "READ_ONLY_CAPABILITY");
-      assert.equal(result.error.path, "replace.domain");
-    }
-  }
+test("heterogeneous multi-target update preflights every match before mutation", () => {
+  const { document, main } = fixture();
+  main.getChildById("n3")?.setName("shared");
+  main.addChild(
+    document.createGGraph("shared")
+      .setId("n10")
+      .setSize(20, 20)
+  );
+  const result = new DomPatchEngine().apply(document, parsePatch({
+    operations: [{
+      op: "update",
+      selector: '[name="shared"]',
+      expectedMatches: 2,
+      changes: { content: { text: "Must not partially apply" } }
+    }]
+  }));
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.error.code, "INVALID_PATCH");
+  assert.equal(
+    (main.getChildById("n3") as unknown as { getText(): string }).getText(),
+    "Before"
+  );
 });
 
-test("opaque content conflicts reject unsafe domain replacement before mutation", () => {
+test("ordinary update preserves opaque data owned by the target", () => {
   const opaqueXml = `<component size="320,180">
   <displayList vendorDisplay="keep">
     <text id="n3" name="title" text="Before">
@@ -834,87 +921,75 @@ test("opaque content conflicts reject unsafe domain replacement before mutation"
     <vendorWidget value="keep"/>
   </displayList>
 </component>`;
+  const { document, main } = fixture();
+  main.setExtras({
+    ...main.getExtras(),
+    _sourceComponentXml: opaqueXml
+  });
+  const title = main.getChildById("n3");
 
-  for (const replace of [
-    {
-      domain: "displayTree" as const,
-      value: []
-    },
-    {
-      domain: "relations" as const,
+  const result = new DomPatchEngine().apply(document, parsePatch({
+    operations: [{
+      op: "update",
       selector: "#n3",
       expectedMatches: 1,
-      value: []
-    },
-    {
-      domain: "listItems" as const,
-      selector: "#n7",
-      expectedMatches: 1,
-      value: []
-    }
-  ]) {
-    const { document, main } = fixture();
-    main.setExtras({
-      ...main.getExtras(),
-      _sourceComponentXml: opaqueXml
-    });
-    const beforeIds = main.listChildren().map((child) => child.getId());
+      changes: {
+        name: "preserved",
+        style: { left: 42 }
+      }
+    }]
+  }));
 
-    const result = new DomPatchEngine().apply(document, parsePatch({ replace }));
-
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.error.code, "OPAQUE_CONTENT_CONFLICT");
-      assert.equal(result.error.path, `replace.${replace.domain}`);
-    }
-    assert.deepEqual(
-      main.listChildren().map((child) => child.getId()),
-      beforeIds
-    );
-  }
+  assert.equal(result.ok, true);
+  assert.equal(main.getChildById("n3"), title);
+  assert.equal(main.getExtras()._sourceComponentXml, opaqueXml);
 });
 
-test("displayTree replacement rejects duplicate ids and planned node types", () => {
-  const textNode = {
-    id: "duplicate",
-    type: "text" as const,
-    name: "text",
-    style: {},
-    relations: [],
-    content: { text: "" }
-  };
-  {
-    const { document } = fixture();
-    const result = new DomPatchEngine().apply(document, parsePatch({
-      replace: {
-        domain: "displayTree",
-        value: [textNode, { ...textNode, name: "other" }]
+test("replace preserves the stable id and rejects planned node types", () => {
+  const { document } = fixture();
+  const replaced = new DomPatchEngine().apply(document, parsePatch({
+    operations: [{
+      op: "replace",
+      selector: "#n3",
+      expectedMatches: 1,
+      node: {
+        type: "graph",
+        name: "replacement",
+        style: { width: 20, height: 20 },
+        relations: [],
+        content: { shape: "ellipse" }
       }
-    }));
-    assert.equal(result.ok, false);
-    if (!result.ok) assert.equal(result.error.code, "INVALID_DOM");
+    }]
+  }));
+  assert.equal(replaced.ok, true);
+  if (replaced.ok) {
+    assert.equal(
+      replaced.data.dom.root.children.find((node) => node.id === "n3")?.type,
+      "graph"
+    );
   }
-  {
-    const { document } = fixture();
-    const result = new DomPatchEngine().apply(document, parsePatch({
-      replace: {
-        domain: "displayTree",
-        value: [{
-          id: "tree",
+
+  const { document: rejectedDocument } = fixture();
+  const rejected = new DomPatchEngine().apply(
+    rejectedDocument,
+    ApplyDomPatchInputSchema.parse({
+      projectId: "project-1",
+      packageId: PACKAGE_ID,
+      componentId: COMPONENT_ID,
+      operations: [{
+        op: "replace",
+        selector: "#n3",
+        expectedMatches: 1,
+        node: {
           type: "tree",
           name: "tree",
-          readOnly: true,
-          capability: "node.tree",
           style: {},
           relations: [],
-          content: {
-            layout: "single-column",
-            items: []
-          }
-        }]
-      }
-    }));
-    assert.equal(result.ok, false);
-    if (!result.ok) assert.equal(result.error.code, "READ_ONLY_CAPABILITY");
-  }
+          content: { layout: "single-column", items: [] }
+        }
+      }]
+    })
+  );
+  assert.equal(rejected.ok, false);
+  if (!rejected.ok) assert.equal(rejected.error.code, "INVALID_PATCH");
 });

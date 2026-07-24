@@ -29,7 +29,10 @@ import {
   FileTransactionManager,
   type FileTransactionData
 } from "../write/file-transaction.js";
-import { DomPatchEngine } from "./dom-patch-engine.js";
+import {
+  DomPatchEngine,
+  type DomPatchOperationResult
+} from "./dom-patch-engine.js";
 import { toFairyDomDocument } from "./openfairygui-adapter.js";
 
 const DEFAULT_FRESH_RETRIES = 3;
@@ -41,8 +44,9 @@ export interface DomPatchData {
   transactionId: string;
   affectedFiles: string[];
   appliedOperations: number;
+  operationResults: DomPatchOperationResult[];
+  affectedNodeIds: string[];
   clientRefs: Record<string, string>;
-  dom: FairyDomDocument;
 }
 
 export interface DomPatchBeforeCommitContext {
@@ -69,8 +73,9 @@ interface PreparedPatch {
   sourceContent: string;
   serialized: SerializedProjectFile;
   appliedOperations: number;
+  operationResults: DomPatchOperationResult[];
+  affectedNodeIds: string[];
   clientRefs: Record<string, string>;
-  dom: FairyDomDocument;
 }
 
 function projectFilePath(
@@ -392,8 +397,9 @@ export class DomPatchService {
       sourceContent,
       serialized,
       appliedOperations: applied.data.appliedOperations,
-      clientRefs: applied.data.clientRefs,
-      dom: roundtrip.data
+      operationResults: applied.data.operationResults,
+      affectedNodeIds: applied.data.affectedNodeIds,
+      clientRefs: applied.data.clientRefs
     });
   }
 
@@ -485,8 +491,9 @@ export class DomPatchService {
       transactionId: transaction.transactionId,
       affectedFiles: transaction.affectedFiles,
       appliedOperations: prepared.appliedOperations,
-      clientRefs: prepared.clientRefs,
-      dom: prepared.dom
+      operationResults: prepared.operationResults,
+      affectedNodeIds: prepared.affectedNodeIds,
+      clientRefs: prepared.clientRefs
     });
   }
 }

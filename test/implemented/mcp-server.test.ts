@@ -189,10 +189,10 @@ test("stdio DOM patch accepts a shallow payload then reports internal errors", a
         packageId: "pkg00001",
         componentId: "cmp01",
         operations: [{
-          op: "set-style",
+          op: "update",
           selector: "#n0",
           expectedMatches: 1,
-          changes: { left: "10px" }
+          changes: { style: { left: "10px" } }
         }]
       }
     });
@@ -200,7 +200,7 @@ test("stdio DOM patch accepts a shallow payload then reports internal errors", a
     assert.equal("isError" in result && result.isError, true);
     const envelope = structured(result);
     assert.equal(envelope.error?.code, "INVALID_PATCH");
-    assert.equal(envelope.error?.path, "operations[0].changes.left");
+    assert.equal(envelope.error?.path, "operations[0].changes.style.left");
     assert.notEqual(envelope.error?.actual, undefined);
     assert.notEqual(envelope.error?.allowed, undefined);
     assert.ok(envelope.error?.suggestedFix);
@@ -563,16 +563,16 @@ test("stdio-facing DOM patch handler atomically writes and immediately re-querie
         componentId: "cmp01",
         operations: [
           {
-            op: "set-text",
+            op: "update",
             selector: "#n0",
             expectedMatches: 1,
-            text: "Written through MCP"
+            changes: { content: { text: "Written through MCP" } }
           },
           {
-            op: "set-style",
+            op: "update",
             selector: "#n0",
             expectedMatches: 1,
-            changes: { opacity: 0.4 }
+            changes: { style: { opacity: 0.4 } }
           }
         ]
       }

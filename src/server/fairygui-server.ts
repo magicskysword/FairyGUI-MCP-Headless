@@ -111,7 +111,7 @@ const TOOL_DATA_OUTPUT_SCHEMAS: Record<
       clientRefs: { type: "object" },
       affectedFiles: { type: "array", items: { type: "string" } },
       operationResults: { type: "array", items: { type: "object" } },
-      affectedNodes: { type: "array", items: { type: "string" } }
+      affectedNodeIds: { type: "array", items: { type: "string" } }
     },
     required: [
       "projectId",
@@ -119,6 +119,8 @@ const TOOL_DATA_OUTPUT_SCHEMAS: Record<
       "componentId",
       "transactionId",
       "appliedOperations",
+      "operationResults",
+      "affectedNodeIds",
       "clientRefs",
       "affectedFiles"
     ],
@@ -260,7 +262,7 @@ const TOOL_DESCRIPTIONS: Record<FairyGuiToolName, string> = {
   "fairygui.query":
     "在一次调用中批量查询包、资源、组件、DOM、引用、能力矩阵和审计信息；单项失败不丢失其他结果。",
   "fairygui.apply_dom_patch":
-    "对一个现有组件原子执行最多 200 个 DOM 操作，或替换一个明确内容域；批次绝不部分成功。",
+    "对一个现有组件原子执行最多 200 个 insert、update、move、remove 或 replace DOM 操作；node 与 changes 会在工具内部按目标节点类型严格校验，批次绝不部分成功。",
   "fairygui.apply_resource_operations":
     "原子执行包与资源创建、收件箱导入、替换、重命名、包内移动和删除；批次绝不部分成功。",
   "fairygui.render_component":

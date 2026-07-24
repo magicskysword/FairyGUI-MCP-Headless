@@ -11,11 +11,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
 import { ApplyDomPatchInputSchema } from "../../src/contracts/tools.js";
+import type { FairyDomDocument } from "../../src/contracts/dom.js";
 import {
   DomPatchService,
   type DomPatchServiceOptions
 } from "../../src/dom/dom-patch-service.js";
 import { DomPatchEngine } from "../../src/dom/dom-patch-engine.js";
+import { toFairyDomDocument } from "../../src/dom/openfairygui-adapter.js";
 import { ProjectRegistry } from "../../src/project/project-registry.js";
 import { ProjectCommitCoordinator } from "../../src/write/commit-coordinator.js";
 import { FileTransactionManager } from "../../src/write/file-transaction.js";
@@ -144,6 +146,18 @@ function patch(
   });
 }
 
+async function readDom(context: {
+  registry: ProjectRegistry;
+  projectId: string;
+}): Promise<FairyDomDocument> {
+  const result = await context.registry.read(
+    context.projectId,
+    (document) => toFairyDomDocument(document, "pkg00001", "cmp01")
+  );
+  if (!result.ok) throw new Error(result.error.message);
+  return result.data;
+}
+
 test("DOM patch preparation uses the concurrent preparation queue", async () => {
   class TrackingCoordinator extends ProjectCommitCoordinator {
     public preparedCalls = 0;
@@ -166,10 +180,10 @@ test("DOM patch preparation uses the concurrent preparation queue", async () => 
   const context = await setup("prepared-queue", { coordinator });
   try {
     const result = await context.service.apply(patch(context.projectId, [{
-      op: "set-text",
+      op: "update",
       selector: "#n0",
       expectedMatches: 1,
-      text: "Prepared"
+      changes: { content: { text: "Prepared" } }
     }]));
 
     assert.equal(result.ok, true);
@@ -187,10 +201,10 @@ test("DOM patch service writes one component atomically and preserves opaque XML
     const packageBefore = await readFile(context.project.packageFile, "utf8");
     const result = await context.service.apply(patch(context.projectId, [
       {
-        op: "set-text",
+        op: "update",
         selector: "#n0",
         expectedMatches: 1,
-        text: "After"
+        changes: { content: { text: "After" } }
       },
       {
         op: "move",
@@ -218,6 +232,13 @@ test("DOM patch service writes one component atomically and preserves opaque XML
     assert.equal(result.data.appliedOperations, 3);
     assert.deepEqual(result.data.clientRefs, { badge: "n3" });
     assert.deepEqual(result.data.affectedFiles, ["assets/Demo/Main.xml"]);
+    assert.deepEqual(result.data.operationResults, [
+      { index: 0, op: "update", affectedNodeIds: ["n0"] },
+      { index: 1, op: "move", affectedNodeIds: ["n2"] },
+      { index: 2, op: "insert", affectedNodeIds: ["n3"] }
+    ]);
+    assert.deepEqual(result.data.affectedNodeIds, ["n0", "n2", "n3"]);
+    assert.equal("dom" in result.data, false);
     assert.match(result.data.transactionId, /^tx_/);
     const output = await readFile(context.project.componentFile, "utf8");
     assert.match(output, /text="After"/);
@@ -270,10 +291,10 @@ test("invalid DOM patch and transaction failure both leave source bytes unchange
     try {
       const before = await readFile(context.project.componentFile, "utf8");
       const result = await context.service.apply(patch(context.projectId, [{
-        op: "set-text",
+        op: "update",
         selector: "#missing",
         expectedMatches: 1,
-        text: "No"
+        changes: { content: { text: "No" } }
       }]));
       assert.equal(result.ok, false);
       if (!result.ok) assert.equal(result.error.code, "SELECTOR_MATCH_COUNT");
@@ -308,10 +329,10 @@ test("invalid DOM patch and transaction failure both leave source bytes unchange
       });
       const before = await readFile(project.componentFile, "utf8");
       const result = await service.apply(patch(opened.data.projectId, [{
-        op: "set-text",
+        op: "update",
         selector: "#n0",
         expectedMatches: 1,
-        text: "No"
+        changes: { content: { text: "No" } }
       }]));
       assert.equal(result.ok, false);
       if (!result.ok) {
@@ -345,10 +366,10 @@ test("a valid external edit before commit causes a fresh reparse and retry", asy
   project = context.project;
   try {
     const result = await context.service.apply(patch(context.projectId, [{
-      op: "set-style",
+      op: "update",
       selector: "#n0",
       expectedMatches: 1,
-      changes: { left: 44 }
+      changes: { style: { left: 44 } }
     }]));
 
     assert.equal(result.ok, true);
@@ -399,10 +420,10 @@ test("an external edit after the service comparison is never overwritten", async
   });
   try {
     const result = await context.service.apply(patch(context.projectId, [{
-      op: "set-style",
+      op: "update",
       selector: "#n0",
       expectedMatches: 1,
-      changes: { left: 44 }
+      changes: { style: { left: 44 } }
     }]));
 
     assert.equal(result.ok, false);
@@ -420,16 +441,16 @@ test("same-project concurrent patches commit in call order and later fields win"
   const context = await setup("queue");
   try {
     const first = context.service.apply(patch(context.projectId, [{
-      op: "set-text",
+      op: "update",
       selector: "#n0",
       expectedMatches: 1,
-      text: "First"
+      changes: { content: { text: "First" } }
     }]));
     const second = context.service.apply(patch(context.projectId, [{
-      op: "set-text",
+      op: "update",
       selector: "#n0",
       expectedMatches: 1,
-      text: "Second"
+      changes: { content: { text: "Second" } }
     }]));
     const results = await Promise.all([first, second]);
 
@@ -453,10 +474,10 @@ test("a queued patch fails clearly when an earlier patch deleted its target", as
       expectedMatches: 1
     }]));
     const editing = context.service.apply(patch(context.projectId, [{
-      op: "set-text",
+      op: "update",
       selector: "#n0",
       expectedMatches: 1,
-      text: "Too late"
+      changes: { content: { text: "Too late" } }
     }]));
     const [removed, failed] = await Promise.all([removing, editing]);
 
@@ -471,15 +492,15 @@ test("a queued patch fails clearly when an earlier patch deleted its target", as
   }
 });
 
-test("successful patch output is the semantically re-read DOM", async () => {
+test("successful patch returns a compact summary after semantic re-read", async () => {
   const context = await setup("roundtrip");
   try {
     const before = digest(await readFile(context.project.componentFile, "utf8"));
     const result = await context.service.apply(patch(context.projectId, [{
-      op: "set-style",
+      op: "update",
       selector: "#n0",
       expectedMatches: 1,
-      changes: { width: 180, opacity: 0.4 }
+      changes: { style: { width: 180, opacity: 0.4 } }
     }]));
     assert.equal(result.ok, true);
     if (!result.ok) return;
@@ -487,7 +508,15 @@ test("successful patch output is the semantically re-read DOM", async () => {
       digest(await readFile(context.project.componentFile, "utf8")),
       before
     );
-    const node = result.data.dom.root.children.find((item) => item.id === "n0");
+    assert.equal("dom" in result.data, false);
+    assert.deepEqual(result.data.operationResults, [{
+      index: 0,
+      op: "update",
+      affectedNodeIds: ["n0"]
+    }]);
+    assert.deepEqual(result.data.affectedNodeIds, ["n0"]);
+    const dom = await readDom(context);
+    const node = dom.root.children.find((item) => item.id === "n0");
     assert.equal(node?.style.width, 180);
     assert.equal(node?.style.opacity, 0.4);
   }
@@ -518,10 +547,10 @@ test("a semantic DOM mismatch fails before any source file is written", async ()
   try {
     const before = await readFile(context.project.componentFile, "utf8");
     const result = await context.service.apply(patch(context.projectId, [{
-      op: "set-style",
+      op: "update",
       selector: "#n0",
       expectedMatches: 1,
-      changes: { width: 180 }
+      changes: { style: { width: 180 } }
     }]));
 
     assert.equal(result.ok, false);
@@ -894,8 +923,9 @@ test("every V1 writable node, style, Group, Relation and List survives disk roun
     }
     assert.equal(result.ok, true);
     assert.equal(result.data.appliedOperations, 10);
+    const dom = await readDom(context);
     assert.deepEqual(
-      result.data.dom.root.children.slice(-10).map((node) => node.type),
+      dom.root.children.slice(-10).map((node) => node.type),
       [
         "group",
         "image",
@@ -909,7 +939,7 @@ test("every V1 writable node, style, Group, Relation and List survives disk roun
         "instance"
       ]
     );
-    const image = result.data.dom.root.children.find(
+    const image = dom.root.children.find(
       (node) => node.name === "image"
     );
     assert.equal(image?.style.skewX, 3);
@@ -920,7 +950,7 @@ test("every V1 writable node, style, Group, Relation and List survives disk roun
       type: "Left_Left",
       percent: false
     }]);
-    const list = result.data.dom.root.children.find(
+    const list = dom.root.children.find(
       (node) => node.type === "list" && node.name === "list"
     );
     assert.equal(list?.type === "list" && list.content.lineCount, 2);
@@ -958,7 +988,8 @@ test("Button instance overlays inherit source extension and survive disk round-t
 
     assert.equal(result.ok, true);
     if (!result.ok) return;
-    const instance = result.data.dom.root.children.find(
+    const dom = await readDom(context);
+    const instance = dom.root.children.find(
       (node) => node.name === "action"
     );
     assert.equal(
@@ -978,7 +1009,7 @@ test("Button instance overlays inherit source extension and survive disk round-t
   }
 });
 
-test("component property replacement survives disk round-trip without losing opaque root data", async () => {
+test("component root update survives disk round-trip without losing opaque data", async () => {
   const context = await setup("component-properties");
   try {
     const result = await context.service.apply(
@@ -986,9 +1017,11 @@ test("component property replacement survives disk round-trip without losing opa
         projectId: context.projectId,
         packageId: "pkg00001",
         componentId: "cmp01",
-        replace: {
-          domain: "componentProperties",
-          value: {
+        operations: [{
+          op: "update",
+          selector: "component-root",
+          expectedMatches: 1,
+          changes: {
             style: {
               width: 640,
               height: 360,
@@ -1009,7 +1042,7 @@ test("component property replacement survives disk round-trip without losing opa
               reversedMask: true
             }
           }
-        }
+        }]
       })
     );
 
@@ -1018,9 +1051,10 @@ test("component property replacement survives disk round-trip without losing opa
         result.error.message
       } ${JSON.stringify(result.error.actual)}`);
     }
-    assert.equal(result.data.dom.root.style.width, 640);
-    assert.equal(result.data.dom.root.style.maxHeight, 500);
-    assert.deepEqual(result.data.dom.root.content, {
+    const dom = await readDom(context);
+    assert.equal(dom.root.style.width, 640);
+    assert.equal(dom.root.style.maxHeight, 500);
+    assert.deepEqual(dom.root.content, {
       overflow: "scroll",
       scrollAxis: "both",
       opaque: false,

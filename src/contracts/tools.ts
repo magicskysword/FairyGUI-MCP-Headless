@@ -1,13 +1,5 @@
 import { z } from "zod";
-import {
-  FairyDomComponentRootSchema,
-  FairyDomListItemSchema,
-  FairyDomNewNodeSchema,
-  FairyDomNodeSchema,
-  FairyDomRelationSchema,
-  FairyDomResourceReferenceSchema,
-  FairyDomStyleSchema
-} from "./dom.js";
+import { FairyDomNewNodeSchema } from "./dom.js";
 
 export const FAIRYGUI_TOOL_NAMES = [
   "fairygui.project",
@@ -147,16 +139,24 @@ export const QueryInputSchema = z.object({
 });
 export type QueryInput = z.infer<typeof QueryInputSchema>;
 
-const nonEmptyStyleChanges = FairyDomStyleSchema.refine(
-  (value) => Object.keys(value).length > 0,
-  "changes 至少需要一个样式字段"
-);
-
 const patchTargetShape = {
   selector: selector.optional(),
   targetRef: clientRef.optional(),
   expectedMatches
 } as const;
+
+const publicJsonObject = z.record(z.string(), z.unknown());
+export const DomUpdateChangesSchema = z.object({
+  name: z.string().nullable().optional(),
+  groupId: z.string().min(1).nullable().optional(),
+  style: publicJsonObject.nullable().optional(),
+  relations: z.array(publicJsonObject).nullable().optional(),
+  content: publicJsonObject.nullable().optional()
+}).strict().refine(
+  (changes) => Object.keys(changes).length > 0,
+  "changes 至少需要一个字段"
+);
+export type DomUpdateChanges = z.infer<typeof DomUpdateChangesSchema>;
 
 export const DomPatchOperationSchema = z.discriminatedUnion("op", [
   z.object({
@@ -168,8 +168,9 @@ export const DomPatchOperationSchema = z.discriminatedUnion("op", [
     node: FairyDomNewNodeSchema
   }).strict(),
   z.object({
-    op: z.literal("remove"),
-    ...patchTargetShape
+    op: z.literal("update"),
+    ...patchTargetShape,
+    changes: DomUpdateChangesSchema
   }).strict(),
   z.object({
     op: z.literal("move"),
@@ -178,37 +179,11 @@ export const DomPatchOperationSchema = z.discriminatedUnion("op", [
     toIndex: z.number().int().nonnegative()
   }).strict(),
   z.object({
-    op: z.literal("set-name"),
-    ...patchTargetShape,
-    name: z.string()
+    op: z.literal("remove"),
+    ...patchTargetShape
   }).strict(),
   z.object({
-    op: z.literal("set-style"),
-    ...patchTargetShape,
-    changes: nonEmptyStyleChanges
-  }).strict(),
-  z.object({
-    op: z.literal("set-text"),
-    ...patchTargetShape,
-    text: z.string()
-  }).strict(),
-  z.object({
-    op: z.literal("set-resource"),
-    ...patchTargetShape,
-    resource: FairyDomResourceReferenceSchema.nullable()
-  }).strict(),
-  z.object({
-    op: z.literal("set-relations"),
-    ...patchTargetShape,
-    relations: z.array(FairyDomRelationSchema)
-  }).strict(),
-  z.object({
-    op: z.literal("set-list-items"),
-    ...patchTargetShape,
-    items: z.array(FairyDomListItemSchema)
-  }).strict(),
-  z.object({
-    op: z.literal("replace-node"),
+    op: z.literal("replace"),
     ...patchTargetShape,
     expectedMatches: singleExpectedMatch,
     node: FairyDomNewNodeSchema
@@ -243,101 +218,50 @@ function validatePatchTarget(
   }
 }
 
-const rootPropertiesSchema = FairyDomComponentRootSchema.pick({
-  style: true,
-  content: true
-});
-
-const replacementTargetShape = {
-  selector,
-  expectedMatches
-} as const;
-
-export const DomContentReplacementSchema = z.discriminatedUnion("domain", [
-  z.object({
-    domain: z.literal("displayTree"),
-    value: z.array(FairyDomNodeSchema)
-  }).strict(),
-  z.object({
-    domain: z.literal("componentProperties"),
-    value: rootPropertiesSchema
-  }).strict(),
-  z.object({
-    domain: z.literal("relations"),
-    ...replacementTargetShape,
-    value: z.array(FairyDomRelationSchema)
-  }).strict(),
-  z.object({
-    domain: z.literal("listItems"),
-    ...replacementTargetShape,
-    value: z.array(FairyDomListItemSchema)
-  }).strict(),
-  z.object({
-    domain: z.literal("gears"),
-    value: z.array(z.unknown())
-  }).strict(),
-  z.object({
-    domain: z.literal("controllers"),
-    value: z.array(z.unknown())
-  }).strict(),
-  z.object({
-    domain: z.literal("transitions"),
-    value: z.array(z.unknown())
-  }).strict()
-]);
-export type DomContentReplacement = z.infer<typeof DomContentReplacementSchema>;
-
 const domPatchBaseShape = {
   projectId: nonEmptyId,
   packageId: nonEmptyId,
   componentId: nonEmptyId
 } as const;
 
-export const InternalApplyDomPatchInputSchema = z.union([
-  z.object({
-    ...domPatchBaseShape,
-    operations: z.array(DomPatchOperationSchema).min(1).max(200)
-  }).strict().superRefine((value, context) => {
-    const declaredClientRefs = new Set<string>();
-    value.operations.forEach((operation, index) => {
-      if (operation.op !== "insert") return;
-      if (declaredClientRefs.has(operation.clientRef)) {
+export const InternalApplyDomPatchInputSchema = z.object({
+  ...domPatchBaseShape,
+  operations: z.array(DomPatchOperationSchema).min(1).max(200)
+}).strict().superRefine((value, context) => {
+  const declaredClientRefs = new Set<string>();
+  value.operations.forEach((operation, index) => {
+    if (operation.op !== "insert") return;
+    if (declaredClientRefs.has(operation.clientRef)) {
+      context.addIssue({
+        code: "custom",
+        path: ["operations", index, "clientRef"],
+        message: `同一批次不能重复声明 clientRef：${operation.clientRef}`
+      });
+    }
+    declaredClientRefs.add(operation.clientRef);
+  });
+  value.operations.forEach((operation, index) => {
+    if (operation.op !== "insert") {
+      validatePatchTarget(operation, context, ["operations", index]);
+      if (
+        operation.targetRef !== undefined
+        && !declaredClientRefs.has(operation.targetRef)
+      ) {
         context.addIssue({
           code: "custom",
-          path: ["operations", index, "clientRef"],
-          message: `同一批次不能重复声明 clientRef：${operation.clientRef}`
+          path: ["operations", index, "targetRef"],
+          message: `targetRef 必须引用同一批次声明的插入节点：${
+            operation.targetRef
+          }`
         });
       }
-      declaredClientRefs.add(operation.clientRef);
-    });
-    value.operations.forEach((operation, index) => {
-      if (operation.op !== "insert") {
-        validatePatchTarget(operation, context, ["operations", index]);
-        if (
-          operation.targetRef !== undefined
-          && !declaredClientRefs.has(operation.targetRef)
-        ) {
-          context.addIssue({
-            code: "custom",
-            path: ["operations", index, "targetRef"],
-            message: `targetRef 必须引用同一批次声明的插入节点：${
-              operation.targetRef
-            }`
-          });
-        }
-      }
-    });
-  }),
-  z.object({
-    ...domPatchBaseShape,
-    replace: DomContentReplacementSchema
-  }).strict()
-]);
+    }
+  });
+});
 export type InternalApplyDomPatchInput = z.infer<
   typeof InternalApplyDomPatchInputSchema
 >;
 
-const publicJsonObject = z.record(z.string(), z.unknown());
 const publicPatchTargetShape = {
   selector: selector.optional(),
   targetRef: clientRef.optional(),
@@ -354,76 +278,32 @@ export const PublicDomPatchOperationSchema = z.discriminatedUnion("op", [
     node: publicJsonObject
   }).strict(),
   z.object({
-    op: z.literal("remove"),
-    ...publicPatchTargetShape
-  }).strict(),
-  z.object({
-    op: z.literal("move"),
-    ...publicPatchTargetShape,
-    toIndex: z.number().int().nonnegative()
-  }).strict(),
-  z.object({
-    op: z.literal("set-name"),
-    ...publicPatchTargetShape,
-    name: z.string()
-  }).strict(),
-  z.object({
-    op: z.literal("set-style"),
+    op: z.literal("update"),
     ...publicPatchTargetShape,
     changes: publicJsonObject
   }).strict(),
   z.object({
-    op: z.literal("set-text"),
+    op: z.literal("move"),
     ...publicPatchTargetShape,
-    text: z.string()
+    expectedMatches: singleExpectedMatch,
+    toIndex: z.number().int().nonnegative()
   }).strict(),
   z.object({
-    op: z.literal("set-resource"),
+    op: z.literal("remove"),
     ...publicPatchTargetShape,
-    resource: publicJsonObject.nullable()
   }).strict(),
   z.object({
-    op: z.literal("set-relations"),
+    op: z.literal("replace"),
     ...publicPatchTargetShape,
-    relations: z.array(publicJsonObject)
-  }).strict(),
-  z.object({
-    op: z.literal("set-list-items"),
-    ...publicPatchTargetShape,
-    items: z.array(publicJsonObject)
-  }).strict(),
-  z.object({
-    op: z.literal("replace-node"),
-    ...publicPatchTargetShape,
+    expectedMatches: singleExpectedMatch,
     node: publicJsonObject
   }).strict()
 ]);
 
-const PublicDomContentReplacementSchema = z.object({
-  domain: z.enum([
-    "displayTree",
-    "componentProperties",
-    "relations",
-    "listItems",
-    "gears",
-    "controllers",
-    "transitions"
-  ]),
-  selector: selector.optional(),
-  expectedMatches: expectedMatches.optional(),
-  value: z.unknown()
+export const ApplyDomPatchInputSchema = z.object({
+  ...domPatchBaseShape,
+  operations: z.array(PublicDomPatchOperationSchema).min(1).max(200)
 }).strict();
-
-export const ApplyDomPatchInputSchema = z.union([
-  z.object({
-    ...domPatchBaseShape,
-    operations: z.array(PublicDomPatchOperationSchema).min(1).max(200)
-  }).strict(),
-  z.object({
-    ...domPatchBaseShape,
-    replace: PublicDomContentReplacementSchema
-  }).strict()
-]);
 export type ApplyDomPatchInput = z.infer<typeof ApplyDomPatchInputSchema>;
 
 const conflictPolicy = z.enum(["reject", "rename", "replace"]);

@@ -276,10 +276,12 @@ try {
             packageId: target.component.packageId,
             componentId: target.component.componentId,
             operations: [{
-              op: "set-style",
+              op: "update",
               selector: `#${target.node.id}`,
               expectedMatches: 1,
-              changes: { left: initialLeft + index + 1 }
+              changes: {
+                style: { left: initialLeft + index + 1 }
+              }
             }]
           })
         );

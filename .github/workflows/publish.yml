@@ -1,0 +1,65 @@
+name: Publish npm package
+
+on:
+  push:
+    tags:
+      - 'npm-v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish fairygui-mcp-headless
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Verify release tag
+        shell: bash
+        run: |
+          package_version=$(node -p "require('./package.json').version")
+          expected_tag="npm-v${package_version}"
+
+          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} must equal ${expected_tag}"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm install --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run implemented tests
+        run: npm run test:implemented
+
+      - name: Build package
+        run: npm run build
+
+      - name: Publish package
+        shell: bash
+        run: |
+          package_version=$(node -p "require('./package.json').version")
+          if npm view "@magicskysword/fairygui-mcp-headless@${package_version}" version >/dev/null 2>&1; then
+            echo "@magicskysword/fairygui-mcp-headless@${package_version} is already published"
+          else
+            npm publish . --access public
+          fi

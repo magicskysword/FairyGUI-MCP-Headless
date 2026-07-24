@@ -25,6 +25,9 @@ const benchmarkPath = fileURLToPath(
 const packSmokePath = fileURLToPath(
   new URL("../../scripts/pack-smoke.ts", import.meta.url)
 );
+const publishWorkflowPath = fileURLToPath(
+  new URL("../../.github/workflows/publish.yml", import.meta.url)
+);
 const sourceDirectory = fileURLToPath(new URL("../../src/", import.meta.url));
 const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
   name: string;
@@ -225,6 +228,26 @@ test("package exposes an isolated tarball installation smoke test", async () => 
   ]) {
     assert.match(smoke, new RegExp(packageName.replaceAll("/", "\\/")));
   }
+});
+
+test("npm trusted publishing is tokenless, version-gated, and standalone", async () => {
+  const workflow = await readFile(publishWorkflowPath, "utf8");
+
+  assert.match(workflow, /tags:\s*\r?\n\s*-\s*["']npm-v\*["']/);
+  assert.match(workflow, /id-token:\s*write/);
+  assert.match(workflow, /contents:\s*read/);
+  assert.match(workflow, /actions\/checkout@v6/);
+  assert.match(workflow, /actions\/setup-node@v6/);
+  assert.match(workflow, /node-version:\s*["']24["']/);
+  assert.match(workflow, /package-manager-cache:\s*false/);
+  assert.match(workflow, /package\.json/);
+  assert.match(workflow, /npm install --ignore-scripts/);
+  assert.match(workflow, /playwright install --with-deps chromium/);
+  assert.match(workflow, /npm run typecheck/);
+  assert.match(workflow, /npm run test:implemented/);
+  assert.match(workflow, /npm run build/);
+  assert.match(workflow, /npm publish \. --access public/);
+  assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|--provenance/);
 });
 
 test("shipped documentation explains installation, tools and V1 boundaries", async () => {

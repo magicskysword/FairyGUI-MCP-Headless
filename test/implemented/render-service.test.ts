@@ -120,6 +120,78 @@ async function createRuntimeInstanceProject(): Promise<string> {
   return directory;
 }
 
+async function createHighResolutionImageProject(): Promise<{
+  directory: string;
+  sourceFiles: string[];
+}> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-scale-render-"));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  const projectFile = path.join(directory, "Demo.fairy");
+  const packageFile = path.join(packageDirectory, "package.xml");
+  const componentFile = path.join(packageDirectory, "Main.xml");
+  const baseImageFile = path.join(packageDirectory, "icon.png");
+  const highResolutionImageFile = path.join(
+    packageDirectory,
+    "icon@2x.png"
+  );
+  await writeFile(
+    projectFile,
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="scale-render-project" type="DOM" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    packageFile,
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <image id="base1" name="icon.png" path="/" exported="true"/>
+    <image id="high2" name="icon@2x.png" path="/"/>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  await writeFile(
+    componentFile,
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="32,32">
+  <displayList>
+    <image id="n0" name="icon" src="base1" xy="0,0" size="32,32"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  await sharp({
+    create: {
+      width: 8,
+      height: 8,
+      channels: 4,
+      background: { r: 220, g: 20, b: 60, alpha: 1 }
+    }
+  }).png().toFile(baseImageFile);
+  await sharp({
+    create: {
+      width: 16,
+      height: 16,
+      channels: 4,
+      background: { r: 30, g: 100, b: 230, alpha: 1 }
+    }
+  }).png().toFile(highResolutionImageFile);
+  return {
+    directory,
+    sourceFiles: [
+      projectFile,
+      packageFile,
+      componentFile,
+      baseImageFile,
+      highResolutionImageFile
+    ]
+  };
+}
+
 async function createControllerStateProject(): Promise<{
   directory: string;
   componentFile: string;
@@ -1048,6 +1120,59 @@ test("render_component applies explicit viewport scale and only saves on request
       await readFile(result.data.image.filePath!),
       Buffer.from(result.data.image.data, "base64")
     );
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component selects implicit high-resolution resources at scale 2 without writing", async () => {
+  const { directory, sourceFiles } = await createHighResolutionImageProject();
+  const sourceBefore = await Promise.all(sourceFiles.map((file) => readFile(file)));
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  assert.equal(opened.ok, true, JSON.stringify(opened));
+  if (!opened.ok) return;
+  const renderer = new RenderService(registry);
+
+  try {
+    const renderAtScale = async (scale: number) => {
+      const result = await renderer.render(RenderComponentInputSchema.parse({
+        projectId: opened.data.projectId,
+        packageId: "pkg00001",
+        componentId: "cmp01",
+        scale
+      }));
+      if (!result.ok) assert.fail(result.error.message);
+      assert.equal(result.ok, true, JSON.stringify(result));
+      return result.data;
+    };
+    const atOne = await renderAtScale(1);
+    const atTwo = await renderAtScale(2);
+    const sampleCenter = async (data: string) => {
+      const { data: pixels, info } = await sharp(
+        Buffer.from(data, "base64")
+      ).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const offset = (
+        Math.floor(info.height / 2) * info.width
+        + Math.floor(info.width / 2)
+      ) * info.channels;
+      return [...pixels.subarray(offset, offset + 4)];
+    };
+
+    assert.deepEqual(
+      { width: atOne.image.width, height: atOne.image.height },
+      { width: 32, height: 32 }
+    );
+    assert.deepEqual(
+      { width: atTwo.image.width, height: atTwo.image.height },
+      { width: 64, height: 64 }
+    );
+    assert.deepEqual(await sampleCenter(atOne.image.data), [220, 20, 60, 255]);
+    assert.deepEqual(await sampleCenter(atTwo.image.data), [30, 100, 230, 255]);
+    const sourceAfter = await Promise.all(sourceFiles.map((file) => readFile(file)));
+    assert.deepEqual(sourceAfter, sourceBefore);
   }
   finally {
     await renderer.close();

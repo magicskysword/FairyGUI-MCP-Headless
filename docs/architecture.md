@@ -223,6 +223,10 @@ BrowserContext 加载全部内存包后，按包 ID 和组件 ID 构造真实 Fa
 仍可能产生微量像素抖动，因此不承诺 Unity 像素真值。可选 `saveToFile:true`
 将 PNG 保存到系统临时目录；默认以内联 MCP image content 返回。
 
+`scale` 既设置 BrowserContext 的设备像素密度，也驱动 FairyGUI 的资源等级。
+内存发布会识别同路径、同类型和同分支下的 `@2x/@3x/@4x` 隐式变体，即使变体
+未单独导出也会进入依赖闭包和图集；缺失等级沿用 FairyGUI 的高分辨率回退语义。
+
 `state.controllers` 可在隔离 BrowserContext 内按受限 DOM 选择器设置控制器页，
 支持 `selectedIndex`、`pageId` 或 `pageName` 三选一；`state.scrolls` 可按非负
 像素 `x`/`y` 设置启用滚动组件的位置；`state.lists` 可通过 `selectedIndex`

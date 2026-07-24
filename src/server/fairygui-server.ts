@@ -43,7 +43,7 @@ export const SERVER_INSTRUCTIONS = [
   "磁盘始终是唯一事实来源；每次调用前会刷新外部变更，写操作会原子落盘且不提供草稿、Undo/Redo、revision 或 Git。",
   "DOM 使用受限的 HTML/CSS 风格知识：仅支持已声明的节点、样式名和选择器，不等同于浏览器 DOM/CSS。",
   "尽量把同一意图合并到 query、apply_dom_patch 或 apply_resource_operations 的一个批次中；写目标必须提供 expectedMatches。",
-  "render_component 会在内存中编译未发布工程并使用 fairygui-dom runtime-preview；state.controllers/state.lists/state.trees/state.scrolls 可设置仅用于本次截图的控制器页、List/Tree 状态和滚动位置，它不是 Unity 像素真值。"
+  "render_component 会在内存中编译未发布工程并使用 fairygui-dom runtime-preview；scale=2/3/4 会选择对应高分辨率资源，state.controllers/state.lists/state.trees/state.scrolls 可设置仅用于本次截图的控制器页、List/Tree 状态和滚动位置，它不是 Unity 像素真值。"
 ].join("\n");
 
 interface DomPatchHandler {
@@ -111,7 +111,7 @@ const TOOL_DESCRIPTIONS: Record<FairyGuiToolName, string> = {
   "fairygui.apply_resource_operations":
     "原子执行包与资源创建、收件箱导入、替换、重命名、包内移动和删除；批次绝不部分成功。",
   "fairygui.render_component":
-    "在内存中编译未发布工程，用隔离 FairyGUI-dom runtime 渲染并返回 PNG；可按受限选择器临时设置当前截图的控制器页、List/Tree 状态和滚动位置且不写盘。",
+    "在内存中编译未发布工程，用隔离 FairyGUI-dom runtime 渲染并返回 PNG；scale 会同时控制截图像素密度和 @2x/@3x/@4x 资源选择，可按受限选择器临时设置当前截图的控制器页、List/Tree 状态和滚动位置且不写盘。",
   "fairygui.validate":
     "执行 quick、roundtrip、publish 或 full 校验。工程问题仍是成功调用，并在 data.valid 中返回 false。"
 };

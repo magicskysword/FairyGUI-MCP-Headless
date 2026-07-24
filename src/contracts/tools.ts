@@ -557,7 +557,9 @@ export const RenderComponentInputSchema = z.object({
   componentId: nonEmptyId,
   width: z.number().int().min(1).max(4096).optional(),
   height: z.number().int().min(1).max(4096).optional(),
-  scale: z.number().finite().min(0.25).max(4).default(1),
+  scale: z.number().finite().min(0.25).max(4).default(1).describe(
+    "截图设备缩放；2/3/4 同时选择对应 @2x/@3x/@4x 资源，缺失时按 FairyGUI 规则回退"
+  ),
   background: z.string().min(1).optional(),
   state: RenderTransientStateSchema.optional(),
   saveToFile: z.boolean().default(false)

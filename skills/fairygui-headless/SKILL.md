@@ -70,6 +70,8 @@ description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染并校验本�
 
 工具会直接从未发布的工程在内存中编译运行时包，并执行真实 FairyGUI-dom 组件与资源加载；临时运行时产物不会写入源工程。预览应在位置、显示、图片和颜色上肉眼接近 Editor，但因浏览器与 Unity/Editor 的渲染后端不同，仍不是像素真值。遇到外部资源、计划能力或渲染差异时先阅读 diagnostics，再决定修改。浏览器缺失时按 `BROWSER_NOT_INSTALLED.suggestedFix` 安装 Playwright Chromium；工具不会静默下载或回退到系统浏览器。
 
+`scale` 同时控制截图像素密度和 FairyGUI 高分辨率资源选择；需要检查 `@2x/@3x/@4x` 资源时分别传 `2/3/4`。隐式变体不要求单独导出，也不会因预览而写回工程。
+
 需要查看控制器的非默认页、List/Tree 状态或滚动区域时，在同一次调用中传入临时状态。`state.controllers` 每项使用受限 DOM `selector`、`expectedMatches` 和控制器 `controller`，并以 `selectedIndex`、`pageId` 或 `pageName` 三选一指定页面；`state.lists` 用 `selectedIndex`（`-1` 清空）或唯一的 `selectedIndices` 设置非 Tree 列表；`state.trees` 用逐级子节点索引组成的 `nodePath` 设置 folder 展开状态和选中节点，`selectedPath:null` 清空选择；`state.scrolls` 使用相同目标约束和非负像素 `x`/`y`，位置必须处于返回的实际可滚范围。临时状态可穿入已实例化的嵌套组件，但只存在于该次隔离截图中，不会写盘或影响下一次渲染。遇到 `SELECTOR_MATCH_COUNT` 或 `TRANSIENT_STATE_INVALID` 时根据返回的 `actual`、`allowed` 修正调用，不要猜测页面、项目索引、Tree 路径或依赖静默夹取。
 
 `fairygui.validate` 发现工程问题时仍是合法成功结果：检查 `data.valid`，不要只看 MCP `isError`。非法参数、找不到目标、能力越界或基础设施故障会返回 `{ ok:false, error }` 并设置 `isError:true`。

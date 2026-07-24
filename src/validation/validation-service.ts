@@ -499,7 +499,8 @@ export class ValidationService {
         output: temporaryDirectory,
         packages: freshScope.data.packages.map((pkg) => pkg.getName()),
         basePath: path.join(status.data.projectDirectory, "assets"),
-        fs: publishFileSystem()
+        fs: publishFileSystem(),
+        generateCode: false
       }));
       const files = await listFiles(temporaryDirectory);
       const binaryFiles = files.filter((filePath) =>

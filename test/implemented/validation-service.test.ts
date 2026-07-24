@@ -4,6 +4,7 @@ import {
   mkdir,
   readFile,
   rm,
+  stat,
   writeFile
 } from "node:fs/promises";
 import os from "node:os";
@@ -25,6 +26,7 @@ afterEach(async () => {
 
 async function createProject(options: {
   brokenReference?: boolean;
+  codeGeneration?: boolean;
 } = {}): Promise<{
   directory: string;
   componentFile: string;
@@ -43,6 +45,9 @@ async function createProject(options: {
     path.join(packageDirectory, "package.xml"),
     `<?xml version="1.0" encoding="utf-8"?>
 <packageDescription id="pkg00001">
+  ${options.codeGeneration
+    ? '<publish genCode="true" codePath="generated"/>'
+    : ""}
   <resources>
     <component id="cmp01" name="Main.xml" path="/" exported="true"/>
     <image id="img01" name="hero.png" path="/" exported="true"/>
@@ -50,6 +55,20 @@ async function createProject(options: {
 </packageDescription>`,
     "utf8"
   );
+  if (options.codeGeneration) {
+    const settingsDirectory = path.join(directory, "settings");
+    await mkdir(settingsDirectory, { recursive: true });
+    await writeFile(
+      path.join(settingsDirectory, "Publish.json"),
+      JSON.stringify({
+        codeGeneration: {
+          allowGenCode: true,
+          codePath: "generated"
+        }
+      }),
+      "utf8"
+    );
+  }
   const componentFile = path.join(packageDirectory, "Main.xml");
   await writeFile(
     componentFile,
@@ -69,10 +88,12 @@ async function createProject(options: {
 
 async function openValidator(options: {
   brokenReference?: boolean;
+  codeGeneration?: boolean;
 } = {}): Promise<{
   registry: ProjectRegistry;
   validator: ValidationService;
   projectId: string;
+  projectDirectory: string;
   componentFile: string;
 }> {
   const fixture = await createProject(options);
@@ -83,6 +104,7 @@ async function openValidator(options: {
     registry,
     validator: new ValidationService(registry),
     projectId: opened.data.projectId,
+    projectDirectory: fixture.directory,
     componentFile: fixture.componentFile
   };
 }
@@ -169,6 +191,31 @@ test("publish and full modes execute the documented validation phase sets", asyn
         ["quick", "roundtrip", "publish"]
       );
     }
+  }
+  finally {
+    await registry.closeAll();
+  }
+});
+
+test("publish validation never writes configured generated code", async () => {
+  const {
+    registry,
+    validator,
+    projectId,
+    projectDirectory
+  } = await openValidator({ codeGeneration: true });
+  const generatedDirectory = path.join(projectDirectory, "generated");
+  try {
+    const result = await validator.validate(ValidateInputSchema.parse({
+      projectId,
+      mode: "publish"
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    await assert.rejects(
+      stat(generatedDirectory),
+      (error: NodeJS.ErrnoException) => error.code === "ENOENT"
+    );
   }
   finally {
     await registry.closeAll();

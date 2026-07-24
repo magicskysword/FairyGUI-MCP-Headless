@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const FAIRY_DOM_SCHEMA_VERSION = 1 as const;
+
 export const FAIRYGUI_RELATION_TYPES = [
   "Left_Left",
   "Left_Center",
@@ -354,7 +356,7 @@ export const FairyDomComponentRootSchema = z.object({
 export type FairyDomComponentRoot = z.infer<typeof FairyDomComponentRootSchema>;
 
 export const FairyDomDocumentSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(FAIRY_DOM_SCHEMA_VERSION),
   packageId: z.string().min(1),
   componentId: z.string().min(1),
   root: FairyDomComponentRootSchema

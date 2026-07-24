@@ -37,6 +37,7 @@ import { ProjectCommitCoordinator } from "../write/commit-coordinator.js";
 import { FileTransactionManager } from "../write/file-transaction.js";
 import {
   PACKAGE_VERSION,
+  PROJECT_SERVICE_INFO,
   SERVER_NAME
 } from "../version.js";
 
@@ -437,15 +438,28 @@ export class FairyGuiMcpServer {
   private async project(
     input: ProjectInput
   ): Promise<ResultEnvelope<unknown>> {
+    let result: ResultEnvelope<unknown>;
     switch (input.action) {
       case "open":
-        return this.projects.open(input.path);
+        result = await this.projects.open(input.path);
+        break;
       case "list":
-        return this.projects.list();
+        result = this.projects.list();
+        break;
       case "status":
-        return this.projects.status(input.projectId);
+        result = this.projects.status(input.projectId);
+        break;
       case "close":
-        return this.projects.close(input.projectId);
+        result = await this.projects.close(input.projectId);
+        break;
     }
+    if (!result.ok) return result;
+    return {
+      ...result,
+      data: {
+        ...(result.data as Record<string, unknown>),
+        service: PROJECT_SERVICE_INFO
+      }
+    };
   }
 }

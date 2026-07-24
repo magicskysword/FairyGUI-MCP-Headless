@@ -127,6 +127,56 @@ test("MCP initialization advertises instructions and exactly seven strict tools"
   }
 });
 
+test("all project actions report service, DOM schema and runtime dependency versions", async () => {
+  const projectDirectory = await createProject();
+  const { app, client } = await connectServer();
+  try {
+    const expectedService = {
+      packageName: "@magicskysword/fairygui-mcp-headless",
+      version: "0.1.2",
+      domSchemaVersion: 1,
+      runtimeVersions: {
+        "@magicskysword/openfairygui-core": "0.2.2",
+        "@magicskysword/openfairygui-functions": "0.2.2",
+        "@magicskysword/fairygui-dom": "1.1.1"
+      }
+    };
+
+    const opened = structured(await client.callTool({
+      name: "fairygui.project",
+      arguments: { action: "open", path: projectDirectory }
+    }));
+    assert.equal(opened.ok, true);
+    assert.deepEqual(opened.data?.service, expectedService);
+    const projectId = String(opened.data?.projectId);
+
+    const listed = structured(await client.callTool({
+      name: "fairygui.project",
+      arguments: { action: "list" }
+    }));
+    assert.equal(listed.ok, true);
+    assert.deepEqual(listed.data?.service, expectedService);
+
+    const status = structured(await client.callTool({
+      name: "fairygui.project",
+      arguments: { action: "status", projectId }
+    }));
+    assert.equal(status.ok, true);
+    assert.deepEqual(status.data?.service, expectedService);
+
+    const closed = structured(await client.callTool({
+      name: "fairygui.project",
+      arguments: { action: "close", projectId }
+    }));
+    assert.equal(closed.ok, true);
+    assert.deepEqual(closed.data?.service, expectedService);
+  }
+  finally {
+    await client.close();
+    await app.close();
+  }
+});
+
 test("stdio-facing publish handler writes selected package definitions", async () => {
   const projectDirectory = await createProject();
   const { app, client } = await connectServer();

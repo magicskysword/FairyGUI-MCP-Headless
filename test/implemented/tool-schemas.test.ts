@@ -5,22 +5,56 @@ import {
   ApplyResourceOperationsInputSchema,
   FAIRYGUI_TOOL_NAMES,
   ProjectInputSchema,
+  PublishInputSchema,
   QueryInputSchema,
   RenderComponentInputSchema,
   TOOL_INPUT_SCHEMAS,
   ValidateInputSchema
 } from "../../src/contracts/tools.js";
 
-test("public contract exposes exactly the six V1 MCP tools", () => {
+test("public contract exposes exactly the seven MCP tools", () => {
   assert.deepEqual(FAIRYGUI_TOOL_NAMES, [
     "fairygui.project",
     "fairygui.query",
     "fairygui.apply_dom_patch",
     "fairygui.apply_resource_operations",
     "fairygui.render_component",
+    "fairygui.publish",
     "fairygui.validate"
   ]);
   assert.deepEqual(Object.keys(TOOL_INPUT_SCHEMAS), FAIRYGUI_TOOL_NAMES);
+});
+
+test("publish schema separates scope, type and one-off output override", () => {
+  assert.deepEqual(PublishInputSchema.parse({
+    projectId: "project-1"
+  }), {
+    projectId: "project-1",
+    publishType: "full"
+  });
+  assert.deepEqual(PublishInputSchema.parse({
+    projectId: "project-1",
+    packageIds: ["pkg00001", "pkg00002"],
+    publishType: "definitions",
+    outputPath: " release/ui "
+  }), {
+    projectId: "project-1",
+    packageIds: ["pkg00001", "pkg00002"],
+    publishType: "definitions",
+    outputPath: "release/ui"
+  });
+  assert.equal(PublishInputSchema.safeParse({
+    projectId: "project-1",
+    packageIds: []
+  }).success, false);
+  assert.equal(PublishInputSchema.safeParse({
+    projectId: "project-1",
+    packageIds: ["pkg00001", "pkg00001"]
+  }).success, false);
+  assert.equal(PublishInputSchema.safeParse({
+    projectId: "project-1",
+    compressed: true
+  }).success, false);
 });
 
 test("project schema models open/list/status/close without loose fields", () => {

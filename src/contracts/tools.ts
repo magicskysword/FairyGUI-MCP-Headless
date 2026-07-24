@@ -15,6 +15,7 @@ export const FAIRYGUI_TOOL_NAMES = [
   "fairygui.apply_dom_patch",
   "fairygui.apply_resource_operations",
   "fairygui.render_component",
+  "fairygui.publish",
   "fairygui.validate"
 ] as const;
 export type FairyGuiToolName = typeof FAIRYGUI_TOOL_NAMES[number];
@@ -566,6 +567,19 @@ export const RenderComponentInputSchema = z.object({
 }).strict();
 export type RenderComponentInput = z.infer<typeof RenderComponentInputSchema>;
 
+const publishPackageIds = z.array(nonEmptyId).min(1).max(500).refine(
+  (packageIds) => new Set(packageIds).size === packageIds.length,
+  { message: "packageIds 不能包含重复包 ID" }
+);
+
+export const PublishInputSchema = z.object({
+  projectId: nonEmptyId,
+  packageIds: publishPackageIds.optional(),
+  publishType: z.enum(["full", "definitions"]).default("full"),
+  outputPath: z.string().trim().min(1).optional()
+}).strict();
+export type PublishInput = z.infer<typeof PublishInputSchema>;
+
 export const ValidateInputSchema = z.object({
   projectId: nonEmptyId,
   mode: z.enum(["quick", "roundtrip", "publish", "full"]),
@@ -580,5 +594,6 @@ export const TOOL_INPUT_SCHEMAS = {
   "fairygui.apply_dom_patch": ApplyDomPatchInputSchema,
   "fairygui.apply_resource_operations": ApplyResourceOperationsInputSchema,
   "fairygui.render_component": RenderComponentInputSchema,
+  "fairygui.publish": PublishInputSchema,
   "fairygui.validate": ValidateInputSchema
 } as const;

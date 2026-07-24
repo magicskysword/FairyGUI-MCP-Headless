@@ -11,6 +11,7 @@ import {
   ApplyDomPatchInputSchema,
   ApplyResourceOperationsInputSchema,
   ProjectInputSchema,
+  PublishInputSchema,
   QueryInputSchema,
   RenderComponentInputSchema,
   TOOL_INPUT_SCHEMAS,
@@ -18,7 +19,8 @@ import {
   type ApplyDomPatchInput,
   type ApplyResourceOperationsInput,
   type FairyGuiToolName,
-  type ProjectInput
+  type ProjectInput,
+  type PublishInput
 } from "../contracts/tools.js";
 import {
   fail,
@@ -26,6 +28,7 @@ import {
 } from "../contracts/result.js";
 import { DomPatchService } from "../dom/dom-patch-service.js";
 import { ProjectRegistry } from "../project/project-registry.js";
+import { PublishService } from "../publish/publish-service.js";
 import { QueryService } from "../query/query-service.js";
 import { RenderService } from "../render/render-service.js";
 import { ResourceOperationsService } from "../resources/resource-operations-service.js";
@@ -43,7 +46,8 @@ export const SERVER_INSTRUCTIONS = [
   "磁盘始终是唯一事实来源；每次调用前会刷新外部变更，写操作会原子落盘且不提供草稿、Undo/Redo、revision 或 Git。",
   "DOM 使用受限的 HTML/CSS 风格知识：仅支持已声明的节点、样式名和选择器，不等同于浏览器 DOM/CSS。",
   "尽量把同一意图合并到 query、apply_dom_patch 或 apply_resource_operations 的一个批次中；写目标必须提供 expectedMatches。",
-  "render_component 会在内存中编译未发布工程并使用 fairygui-dom runtime-preview；scale=2/3/4 会选择对应高分辨率资源，state.controllers/state.lists/state.trees/state.scrolls 可设置仅用于本次截图的控制器页、List/Tree 状态和滚动位置，它不是 Unity 像素真值。"
+  "render_component 会在内存中编译未发布工程并使用 fairygui-dom runtime-preview；scale=2/3/4 会选择对应高分辨率资源，state.controllers/state.lists/state.trees/state.scrolls 可设置仅用于本次截图的控制器页、List/Tree 状态和滚动位置，它不是 Unity 像素真值。",
+  "fairygui.publish 直接使用工程发布设置，可按包执行全量发布或跳过图集的仅定义发布；outputPath 只临时覆盖运行时产物路径。"
 ].join("\n");
 
 interface DomPatchHandler {
@@ -54,6 +58,10 @@ interface ResourceOperationsHandler {
   apply(input: ApplyResourceOperationsInput): Promise<ResultEnvelope<unknown>>;
 }
 
+interface PublishHandler {
+  publish(input: PublishInput): Promise<ResultEnvelope<unknown>>;
+}
+
 export interface FairyGuiMcpServerOptions {
   projects?: ProjectRegistry;
   query?: QueryService;
@@ -61,6 +69,7 @@ export interface FairyGuiMcpServerOptions {
   validator?: ValidationService;
   domPatch?: DomPatchHandler;
   resources?: ResourceOperationsHandler;
+  publisher?: PublishHandler;
   transactions?: FileTransactionManager;
   coordinator?: ProjectCommitCoordinator;
 }
@@ -112,6 +121,8 @@ const TOOL_DESCRIPTIONS: Record<FairyGuiToolName, string> = {
     "原子执行包与资源创建、收件箱导入、替换、重命名、包内移动和删除；批次绝不部分成功。",
   "fairygui.render_component":
     "在内存中编译未发布工程，用隔离 FairyGUI-dom runtime 渲染并返回 PNG；scale 会同时控制截图像素密度和 @2x/@3x/@4x 资源选择，可按受限选择器临时设置当前截图的控制器页、List/Tree 状态和滚动位置且不写盘。",
+  "fairygui.publish":
+    "使用 FairyGUI 工程发布设置发布全部或指定包；支持全量发布和跳过图集的仅定义发布，outputPath 可临时覆盖运行时产物目录。",
   "fairygui.validate":
     "执行 quick、roundtrip、publish 或 full 校验。工程问题仍是成功调用，并在 data.valid 中返回 false。"
 };
@@ -149,6 +160,12 @@ const TOOL_ANNOTATIONS: Record<
     destructiveHint: false,
     idempotentHint: true,
     openWorldHint: false
+  },
+  "fairygui.publish": {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: true,
+    openWorldHint: true
   },
   "fairygui.validate": {
     readOnlyHint: true,
@@ -279,6 +296,7 @@ export class FairyGuiMcpServer {
   public readonly coordinator: ProjectCommitCoordinator;
   private readonly domPatch: DomPatchHandler;
   private readonly resources: ResourceOperationsHandler;
+  private readonly publisher: PublishHandler;
   private closed = false;
 
   public constructor(options: FairyGuiMcpServerOptions = {}) {
@@ -301,6 +319,9 @@ export class FairyGuiMcpServer {
         coordinator: this.coordinator
       }
     );
+    this.publisher = options.publisher ?? new PublishService(this.projects, {
+      coordinator: this.coordinator
+    });
     this.server = new Server(
       { name: SERVER_NAME, version: PACKAGE_VERSION },
       {
@@ -370,6 +391,13 @@ export class FairyGuiMcpServer {
           RenderComponentInputSchema,
           rawArguments,
           (input) => this.renderer.render(input)
+        );
+      case "fairygui.publish":
+        return this.parseAndRun(
+          name,
+          PublishInputSchema,
+          rawArguments,
+          (input) => this.publisher.publish(input)
         );
       case "fairygui.validate":
         return this.parseAndRun(

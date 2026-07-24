@@ -1,6 +1,6 @@
 ---
 name: fairygui-headless
-description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染并校验本地 FairyGUI 工程。适用于 AI 直接创作 FairyGUI UI、批量修改组件 DOM、导入资源以及通过 PNG 运行时预览循环调整。
+description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染、校验并发布本地 FairyGUI 工程。适用于 AI 直接创作 FairyGUI UI、批量修改组件 DOM、导入资源、通过 PNG 运行时预览循环调整以及生成正式运行时产物。
 ---
 
 # FairyGUI Headless
@@ -15,6 +15,7 @@ description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染并校验本�
 4. 组件内容修改使用一次 `fairygui.apply_dom_patch` 批量提交相关操作；包和资源修改使用一次 `fairygui.apply_resource_operations`。
 5. 写入成功后顺序调用 `fairygui.render_component` 查看内存编译的 PNG 运行时预览，再根据视觉反馈批量调整。
 6. 完成局部修改后用 `fairygui.validate` 的 `quick` 校验；交付前使用 `roundtrip`、`publish` 或 `full` 校验。
+7. 只有需要正式磁盘产物时才调用 `fairygui.publish`。
 
 磁盘是唯一事实来源。工具会在读取、写入和渲染前刷新外部修改；没有草稿、Undo/Redo、revision、文件锁或 Git 操作。不要假设并发渲染能观察到尚未完成的写入。
 
@@ -75,6 +76,18 @@ description: 使用 FairyGUI-MCP-Headless 查询、编辑、渲染并校验本�
 需要查看控制器的非默认页、List/Tree 状态或滚动区域时，在同一次调用中传入临时状态。`state.controllers` 每项使用受限 DOM `selector`、`expectedMatches` 和控制器 `controller`，并以 `selectedIndex`、`pageId` 或 `pageName` 三选一指定页面；`state.lists` 用 `selectedIndex`（`-1` 清空）或唯一的 `selectedIndices` 设置非 Tree 列表；`state.trees` 用逐级子节点索引组成的 `nodePath` 设置 folder 展开状态和选中节点，`selectedPath:null` 清空选择；`state.scrolls` 使用相同目标约束和非负像素 `x`/`y`，位置必须处于返回的实际可滚范围。临时状态可穿入已实例化的嵌套组件，但只存在于该次隔离截图中，不会写盘或影响下一次渲染。遇到 `SELECTOR_MATCH_COUNT` 或 `TRANSIENT_STATE_INVALID` 时根据返回的 `actual`、`allowed` 修正调用，不要猜测页面、项目索引、Tree 路径或依赖静默夹取。
 
 `fairygui.validate` 发现工程问题时仍是合法成功结果：检查 `data.valid`，不要只看 MCP `isError`。非法参数、找不到目标、能力越界或基础设施故障会返回 `{ ok:false, error }` 并设置 `isError:true`。
+
+## 正式发布
+
+`fairygui.publish` 直接消费工程中的发布设置，不用 MCP 参数重复设置图集、压缩或代码生成选项：
+
+- 省略 `packageIds` 发布全部包；指定时使用 `fairygui.query` 返回的包 ID。
+- `publishType:"full"` 执行完整发布；`"definitions"` 只跳过图集打包，不检查结果能否独立运行。
+- 省略 `outputPath` 使用工程配置路径；显式传入时，相对路径以工程根目录解析且只覆盖本次运行时产物目录。
+- 代码生成继续使用工程配置的代码路径。
+- 已有目录只覆盖同名产物，不清空目录或删除其他旧文件。
+
+不要把 `fairygui.validate` 的 `publish` 模式当成正式发布：它只在临时目录校验发布链路，并且不会生成代码。
 
 ## 调用纪律
 

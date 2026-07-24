@@ -89,7 +89,7 @@ function structured(result: Awaited<ReturnType<Client["callTool"]>>): {
   };
 }
 
-test("MCP initialization advertises instructions and exactly six strict tools", async () => {
+test("MCP initialization advertises instructions and exactly seven strict tools", async () => {
   const { app, client } = await connectServer();
   try {
     assert.match(client.getInstructions() ?? "", /打开.*批量查询.*渲染.*校验/s);
@@ -105,6 +105,45 @@ test("MCP initialization advertises instructions and exactly six strict tools", 
       assert.equal(tool.outputSchema?.type, "object");
       assert.ok(tool.description);
     }
+  }
+  finally {
+    await client.close();
+    await app.close();
+  }
+});
+
+test("stdio-facing publish handler writes selected package definitions", async () => {
+  const projectDirectory = await createProject();
+  const { app, client } = await connectServer();
+  try {
+    const opened = structured(await client.callTool({
+      name: "fairygui.project",
+      arguments: { action: "open", path: projectDirectory }
+    }));
+    assert.equal(opened.ok, true);
+    const projectId = String(opened.data?.projectId);
+
+    const published = await client.callTool({
+      name: "fairygui.publish",
+      arguments: {
+        projectId,
+        packageIds: ["pkg00001"],
+        publishType: "definitions",
+        outputPath: "release"
+      }
+    });
+
+    assert.equal("isError" in published && published.isError, false);
+    const envelope = structured(published);
+    assert.equal(envelope.ok, true, JSON.stringify(envelope));
+    assert.equal(envelope.data?.publishType, "definitions");
+    assert.equal(
+      envelope.data?.outputPath,
+      path.join(projectDirectory, "release")
+    );
+    await readFile(
+      path.join(projectDirectory, "release", "Demo_fui.bytes")
+    );
   }
   finally {
     await client.close();

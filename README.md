@@ -31,7 +31,7 @@ MCP 主机配置示例：
 }
 ```
 
-## 六个工具
+## 七个工具
 
 | 工具 | 用途 |
 |---|---|
@@ -40,6 +40,7 @@ MCP 主机配置示例：
 | `fairygui.apply_dom_patch` | 对一个现有组件执行原子 DOM 批处理或单域替换 |
 | `fairygui.apply_resource_operations` | 原子创建、导入、替换、重命名、移动和删除资源 |
 | `fairygui.render_component` | 返回内联 PNG、边界、诊断、版本和预览保真度 |
+| `fairygui.publish` | 使用工程设置全量发布或跳过图集发布全部/指定包 |
 | `fairygui.validate` | 执行 `quick/roundtrip/publish/full` 校验 |
 
 所有工具只返回两类顶层结果：
@@ -64,9 +65,34 @@ MCP 主机配置示例：
    `fairygui.apply_resource_operations` 合并同一意图的修改。
 4. 写入成功后顺序调用 `fairygui.render_component` 查看 PNG。
 5. 根据视觉反馈继续批量调整，最后调用 `fairygui.validate`。
+6. 需要正式产物时再调用 `fairygui.publish`。
 
 包内同时发布 `skills/fairygui-headless/SKILL.md`，包含面向 Agent 的完整调用
 纪律。
+
+## 正式发布
+
+`fairygui.publish` 只接收发布范围、发布类型和可选的一次性路径覆盖：
+
+```json
+{
+  "projectId": "p_...",
+  "packageIds": ["028qk31h"],
+  "publishType": "full",
+  "outputPath": "../release/ui"
+}
+```
+
+省略 `packageIds` 发布全部包；`publishType` 默认为 `full`。
+`definitions` 仍执行描述文件、外部资源和工程配置要求的代码生成，只跳过图集
+打包，不判断输出是否能独立运行。省略 `outputPath` 时读取
+`settings/Publish.json` 的 `path`；相对路径以工程根目录解析，并支持
+`{publish_file_name}` 和工程自定义属性变量。显式路径只覆盖本次运行时产物目录，
+代码输出继续使用工程设置。
+
+发布会覆盖同名产物，但不会清空目录或删除其他旧文件。成功结果列出实际输出
+路径、路径来源、已发布包及本次写入文件。`fairygui.validate` 的 `publish`
+模式只在临时目录验证发布链路并强制关闭代码生成，不会产生正式发布结果。
 
 ## DOM 与选择器边界
 

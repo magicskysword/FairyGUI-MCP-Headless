@@ -167,6 +167,7 @@ try {
     "fairygui.apply_dom_patch",
     "fairygui.apply_resource_operations",
     "fairygui.render_component",
+    "fairygui.publish",
     "fairygui.validate"
   ]);
   process.stdout.write(JSON.stringify({

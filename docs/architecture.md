@@ -53,7 +53,7 @@ MCP 是独立单包仓库。`package.json` 只使用正常 SemVer，不使用
 
 fork 中的后续提交属于 V1 实现的一部分。
 
-## 3. 六个 MCP 工具
+## 3. 七个 MCP 工具
 
 | 工具 | 契约 |
 |---|---|
@@ -62,6 +62,7 @@ fork 中的后续提交属于 V1 实现的一部分。
 | `fairygui.apply_dom_patch` | 对单个现有组件执行 `operations` 或一次单内容域 `replace` |
 | `fairygui.apply_resource_operations` | 原子创建、导入、替换、重命名、包内移动和删除 |
 | `fairygui.render_component` | 显式渲染并返回 PNG、边界、诊断、版本和保真度 |
+| `fairygui.publish` | 按工程设置全量发布或跳过图集发布全部/指定包 |
 | `fairygui.validate` | `quick/roundtrip/publish/full`；工程问题用 `valid:false` 表达 |
 
 统一结果：
@@ -246,6 +247,24 @@ BrowserContext 加载全部内存包后，按包 ID 和组件 ID 构造真实 Fa
 - `publish`：执行 OpenFairyGUI 发布链路。
 - `full`：组合全部阶段。
 
+`publish` 校验阶段始终禁用代码生成，并只使用系统临时目录，因此保持只读。
+正式发布由 `fairygui.publish` 执行：
+
+- `packageIds` 省略时发布全部包，指定时按稳定包 ID 精确选择。
+- `publishType:"full"` 执行 OpenFairyGUI 完整发布流程。
+- `publishType:"definitions"` 执行相同流程但跳过图集打包；不要求已有图集，也不
+  判断输出能否独立运行。
+- `outputPath` 省略时使用 `settings/Publish.json:path`，显式传入时只覆盖本次
+  运行时产物目录；相对路径以工程根目录解析。
+- 工程配置路径支持 `{publish_file_name}` 和 `CustomProperties.json` 中的简单
+  自定义属性变量。
+- 代码生成路径始终服从工程全局及包级设置，不受 `outputPath` 影响。
+- 已有目录只覆盖同名产物，不主动清理其他旧文件。
+
+同一工程的正式发布串行执行。成功结果返回实际输出路径、路径来源、已发布包和
+本次写入文件；缺少路径、无效路径和底层发布失败分别返回
+`PUBLISH_PATH_MISSING`、`PUBLISH_PATH_INVALID` 和 `PUBLISH_FAILED`。
+
 测试遵循“接口与错误语义 → 测试 → 实现 → 测试通过 → 中文提交”。
 
 ```sh
@@ -261,7 +280,7 @@ pnpm test:pack
 `test:corpus` 打开 FairyGUI-unity 的全部 30 个包、查询 205 个组件、投影并渲染
 每包代表组件，且比较源摘要确保只读闭环零写入。`benchmark:corpus` 记录冷启动、
 完整组件查询、基础 patch、热渲染和浏览器恢复的 p95，只报告软预算。
-`test:pack` 对四个 `pnpm pack` 产物执行隔离安装并通过已安装 CLI 枚举六工具。
+`test:pack` 对四个 `pnpm pack` 产物执行隔离安装并通过已安装 CLI 枚举七工具。
 
 发布顺序为：
 
@@ -281,6 +300,7 @@ pnpm test:pack
 4. `fairygui.render_component` 获取内存编译后的 runtime-preview。
 5. 根据反馈继续调整。
 6. `fairygui.validate` 校验并关闭会话。
+7. 需要正式产物时调用 `fairygui.publish`。
 
 这套流程优先批量表达意图，以明确错误码修正调用，不鼓励 Agent 猜字段、直接
 修改 XML 文本或跨实例边界绕过契约。

@@ -139,6 +139,7 @@ test("package ships an AI workflow skill and a portable stdio entry point", asyn
     "fairygui.apply_dom_patch",
     "fairygui.apply_resource_operations",
     "fairygui.render_component",
+    "fairygui.publish",
     "fairygui.validate"
   ]) {
     assert.match(skill, new RegExp(toolName.replace(".", "\\.")));
@@ -296,6 +297,7 @@ test("shipped documentation explains installation, tools and V1 boundaries", asy
       "fairygui.apply_dom_patch",
       "fairygui.apply_resource_operations",
       "fairygui.render_component",
+      "fairygui.publish",
       "fairygui.validate"
     ]) {
       assert.match(content, new RegExp(toolName.replace(".", "\\.")));

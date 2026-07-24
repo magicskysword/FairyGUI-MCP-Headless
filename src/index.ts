@@ -16,6 +16,8 @@ export * from "./dom/dom-patch-service.js";
 export * from "./project/project-registry.js";
 export * from "./query/query-service.js";
 export * from "./render/render-service.js";
+export * from "./publish/publish-service.js";
+export * from "./contracts/publish.js";
 export * from "./resources/import-inbox.js";
 export * from "./resources/resource-operations-engine.js";
 export * from "./resources/resource-operations-service.js";

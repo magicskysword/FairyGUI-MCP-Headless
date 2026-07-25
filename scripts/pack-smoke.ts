@@ -607,7 +607,12 @@ try {
 }
 finally {
   if (completed || process.env.KEEP_PACK_SMOKE !== "1") {
-    await rm(temporaryRoot, { recursive: true, force: true });
+    await rm(temporaryRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 200
+    });
   }
   else {
     process.stderr.write(`保留失败现场：${temporaryRoot}\n`);

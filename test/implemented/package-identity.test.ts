@@ -259,6 +259,14 @@ test("package exposes an isolated tarball installation smoke test", async () => 
   assert.match(smoke, /publishType:\s*"definitions"/);
   assert.match(smoke, /mode:\s*"full"/);
   assert.match(smoke, /action:\s*"close"/);
+  assert.match(
+    smoke,
+    /rm\(temporaryRoot,\s*\{[\s\S]*?maxRetries:\s*[1-9][0-9]*/
+  );
+  assert.match(
+    smoke,
+    /rm\(temporaryRoot,\s*\{[\s\S]*?retryDelay:\s*[1-9][0-9]*/
+  );
 });
 
 test("npm trusted publishing builds fixed GitHub dependency sources", async () => {

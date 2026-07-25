@@ -26,6 +26,7 @@ import {
   RenderService,
   type RenderBrowserType
 } from "../../src/render/render-service.js";
+import { toFairyDomDocument } from "../../src/dom/openfairygui-adapter.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -465,6 +466,117 @@ async function createListStateProject(): Promise<{
   return { directory, componentFile };
 }
 
+async function createLayoutRegressionProject(): Promise<string> {
+  const directory = await mkdtemp(path.join(
+    os.tmpdir(),
+    "fgui-layout-regression-"
+  ));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Demo");
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(
+    path.join(directory, "Demo.fairy"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="layout-regression-project" type="DOM" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "package.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="pkg00001">
+  <resources>
+    <image id="rad01" name="radial.png" path="/"/>
+    <image id="piv01" name="pivot.png" path="/"/>
+    <component id="it001" name="Item1.xml" path="/"/>
+    <component id="it002" name="Item2.xml" path="/"/>
+    <component id="it003" name="Item3.xml" path="/"/>
+    <component id="it004" name="Item4.xml" path="/"/>
+    <component id="prg01" name="Progress.xml" path="/"/>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+
+  const itemColors = ["#ef4444", "#22c55e", "#3b82f6", "#a855f7"];
+  await Promise.all(itemColors.map(async (color, index) => {
+    await writeFile(
+      path.join(packageDirectory, `Item${index + 1}.xml`),
+      `<?xml version="1.0" encoding="utf-8"?>
+<component size="159,41" extention="Button">
+  <controller name="button"
+    pages="0,up,1,down,2,over,3,selectedOver" selected="0"/>
+  <displayList>
+    <graph id="fill" name="fill" xy="0,0" size="159,41"
+      type="rect" fillColor="${color}" lineColor="${color}" lineSize="0">
+      <relation target="" sidePair="width-width,height-height"/>
+    </graph>
+  </displayList>
+  <Button/>
+</component>`,
+      "utf8"
+    );
+  }));
+  await writeFile(
+    path.join(packageDirectory, "Progress.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="180,180" extention="ProgressBar">
+  <displayList>
+    <image id="bar01" name="bar" src="rad01" fileName="radial.png"
+      xy="0,0" size="180,180" fillMethod="radial360">
+      <relation target="" sidePair="width-width,height-height"/>
+    </image>
+  </displayList>
+  <ProgressBar/>
+</component>`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(packageDirectory, "Main.xml"),
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="720,300" overflow="hidden" bgColor="#101010">
+  <displayList>
+    <list id="list1" name="tabs" xy="10,10" size="476,45"
+      layout="flow_hz" lineItemCount="4"
+      defaultItem="ui://pkg00001it001" autoItemSize="true">
+      <item url="ui://pkg00001it001"/>
+      <item url="ui://pkg00001it002"/>
+      <item url="ui://pkg00001it003"/>
+      <item url="ui://pkg00001it004"/>
+    </list>
+    <component id="prog1" name="progress" src="prg01"
+      fileName="Progress.xml" xy="500,80" size="180,180">
+      <ProgressBar value="60" max="100"/>
+    </component>
+    <loader id="pivot" name="pivot" xy="100,200" pivot="0,0.5"
+      anchor="true" size="100,40" url="ui://pkg00001piv01"
+      fill="scaleFree"/>
+    <text id="title" name="title" xy="230,200" pivot="0,0.5"
+      anchor="true" size="120,40" text="Pivot" fontSize="24"
+      color="#ffffff" autoSize="none" vAlign="middle"/>
+    <graph id="hidden" name="hidden" xy="300,220" size="50,50"
+      type="rect" fillColor="#ff00ff" lineColor="#ff00ff"
+      lineSize="0" visible="false"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  await sharp(Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180">
+      <circle cx="90" cy="90" r="89.5" fill="#facc15"/>
+    </svg>`
+  )).png().toFile(path.join(packageDirectory, "radial.png"));
+  await sharp({
+    create: {
+      width: 100,
+      height: 40,
+      channels: 4,
+      background: { r: 6, g: 182, b: 212, alpha: 1 }
+    }
+  }).png().toFile(path.join(packageDirectory, "pivot.png"));
+  return directory;
+}
+
 async function createTreeStateProject(): Promise<{
   directory: string;
   componentFile: string;
@@ -792,6 +904,259 @@ test("render_component resolves nested component instances through the runtime p
       red > 190 && green < 70 && blue < 110,
       `嵌套组件中心像素应为红色，实际为 rgb(${red}, ${green}, ${blue})`
     );
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+});
+
+test("render_component preserves List sizing, pivot, radial fill and hidden state", async () => {
+  const directory = await createLayoutRegressionProject();
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  let runtimeElements: Array<{
+    width: number;
+    height: number;
+    clipPath: string;
+  }> = [];
+  const inspectingBrowser: RenderBrowserType = {
+    executablePath: () => chromium.executablePath(),
+    launch: async (options?: LaunchOptions): Promise<Browser> => {
+      const browser = await chromium.launch(options);
+      return new Proxy(browser, {
+        get(target, property) {
+          if (property === "newContext") {
+            return async (contextOptions?: BrowserContextOptions) => {
+              const context = await target.newContext(contextOptions);
+              return new Proxy(context, {
+                get(contextTarget, contextProperty) {
+                  if (contextProperty === "newPage") {
+                    return async () => {
+                      const page = await contextTarget.newPage();
+                      return new Proxy(page, {
+                        get(pageTarget, pageProperty) {
+                          if (pageProperty === "locator") {
+                            return (selector: string) => {
+                              const locator = pageTarget.locator(selector);
+                              return new Proxy(locator, {
+                                get(locatorTarget, locatorProperty) {
+                                  if (locatorProperty === "screenshot") {
+                                    return async (
+                                      screenshotOptions?: Parameters<
+                                        typeof locatorTarget.screenshot
+                                      >[0]
+                                    ) => {
+                                      runtimeElements = await pageTarget.evaluate(
+                                        () => Array.from(
+                                          document.querySelectorAll<HTMLElement>("*")
+                                        ).map((element) => {
+                                          const bounds =
+                                            element.getBoundingClientRect();
+                                          return {
+                                            width: bounds.width,
+                                            height: bounds.height,
+                                            clipPath: element.style.clipPath
+                                          };
+                                        }).filter((element) =>
+                                          element.clipPath.startsWith("polygon(")
+                                        )
+                                      );
+                                      return locatorTarget.screenshot(
+                                        screenshotOptions
+                                      );
+                                    };
+                                  }
+                                  const value = Reflect.get(
+                                    locatorTarget,
+                                    locatorProperty,
+                                    locatorTarget
+                                  ) as unknown;
+                                  return typeof value === "function"
+                                    ? value.bind(locatorTarget)
+                                    : value;
+                                }
+                              });
+                            };
+                          }
+                          const value = Reflect.get(
+                            pageTarget,
+                            pageProperty,
+                            pageTarget
+                          ) as unknown;
+                          return typeof value === "function"
+                            ? value.bind(pageTarget)
+                            : value;
+                        }
+                      });
+                    };
+                  }
+                  const value = Reflect.get(
+                    contextTarget,
+                    contextProperty,
+                    contextTarget
+                  ) as unknown;
+                  return typeof value === "function"
+                    ? value.bind(contextTarget)
+                    : value;
+                }
+              });
+            };
+          }
+          const value = Reflect.get(target, property, target) as unknown;
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+      });
+    }
+  };
+  const renderer = new RenderService(registry, {
+    browserType: inspectingBrowser
+  });
+
+  try {
+    const projected = await registry.read(opened.data.projectId, (document) =>
+      toFairyDomDocument(document, "pkg00001", "cmp01")
+    );
+    assert.equal(projected.ok, true, JSON.stringify(projected));
+    if (!projected.ok) return;
+    const list = projected.data.root.children.find(
+      (node) => node.name === "tabs"
+    );
+    const loader = projected.data.root.children.find(
+      (node) => node.name === "pivot"
+    );
+    const title = projected.data.root.children.find(
+      (node) => node.name === "title"
+    );
+    const hidden = projected.data.root.children.find(
+      (node) => node.name === "hidden"
+    );
+    assert.equal(
+      list?.type === "list" ? list.content.columnCount : undefined,
+      4
+    );
+    assert.equal(loader?.style.pivotY, 0.5);
+    assert.equal(loader?.style.pivotAsAnchor, true);
+    assert.equal(title?.style.pivotY, 0.5);
+    assert.equal(title?.style.pivotAsAnchor, true);
+    assert.equal(hidden?.style.visible, false);
+
+    const result = await renderSingle(renderer, {
+      projectId: opened.data.projectId,
+      packageId: "pkg00001",
+      componentId: "cmp01"
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    const decoded = await sharp(Buffer.from(
+      inlineImageData(result.data),
+      "base64"
+    )).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    type Bounds = {
+      minX: number;
+      minY: number;
+      maxX: number;
+      maxY: number;
+      count: number;
+    };
+    const colorBounds = (
+      predicate: (red: number, green: number, blue: number) => boolean,
+      region: { left: number; top: number; right: number; bottom: number }
+    ): Bounds | undefined => {
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      let count = 0;
+      for (let y = region.top; y < region.bottom; y++) {
+        for (let x = region.left; x < region.right; x++) {
+          const offset = (y * decoded.info.width + x) * decoded.info.channels;
+          const red = decoded.data[offset] ?? 0;
+          const green = decoded.data[offset + 1] ?? 0;
+          const blue = decoded.data[offset + 2] ?? 0;
+          if (!predicate(red, green, blue)) continue;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+          count++;
+        }
+      }
+      return count === 0 ? undefined : { minX, minY, maxX, maxY, count };
+    };
+
+    const listRegion = { left: 0, top: 0, right: 500, bottom: 70 };
+    const itemBounds = [
+      colorBounds(
+        (red, green, blue) => red > 220 && green < 110 && blue < 110,
+        listRegion
+      ),
+      colorBounds(
+        (red, green, blue) => red < 80 && green > 160 && blue < 140,
+        listRegion
+      ),
+      colorBounds(
+        (red, green, blue) => red < 120 && green > 90 && blue > 180,
+        listRegion
+      ),
+      colorBounds(
+        (red, green, blue) => red > 130 && green < 150 && blue > 180,
+        listRegion
+      )
+    ];
+    itemBounds.forEach((bounds, index) => {
+      assert.ok(bounds, `未找到第 ${index + 1} 个 List 项目`);
+      assert.ok(
+        bounds.maxX - bounds.minX + 1 >= 118
+        && bounds.maxX - bounds.minX + 1 <= 120,
+        `第 ${index + 1} 项宽度异常：${
+          bounds.maxX - bounds.minX + 1
+        }`
+      );
+      assert.ok(
+        Math.abs(bounds.minX - (10 + index * 119)) <= 1,
+        `第 ${index + 1} 项位置异常：${bounds.minX}`
+      );
+    });
+
+    const progress = colorBounds(
+      (red, green, blue) => red > 230 && green > 170 && blue < 60,
+      { left: 480, top: 60, right: 700, bottom: 280 }
+    );
+    assert.ok(progress, "未找到径向进度条像素");
+    const progressWidth = progress.maxX - progress.minX + 1;
+    const progressHeight = progress.maxY - progress.minY + 1;
+    assert.ok(progressWidth >= 135, `进度条扇区宽度异常：${progressWidth}`);
+    assert.ok(progressHeight >= 175, `进度条高度异常：${progressHeight}`);
+    const runtimeProgress = runtimeElements.find((element) =>
+      Math.abs(element.width - 180) <= 0.01
+      && Math.abs(element.height - 180) <= 0.01
+      && element.clipPath.startsWith("polygon(")
+    );
+    assert.ok(
+      runtimeProgress,
+      `径向进度条元素未保持 180x180：${JSON.stringify(runtimeElements)}`
+    );
+
+    const pivot = colorBounds(
+      (red, green, blue) => red < 40 && green > 150 && blue > 180,
+      { left: 80, top: 150, right: 220, bottom: 250 }
+    );
+    assert.ok(pivot, "未找到 pivot Loader 像素");
+    assert.ok(Math.abs(pivot.minX - 100) <= 1);
+    assert.ok(
+      Math.abs(pivot.minY - 180) <= 1,
+      `pivot Loader 顶部应为 180，实际为 ${pivot.minY}`
+    );
+    assert.equal(pivot.maxX - pivot.minX + 1, 100);
+    assert.equal(pivot.maxY - pivot.minY + 1, 40);
+
+    const hiddenPixels = colorBounds(
+      (red, green, blue) => red > 220 && green < 40 && blue > 220,
+      { left: 295, top: 215, right: 355, bottom: 275 }
+    );
+    assert.equal(hiddenPixels, undefined);
   }
   finally {
     await renderer.close();

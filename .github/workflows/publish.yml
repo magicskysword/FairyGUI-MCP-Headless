@@ -25,14 +25,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: magicskysword/OpenFairyGUI
-          ref: 'v0.2.2'
+          ref: 'npm-v0.2.3'
           path: OpenFairyGUI
 
       - name: Checkout FairyGUI-dom
         uses: actions/checkout@v6
         with:
           repository: magicskysword/FairyGUI-dom
-          ref: 'v1.1.1'
+          ref: 'npm-v1.1.2'
           path: FairyGUI-dom
 
       - name: Setup pnpm

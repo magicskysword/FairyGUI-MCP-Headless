@@ -89,6 +89,13 @@
 
 不接受 `x/y/alpha` 别名、`px` 字符串、百分比、`calc()` 或浏览器布局属性。
 
+`pivotX`、`pivotY` 是 `0..1` 常用范围内的归一化轴心值（Schema 仍接受任意
+finite number）。当 `pivotAsAnchor:true` 时，`left/top` 表示轴心坐标而不是
+可见左上角；未旋转缩放时，可见左上角为
+`left - width*pivotX, top - height*pivotY`。例如 `top:37`、`height:49`、
+`pivotY:0.5` 的可见顶部是 `12.5`。运行时 CSS `transform-origin` 使用
+`pivotX*100% pivotY*100%`。
+
 组件根只可写以下 style：`width`、`height`、`minWidth`、`maxWidth`、
 `minHeight`、`maxHeight`、`pivotX`、`pivotY`、`pivotAsAnchor`。根节点不支持
 `left/top/opacity/...`。
@@ -151,8 +158,26 @@ Size
 | `resource` | 可选，可空；图片资源引用 |
 | `flip` | 可选，可空；`none|horizontal|vertical|both` |
 | `fillMethod` | 可选，可空；`none|horizontal|vertical|radial-90|radial-180|radial-360` |
+| `fillOrigin` | 可选，可空；合法值取决于 `fillMethod` |
+| `fillClockwise` | 可选，可空；boolean，仅径向填充合法 |
 | `fillAmount` | 可选，可空；finite number，`0..1` |
 | `color` | 可选，可空；非空颜色字符串 |
+
+图片填充适用于 image 和 loader。它只裁剪可见区域，不改变节点的
+`style.width/height` 或纹理比例：
+
+| `fillMethod` | 合法 `fillOrigin` | 省略或 `null` 时默认 |
+|---|---|---|
+| `horizontal` | `left|right` | `left` |
+| `vertical` | `top|bottom` | `top` |
+| `radial-90` | `top-left|top-right|bottom-left|bottom-right` | `top-left` |
+| `radial-180` / `radial-360` | `top|bottom|left|right` | `top` |
+
+`fillClockwise` 仅用于三种 radial 方法，省略或 `null` 时为 `true`。显式传入
+不兼容组合会返回 `INVALID_PATCH`，路径精确到 `fillOrigin` 或
+`fillClockwise`。更新 `fillMethod` 时，兼容的旧 origin 会保留；不兼容的旧
+origin 自动改为新方法的确定性默认值。`fillAmount:0` 完全裁剪，
+`fillAmount:1` 显示完整图片。
 
 ### text
 
@@ -201,6 +226,10 @@ Size
 | `verticalAlign` | 可选，可空；`top|middle|bottom` |
 | `autoSize`, `playing` | 可选，可空；boolean |
 | `frame` | 可选，可空；integer，`>=0` |
+| `fillMethod`, `fillOrigin`, `fillClockwise`, `fillAmount` | 与 image 的图片裁剪规则相同 |
+
+Loader 的 `fill` 是内容缩放/适配模式；`fillMethod` 是缩放完成后的图片裁剪。
+两者是独立字段，可以同时使用。
 
 ### graph
 
@@ -256,6 +285,19 @@ Group 不是容器。成员仍是组件根的直接子节点，通过成员的 `
 | `autoResizeItem` | 可选，可空；boolean |
 | `align` | 可选，可空；`left|center|right` |
 | `verticalAlign` | 可选，可空；`top|middle|bottom` |
+
+List 的计数含义由布局决定：
+
+| `layout` | 使用字段 | 含义 |
+|---|---|---|
+| `flow-horizontal` | `columnCount` | 每行列数 |
+| `flow-vertical` | `lineCount` | 每列行数 |
+| `pagination` | `columnCount` + `lineCount` | 每页列数 + 行数 |
+| `single-row` / `single-column` | 均不参与布局 | 省略或保持 `0` |
+
+不要把 `flow-horizontal` 的 `columnCount` 写成 `lineCount`。当
+`autoResizeItem:true` 且 `columnCount>0` 时，runtime 会按 List 可用宽度和
+列间距自动调整项目宽度；例如 476px 宽、四列、无间距时，每项约 119px。
 
 List item 不是普通 DOM 子节点。每项可含：
 

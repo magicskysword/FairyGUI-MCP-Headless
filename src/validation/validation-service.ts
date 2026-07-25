@@ -11,13 +11,13 @@ import os from "node:os";
 import path from "node:path";
 import {
   buildResourceReferenceIndex,
-  NodeIO,
   serializeProjectFiles,
   type Component,
   type Document,
   type Package,
   type SerializedProjectFile
 } from "@magicskysword/openfairygui-core";
+import { NodeIO } from "@magicskysword/openfairygui-core/node";
 import {
   publish,
   type PublishFileSystem

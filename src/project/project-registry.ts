@@ -8,9 +8,9 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import {
-  NodeIO,
   type Document
 } from "@magicskysword/openfairygui-core";
+import { NodeIO } from "@magicskysword/openfairygui-core/node";
 import {
   watch,
   type FSWatcher

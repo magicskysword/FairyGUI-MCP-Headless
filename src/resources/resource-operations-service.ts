@@ -8,12 +8,12 @@ import {
 import os from "node:os";
 import path from "node:path";
 import {
-  NodeIO,
   serializeAffectedProjectFiles,
   type Document,
   type ProjectFileTarget,
   type SerializedProjectFile
 } from "@magicskysword/openfairygui-core";
+import { NodeIO } from "@magicskysword/openfairygui-core/node";
 import {
   fail,
   ok,

@@ -7,12 +7,12 @@ import {
 import os from "node:os";
 import path from "node:path";
 import {
-  NodeIO,
   PropertyType,
   serializeAffectedProjectFiles,
   type Document,
   type SerializedProjectFile
 } from "@magicskysword/openfairygui-core";
+import { NodeIO } from "@magicskysword/openfairygui-core/node";
 import type { FairyDomDocument } from "../contracts/dom.js";
 import {
   fail,

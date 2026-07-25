@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { NodeIO } from "@magicskysword/openfairygui-core";
+import { NodeIO } from "@magicskysword/openfairygui-core/node";
 import { publishToMemory } from "@magicskysword/openfairygui-functions";
-import sharp from "sharp";
+import { loadSharpRasterBackend } from "@magicskysword/openfairygui-functions/node";
 
 export interface RuntimePackageArtifact {
   packageId: string;
@@ -56,13 +56,25 @@ export async function compileRuntimeArtifacts(
       component.setExported(true);
     }
   }
+  const settings = document.getRoot().getSettings();
+  document.getRoot().setSettings({
+    ...settings,
+    publish: {
+      ...settings.publish,
+      includeHighResolution: 7
+    }
+  });
   const packages = sourcePackages.map((pkg) => ({
     packageId: pkg.getId(),
     packageName: pkg.getName(),
     fileName: `${pkg.getPublishName() || pkg.getName()}.fui`
   }));
+  const encoder = await loadSharpRasterBackend();
+  if (!encoder) {
+    throw new Error("Sharp raster backend is unavailable.");
+  }
   const artifacts = await publishToMemory(document, {
-    encoder: sharp,
+    encoder,
     basePath: path.join(projectDirectory, "assets"),
     fileExtension: "fui",
     atlas: {

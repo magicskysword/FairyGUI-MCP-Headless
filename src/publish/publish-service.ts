@@ -9,15 +9,15 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import {
-  NodeIO,
   type Document
 } from "@magicskysword/openfairygui-core";
+import { NodeIO } from "@magicskysword/openfairygui-core/node";
 import {
   publish,
   type PublishFileSystem,
   type RootProjectSettings
 } from "@magicskysword/openfairygui-functions";
-import sharp from "sharp";
+import { loadSharpRasterBackend } from "@magicskysword/openfairygui-functions/node";
 import type { PublishData } from "../contracts/publish.js";
 import {
   fail,
@@ -250,11 +250,15 @@ export class PublishService {
       if (!outputValidation.ok) return outputValidation;
 
       const writtenFiles = new Map<string, TrackedWrite>();
+      const encoder = await loadSharpRasterBackend();
+      if (!encoder) {
+        throw new Error("Sharp raster backend is unavailable.");
+      }
       await document.transform(publish({
         output: output.data.path,
         packages: selectedPackages.map((pkg) => pkg.getName()),
         mode: input.publishType,
-        encoder: sharp,
+        encoder,
         basePath: path.join(status.data.projectDirectory, "assets"),
         fs: createPublishFileSystem(writtenFiles)
       }));

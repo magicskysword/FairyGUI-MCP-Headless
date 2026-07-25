@@ -83,6 +83,33 @@ const nodeBaseShape = {
 const alignSchema = z.enum(["left", "center", "right"]);
 const verticalAlignSchema = z.enum(["top", "middle", "bottom"]);
 const textAutoSizeSchema = z.enum(["none", "both", "height", "shrink"]);
+export const FairyDomFillMethodSchema = z.enum([
+  "none",
+  "horizontal",
+  "vertical",
+  "radial-90",
+  "radial-180",
+  "radial-360"
+]);
+export type FairyDomFillMethod = z.infer<typeof FairyDomFillMethodSchema>;
+export const FairyDomFillOriginSchema = z.enum([
+  "top",
+  "bottom",
+  "left",
+  "right",
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right"
+]);
+export type FairyDomFillOrigin = z.infer<typeof FairyDomFillOriginSchema>;
+
+const imageFillShape = {
+  fillMethod: FairyDomFillMethodSchema.optional(),
+  fillOrigin: FairyDomFillOriginSchema.optional(),
+  fillClockwise: z.boolean().optional(),
+  fillAmount: z.number().finite().min(0).max(1).optional()
+} as const;
 
 const textContentShape = {
   text: z.string(),
@@ -107,15 +134,7 @@ export const FairyDomImageNodeSchema = z.object({
   content: z.object({
     resource: FairyDomResourceReferenceSchema.optional(),
     flip: z.enum(["none", "horizontal", "vertical", "both"]).optional(),
-    fillMethod: z.enum([
-      "none",
-      "horizontal",
-      "vertical",
-      "radial-90",
-      "radial-180",
-      "radial-360"
-    ]).optional(),
-    fillAmount: z.number().finite().min(0).max(1).optional(),
+    ...imageFillShape,
     color: z.string().min(1).optional()
   }).strict()
 }).strict();
@@ -172,7 +191,8 @@ export const FairyDomLoaderNodeSchema = z.object({
     verticalAlign: verticalAlignSchema.optional(),
     autoSize: z.boolean().optional(),
     playing: z.boolean().optional(),
-    frame: z.number().int().nonnegative().optional()
+    frame: z.number().int().nonnegative().optional(),
+    ...imageFillShape
   }).strict()
 }).strict();
 

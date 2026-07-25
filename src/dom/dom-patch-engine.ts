@@ -24,6 +24,8 @@ import {
   FairyDomNewNodeSchema,
   type FairyDomComponentRoot,
   type FairyDomDocument,
+  type FairyDomFillMethod,
+  type FairyDomFillOrigin,
   type FairyDomListItem,
   type FairyDomNewNode,
   type FairyDomNode,
@@ -53,6 +55,14 @@ import {
   supportsInstanceOverlay,
   type InstanceOverlayField
 } from "./instance-extension.js";
+import {
+  allowedFillOrigins,
+  defaultFillOrigin,
+  fillMethodName,
+  fillMethodValue,
+  fillOriginValue,
+  isRadialFillMethod
+} from "./fill-semantics.js";
 import {
   matchFairyDomSelector,
   parseFairyDomSelector,
@@ -317,6 +327,157 @@ function getterNumber(
   if (typeof candidate !== "function") return fallback;
   const value = (candidate as () => unknown).call(owner);
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+interface FillContent {
+  fillMethod?: FairyDomFillMethod | undefined;
+  fillOrigin?: FairyDomFillOrigin | undefined;
+  fillClockwise?: boolean | undefined;
+  fillAmount?: number | undefined;
+}
+
+function normalizeMergedFillContent(
+  mergedNode: Record<string, unknown>,
+  rawContentChanges: Record<string, unknown> | undefined
+): void {
+  if (
+    rawContentChanges === undefined
+    || (mergedNode.type !== "image" && mergedNode.type !== "loader")
+    || !isJsonObject(mergedNode.content)
+  ) {
+    return;
+  }
+
+  const content = mergedNode.content;
+  const method = typeof content.fillMethod === "string"
+    ? content.fillMethod as FairyDomFillMethod
+    : rawContentChanges.fillMethod === null
+      ? "none"
+      : undefined;
+  if (method === undefined) return;
+
+  const explicitOrigin = Object.hasOwn(rawContentChanges, "fillOrigin");
+  const origin = content.fillOrigin;
+  const allowedOrigins = allowedFillOrigins(method);
+  if (rawContentChanges.fillOrigin === null) {
+    const defaultOrigin = defaultFillOrigin(method);
+    if (defaultOrigin === undefined) delete content.fillOrigin;
+    else content.fillOrigin = defaultOrigin;
+  }
+  else if (
+    !explicitOrigin
+    && (
+      typeof origin !== "string"
+      || !allowedOrigins.includes(origin as FairyDomFillOrigin)
+    )
+  ) {
+    const defaultOrigin = defaultFillOrigin(method);
+    if (defaultOrigin === undefined) delete content.fillOrigin;
+    else content.fillOrigin = defaultOrigin;
+  }
+
+  const explicitClockwise = Object.hasOwn(rawContentChanges, "fillClockwise");
+  if (rawContentChanges.fillClockwise === null) {
+    if (isRadialFillMethod(method)) content.fillClockwise = true;
+    else delete content.fillClockwise;
+  }
+  else if (!explicitClockwise && !isRadialFillMethod(method)) {
+    delete content.fillClockwise;
+  }
+  else if (
+    !explicitClockwise
+    && isRadialFillMethod(method)
+    && typeof content.fillClockwise !== "boolean"
+  ) {
+    content.fillClockwise = true;
+  }
+}
+
+function validateFillContent(
+  content: FillContent,
+  rawChanges: Record<string, unknown>,
+  path: string
+): void {
+  const method = content.fillMethod ?? "none";
+  if (
+    Object.hasOwn(rawChanges, "fillOrigin")
+    && rawChanges.fillOrigin !== null
+  ) {
+    const allowed = allowedFillOrigins(method);
+    if (!allowed.includes(rawChanges.fillOrigin as FairyDomFillOrigin)) {
+      patchError("INVALID_PATCH", "图片填充起点与填充方法不兼容", {
+        path: `${path}.fillOrigin`,
+        actual: rawChanges.fillOrigin,
+        allowed,
+        suggestedFix:
+          "使用当前 fillMethod 支持的 fillOrigin，或省略该字段采用确定性默认值"
+      });
+    }
+  }
+  if (
+    Object.hasOwn(rawChanges, "fillClockwise")
+    && rawChanges.fillClockwise !== null
+    && !isRadialFillMethod(method)
+  ) {
+    patchError("INVALID_PATCH", "fillClockwise 仅适用于径向图片填充", {
+      path: `${path}.fillClockwise`,
+      actual: rawChanges.fillClockwise,
+      allowed: ["radial-90", "radial-180", "radial-360"],
+      suggestedFix: "删除 fillClockwise，或把 fillMethod 改为径向填充"
+    });
+  }
+}
+
+function applyFillContent(
+  owner: MutableObject,
+  content: FillContent,
+  path: string,
+  fields?: ReadonlySet<string>
+): void {
+  const requested = (field: keyof FillContent): boolean =>
+    fields === undefined
+      ? content[field] !== undefined
+      : fields.has(field);
+  const methodRequested = requested("fillMethod");
+  const method = content.fillMethod
+    ?? fillMethodName(getterNumber(owner, "getFillMethod", FillMethod.None));
+
+  if (methodRequested) {
+    invoke(
+      owner,
+      "setFillMethod",
+      [fillMethodValue(method)],
+      `${path}.fillMethod`
+    );
+  }
+  if (requested("fillOrigin") || methodRequested) {
+    invoke(
+      owner,
+      "setFillOrigin",
+      [fillOriginValue(method, content.fillOrigin)],
+      `${path}.fillOrigin`
+    );
+  }
+  if (requested("fillClockwise") || methodRequested) {
+    invoke(
+      owner,
+      "setFillClockwise",
+      [
+        isRadialFillMethod(method)
+          ? content.fillClockwise ?? true
+          : true
+      ],
+      `${path}.fillClockwise`
+    );
+  }
+  if (requested("fillAmount") || methodRequested) {
+    invoke(
+      owner,
+      "setFillAmount",
+      [content.fillAmount ?? 1],
+      `${path}.fillAmount`
+    );
+  }
 }
 
 function resourceUrl(reference: FairyDomResourceReference): string {
@@ -915,30 +1076,7 @@ function applyNodeContent(
           `${path}.flip`
         );
       }
-      if (includes("fillMethod") && node.content.fillMethod !== undefined) {
-        const values = {
-          none: FillMethod.None,
-          horizontal: FillMethod.Horizontal,
-          vertical: FillMethod.Vertical,
-          "radial-90": FillMethod.Radial90,
-          "radial-180": FillMethod.Radial180,
-          "radial-360": FillMethod.Radial360
-        };
-        invoke(
-          owner,
-          "setFillMethod",
-          [values[node.content.fillMethod]],
-          `${path}.fillMethod`
-        );
-      }
-      if (includes("fillAmount") && node.content.fillAmount !== undefined) {
-        invoke(
-          owner,
-          "setFillAmount",
-          [node.content.fillAmount],
-          `${path}.fillAmount`
-        );
-      }
+      applyFillContent(owner, node.content, path, fields);
       if (includes("color") && node.content.color !== undefined) {
         invoke(owner, "setColor", [node.content.color], `${path}.color`);
       }
@@ -1069,6 +1207,7 @@ function applyNodeContent(
           invoke(owner, method, [value], `${path}.${field}`);
         }
       }
+      applyFillContent(owner, node.content, path, fields);
       return;
     }
     case "graph": {
@@ -1323,6 +1462,13 @@ function createNode(
   id: string,
   path: string
 ): GObject {
+  if (node.type === "image" || node.type === "loader") {
+    validateFillContent(
+      node.content,
+      node.content as unknown as Record<string, unknown>,
+      `${path}.content`
+    );
+  }
   const document = context.document;
   const object = (() => {
     switch (node.type) {
@@ -1572,6 +1718,10 @@ function prepareUpdatePlans(
       editableNode(current),
       changes as Record<string, unknown>
     );
+    normalizeMergedFillContent(
+      merged,
+      changedObject(changes.content)
+    );
     const parsed = FairyDomNewNodeSchema.safeParse(merged);
     if (!parsed.success) {
       mergedPatchError(
@@ -1636,6 +1786,7 @@ function validateNodeContentUpdate(
   const changed = new Set(Object.keys(rawChanges));
   switch (node.type) {
     case "image":
+      validateFillContent(node.content, rawChanges, path);
       if (changed.has("resource") && node.content.resource !== undefined) {
         assertResource(
           context.document,
@@ -1658,6 +1809,7 @@ function validateNodeContentUpdate(
       }
       return;
     case "loader":
+      validateFillContent(node.content, rawChanges, path);
       if (
         node.content.resource !== undefined
         && node.content.externalUrl !== undefined
@@ -1895,6 +2047,18 @@ function resetNodeContentFields(
       }
       reset("flip", "setFlip", FlipType.None);
       reset("fillMethod", "setFillMethod", FillMethod.None);
+      if (nullFields.has("fillOrigin")) {
+        invoke(
+          owner,
+          "setFillOrigin",
+          [fillOriginValue(
+            node.content.fillMethod ?? "none",
+            node.content.fillOrigin
+          )],
+          `${path}.fillOrigin`
+        );
+      }
+      reset("fillClockwise", "setFillClockwise", true);
       reset("fillAmount", "setFillAmount", 1);
       reset("color", "setColor", "#FFFFFF");
       return;
@@ -1931,6 +2095,20 @@ function resetNodeContentFields(
       reset("autoSize", "setAutoSize", false);
       reset("playing", "setPlaying", true);
       reset("frame", "setFrame", 0);
+      reset("fillMethod", "setFillMethod", FillMethod.None);
+      if (nullFields.has("fillOrigin")) {
+        invoke(
+          owner,
+          "setFillOrigin",
+          [fillOriginValue(
+            node.content.fillMethod ?? "none",
+            node.content.fillOrigin
+          )],
+          `${path}.fillOrigin`
+        );
+      }
+      reset("fillClockwise", "setFillClockwise", true);
+      reset("fillAmount", "setFillAmount", 1);
       return;
     case "graph":
       reset("fillColor", "setFillColor", "#FFFFFF");

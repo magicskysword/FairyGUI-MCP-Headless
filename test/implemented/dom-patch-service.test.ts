@@ -885,7 +885,6 @@ test("every V1 writable node, style, Group, Relation and List survives disk roun
             },
             lineGap: 3,
             columnGap: 4,
-            lineCount: 2,
             columnCount: 3,
             autoResizeItem: false,
             align: "center",
@@ -978,7 +977,7 @@ test("every V1 writable node, style, Group, Relation and List survives disk roun
     const list = dom.root.children.find(
       (node) => node.type === "list" && node.name === "list"
     );
-    assert.equal(list?.type === "list" && list.content.lineCount, 2);
+    assert.equal(list?.type === "list" && list.content.lineCount, 0);
     assert.equal(list?.type === "list" && list.content.columnCount, 3);
     assert.equal(list?.type === "list" && list.content.items[0]?.title, "First");
   }

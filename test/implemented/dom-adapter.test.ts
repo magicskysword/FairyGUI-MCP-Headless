@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   Document,
+  FillMethod,
+  FillOrigin,
+  FillOrigin90,
   GroupLayoutType,
   ListLayoutType,
   OverflowType,
@@ -174,6 +177,53 @@ test("OpenFairyGUI adapter emits strict CSS-style DOM without runtime aliases", 
   });
   assert.equal("x" in dom.root.children[0]!.style, false);
   assert.equal("alpha" in dom.root.children[0]!.style, false);
+});
+
+test("image and loader projections expose method-aware fill origin and direction", () => {
+  const document = new Document();
+  const packageId = "pkg00001";
+  const componentId = "cmp01";
+  const pkg = document.createPackage("Demo").setId(packageId);
+  const component = document.createComponent("Main")
+    .setId(componentId)
+    .setSize(320, 180);
+  component.addChild(
+    document.createGImage("image")
+      .setId("n0")
+      .setFillMethod(FillMethod.Horizontal)
+      .setFillOrigin(FillOrigin.Right)
+      .setFillClockwise(false)
+      .setFillAmount(0.25)
+  );
+  component.addChild(
+    document.createGLoader("loader")
+      .setId("n1")
+      .setFillMethod(FillMethod.Radial90)
+      .setFillOrigin(FillOrigin90.BottomRight)
+      .setFillClockwise(false)
+      .setFillAmount(0.6)
+  );
+  pkg.addResource(component);
+
+  const dom = toFairyDomDocument(document, packageId, componentId);
+  const image = dom.root.children.find((node) => node.id === "n0");
+  const loader = dom.root.children.find((node) => node.id === "n1");
+
+  assert.equal(image?.type, "image");
+  if (image?.type === "image") {
+    assert.equal(image.content.fillMethod, "horizontal");
+    assert.equal(image.content.fillOrigin, "right");
+    assert.equal(image.content.fillClockwise, undefined);
+    assert.equal(image.content.fillAmount, 0.25);
+  }
+  assert.equal(loader?.type, "loader");
+  if (loader?.type === "loader") {
+    assert.equal(loader.content.fillMethod, "radial-90");
+    assert.equal(loader.content.fillOrigin, "bottom-right");
+    assert.equal(loader.content.fillClockwise, false);
+    assert.equal(loader.content.fillAmount, 0.6);
+  }
+  assert.deepEqual(FairyDomDocumentSchema.parse(dom), dom);
 });
 
 test("empty enabled component background is normalized as unset", () => {

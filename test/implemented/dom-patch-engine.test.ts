@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   Document,
+  FillMethod,
+  FillOrigin,
+  FillOrigin90,
   type GObject
 } from "@magicskysword/openfairygui-core";
 import {
@@ -319,7 +322,6 @@ test("DOM patch creates every V1 writable node content shape", () => {
             defaultItem: { packageId: PACKAGE_ID, resourceId: "card1" },
             lineGap: 3,
             columnGap: 4,
-            lineCount: 2,
             columnCount: 3,
             autoResizeItem: false,
             align: "center",
@@ -992,4 +994,268 @@ test("replace preserves the stable id and rejects planned node types", () => {
   );
   assert.equal(rejected.ok, false);
   if (!rejected.ok) assert.equal(rejected.error.code, "INVALID_PATCH");
+});
+
+test("image and loader patches apply fill origins, deterministic defaults and null resets", () => {
+  const { document, main } = fixture();
+  const result = new DomPatchEngine().apply(document, parsePatch({
+    operations: [
+      {
+        op: "insert",
+        parentSelector: "component-root",
+        expectedMatches: 1,
+        clientRef: "filledImage",
+        node: {
+          type: "image",
+          name: "filled-image",
+          style: { width: 180, height: 180 },
+          relations: [],
+          content: {
+            fillMethod: "radial-360",
+            fillOrigin: "right",
+            fillClockwise: false,
+            fillAmount: 0.6
+          }
+        }
+      },
+      {
+        op: "insert",
+        parentSelector: "component-root",
+        expectedMatches: 1,
+        clientRef: "filledLoader",
+        node: {
+          type: "loader",
+          name: "filled-loader",
+          style: { width: 120, height: 80 },
+          relations: [],
+          content: {
+            fillMethod: "radial-180",
+            fillOrigin: "bottom",
+            fillClockwise: false,
+            fillAmount: 0.4
+          }
+        }
+      },
+      {
+        op: "update",
+        targetRef: "filledImage",
+        expectedMatches: 1,
+        changes: {
+          content: {
+            fillMethod: "horizontal"
+          }
+        }
+      },
+      {
+        op: "update",
+        targetRef: "filledImage",
+        expectedMatches: 1,
+        changes: {
+          content: {
+            fillMethod: "radial-90",
+            fillOrigin: "bottom-right",
+            fillClockwise: false
+          }
+        }
+      },
+      {
+        op: "update",
+        targetRef: "filledImage",
+        expectedMatches: 1,
+        changes: {
+          content: {
+            fillOrigin: null,
+            fillClockwise: null
+          }
+        }
+      },
+      {
+        op: "replace",
+        selector: "#n3",
+        expectedMatches: 1,
+        node: {
+          type: "image",
+          name: "vertical-fill",
+          style: { width: 20, height: 40 },
+          relations: [],
+          content: {
+            fillMethod: "vertical",
+            fillOrigin: "bottom",
+            fillAmount: 0.5
+          }
+        }
+      }
+    ]
+  }));
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const filledImage = main.getChildById(result.data.clientRefs.filledImage!) as
+    | (GObject & {
+      getFillMethod(): number;
+      getFillOrigin(): number;
+      getFillClockwise(): boolean;
+      getFillAmount(): number;
+    })
+    | null;
+  const filledLoader = main.getChildById(result.data.clientRefs.filledLoader!) as
+    | (GObject & {
+      getFillMethod(): number;
+      getFillOrigin(): number;
+      getFillClockwise(): boolean;
+      getFillAmount(): number;
+    })
+    | null;
+  const replacement = main.getChildById("n3") as
+    | (GObject & {
+      getFillMethod(): number;
+      getFillOrigin(): number;
+    })
+    | null;
+
+  assert.equal(filledImage?.getFillMethod(), FillMethod.Radial90);
+  assert.equal(filledImage?.getFillOrigin(), FillOrigin90.TopLeft);
+  assert.equal(filledImage?.getFillClockwise(), true);
+  assert.equal(filledImage?.getFillAmount(), 0.6);
+  assert.equal(filledLoader?.getFillMethod(), FillMethod.Radial180);
+  assert.equal(filledLoader?.getFillOrigin(), FillOrigin.Bottom);
+  assert.equal(filledLoader?.getFillClockwise(), false);
+  assert.equal(filledLoader?.getFillAmount(), 0.4);
+  assert.equal(replacement?.getFillMethod(), FillMethod.Vertical);
+  assert.equal(replacement?.getFillOrigin(), FillOrigin.Bottom);
+});
+
+test("fill patch rejects method-incompatible origins at the exact field path", () => {
+  const { document, main } = fixture();
+  main.addChild(
+    document.createGImage("image")
+      .setId("n10")
+      .setFillMethod(FillMethod.Radial360)
+      .setFillOrigin(FillOrigin.Right)
+  );
+  const update = new DomPatchEngine().apply(document, parsePatch({
+    operations: [{
+      op: "update",
+      selector: "#n10",
+      expectedMatches: 1,
+      changes: {
+        content: {
+          fillMethod: "horizontal",
+          fillOrigin: "top"
+        }
+      }
+    }]
+  }));
+
+  assert.equal(update.ok, false);
+  if (!update.ok) {
+    assert.equal(update.error.code, "INVALID_PATCH");
+    assert.equal(
+      update.error.path,
+      "operations[0].changes.content.fillOrigin"
+    );
+    assert.deepEqual(update.error.allowed, ["left", "right"]);
+  }
+
+  const { document: insertDocument } = fixture();
+  const insert = new DomPatchEngine().apply(insertDocument, parsePatch({
+    operations: [{
+      op: "insert",
+      parentSelector: "component-root",
+      expectedMatches: 1,
+      clientRef: "invalidFill",
+      node: {
+        type: "loader",
+        name: "invalid",
+        style: {},
+        relations: [],
+        content: {
+          fillMethod: "radial-90",
+          fillOrigin: "top"
+        }
+      }
+    }]
+  }));
+
+  assert.equal(insert.ok, false);
+  if (!insert.ok) {
+    assert.equal(insert.error.code, "INVALID_PATCH");
+    assert.equal(
+      insert.error.path,
+      "operations[0].node.content.fillOrigin"
+    );
+    assert.deepEqual(insert.error.allowed, [
+      "top-left",
+      "top-right",
+      "bottom-left",
+      "bottom-right"
+    ]);
+  }
+});
+
+test("changing fill method replaces an incompatible old origin deterministically", () => {
+  const { document, main } = fixture();
+  main.addChild(
+    document.createGImage("image")
+      .setId("n10")
+      .setFillMethod(FillMethod.Radial360)
+      .setFillOrigin(FillOrigin.Top)
+      .setFillClockwise(false)
+      .setFillAmount(0.6)
+  );
+  const result = new DomPatchEngine().apply(document, parsePatch({
+    operations: [{
+      op: "update",
+      selector: "#n10",
+      expectedMatches: 1,
+      changes: {
+        content: {
+          fillMethod: "horizontal"
+        }
+      }
+    }]
+  }));
+
+  assert.equal(result.ok, true);
+  const image = main.getChildById("n10") as unknown as {
+    getFillMethod(): number;
+    getFillOrigin(): number;
+    getFillClockwise(): boolean;
+    getFillAmount(): number;
+  };
+  assert.equal(image.getFillMethod(), FillMethod.Horizontal);
+  assert.equal(image.getFillOrigin(), FillOrigin.Left);
+  assert.equal(image.getFillClockwise(), true);
+  assert.equal(image.getFillAmount(), 0.6);
+});
+
+test("fillClockwise is rejected for non-radial methods at its exact path", () => {
+  const { document, main } = fixture();
+  main.addChild(
+    document.createGLoader("loader")
+      .setId("n10")
+      .setFillMethod(FillMethod.Horizontal)
+      .setFillOrigin(FillOrigin.Left)
+  );
+  const result = new DomPatchEngine().apply(document, parsePatch({
+    operations: [{
+      op: "update",
+      selector: "#n10",
+      expectedMatches: 1,
+      changes: {
+        content: {
+          fillClockwise: false
+        }
+      }
+    }]
+  }));
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "INVALID_PATCH");
+    assert.equal(
+      result.error.path,
+      "operations[0].changes.content.fillClockwise"
+    );
+  }
 });

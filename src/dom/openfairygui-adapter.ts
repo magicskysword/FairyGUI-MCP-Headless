@@ -1,7 +1,6 @@
 import {
   AlignType,
   AutoSizeType,
-  FillMethod,
   FlipType,
   GraphType,
   GroupLayoutType,
@@ -21,12 +20,18 @@ import {
   FAIRYGUI_RELATION_TYPES,
   FairyDomDocumentSchema,
   type FairyDomDocument,
+  type FairyDomFillMethod,
   type FairyDomListItem,
   type FairyDomNode,
   type FairyDomRelation,
   type FairyDomResourceReference,
   type FairyDomStyle
 } from "../contracts/dom.js";
+import {
+  fillMethodName,
+  fillOriginName,
+  isRadialFillMethod
+} from "./fill-semantics.js";
 import { supportsInstanceOverlay } from "./instance-extension.js";
 
 type GetterOwner = {
@@ -236,25 +241,6 @@ function flipName(
   return "none";
 }
 
-function fillMethodName(value: number | undefined): (
-  | "none"
-  | "horizontal"
-  | "vertical"
-  | "radial-90"
-  | "radial-180"
-  | "radial-360"
-) {
-  const names = [
-    "none",
-    "horizontal",
-    "vertical",
-    "radial-90",
-    "radial-180",
-    "radial-360"
-  ] as const;
-  return names[value ?? FillMethod.None] ?? "none";
-}
-
 function listLayoutName(value: number | undefined): (
   | "single-column"
   | "single-row"
@@ -421,6 +407,7 @@ function nodeFor(
     case PropertyType.G_IMAGE: {
       const sourcePackageId = stringGetter(owner, "getPackageId") ?? packageId;
       const amount = numberGetter(owner, "getFillAmount");
+      const fillMethod = fillMethodName(numberGetter(owner, "getFillMethod"));
       return {
         ...base,
         type: "image",
@@ -430,7 +417,14 @@ function nodeFor(
             sourcePackageId
           ),
           flip: flipName(numberGetter(owner, "getFlip")),
-          fillMethod: fillMethodName(numberGetter(owner, "getFillMethod")),
+          fillMethod,
+          fillOrigin: fillOriginName(
+            fillMethod,
+            numberGetter(owner, "getFillOrigin")
+          ),
+          fillClockwise: isRadialFillMethod(fillMethod)
+            ? booleanGetter(owner, "getFillClockwise") ?? true
+            : undefined,
           fillAmount: amount === undefined
             ? undefined
             : Math.max(0, Math.min(1, amount > 1 ? amount / 100 : amount)),
@@ -476,7 +470,11 @@ function nodeFor(
         }
       } as FairyDomNode;
     }
-    case PropertyType.G_LOADER:
+    case PropertyType.G_LOADER: {
+      const fillMethod: FairyDomFillMethod = fillMethodName(
+        numberGetter(owner, "getFillMethod")
+      );
+      const amount = numberGetter(owner, "getFillAmount");
       return {
         ...base,
         type: "loader",
@@ -500,9 +498,21 @@ function nodeFor(
           verticalAlign: verticalAlignName(numberGetter(owner, "getVAlign")),
           autoSize: booleanGetter(owner, "getAutoSize"),
           playing: booleanGetter(owner, "getPlaying"),
-          frame: numberGetter(owner, "getFrame")
+          frame: numberGetter(owner, "getFrame"),
+          fillMethod,
+          fillOrigin: fillOriginName(
+            fillMethod,
+            numberGetter(owner, "getFillOrigin")
+          ),
+          fillClockwise: isRadialFillMethod(fillMethod)
+            ? booleanGetter(owner, "getFillClockwise") ?? true
+            : undefined,
+          fillAmount: amount === undefined
+            ? undefined
+            : Math.max(0, Math.min(1, amount > 1 ? amount / 100 : amount))
         }
       };
+    }
     case PropertyType.G_GRAPH: {
       const points = getter(owner, "getPoints");
       const pointPairs = Array.isArray(points)

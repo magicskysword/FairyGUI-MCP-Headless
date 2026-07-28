@@ -217,11 +217,11 @@ test("all project actions report service, DOM schema and runtime dependency vers
   try {
     const expectedService = {
       packageName: "@magicskysword/fairygui-mcp-headless",
-      version: "0.1.4",
+      version: "0.1.5",
       domSchemaVersion: 1,
       runtimeVersions: {
-        "@magicskysword/openfairygui-core": "0.2.4",
-        "@magicskysword/openfairygui-functions": "0.2.4",
+        "@magicskysword/openfairygui-core": "0.2.5",
+        "@magicskysword/openfairygui-functions": "0.2.5",
         "@magicskysword/fairygui-dom": "1.1.2"
       }
     };

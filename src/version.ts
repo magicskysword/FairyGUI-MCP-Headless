@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { FAIRY_DOM_SCHEMA_VERSION } from "./contracts/dom.js";
 
 export const PACKAGE_NAME = "@magicskysword/fairygui-mcp-headless";
-export const PACKAGE_VERSION = "0.1.3";
+export const PACKAGE_VERSION = "0.1.4";
 export const SERVER_NAME = "fairygui-mcp-headless";
 
 const RUNTIME_PACKAGES = [

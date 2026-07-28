@@ -23,12 +23,12 @@ const mcpDirectory = path.resolve(import.meta.dirname, "..");
 const packages = [
   {
     name: "@magicskysword/openfairygui-core",
-    version: "0.2.3",
+    version: "0.2.4",
     directory: path.join(workspaceRoot, "OpenFairyGUI", "packages", "core")
   },
   {
     name: "@magicskysword/openfairygui-functions",
-    version: "0.2.3",
+    version: "0.2.4",
     directory: path.join(workspaceRoot, "OpenFairyGUI", "packages", "functions")
   },
   {
@@ -38,7 +38,7 @@ const packages = [
   },
   {
     name: "@magicskysword/fairygui-mcp-headless",
-    version: "0.1.3",
+    version: "0.1.4",
     directory: mcpDirectory
   }
 ] as const;
@@ -176,7 +176,7 @@ import {
 } from "@magicskysword/fairygui-mcp-headless";
 
 assert.equal(PACKAGE_NAME, "@magicskysword/fairygui-mcp-headless");
-assert.equal(PACKAGE_VERSION, "0.1.3");
+assert.equal(PACKAGE_VERSION, "0.1.4");
 const projectDirectory = process.env.FAIRYGUI_PACK_SMOKE_PROJECT;
 assert.ok(projectDirectory, "缺少隔离冒烟工程路径");
 const serverEntry = path.resolve(

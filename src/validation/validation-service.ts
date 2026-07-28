@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   buildResourceReferenceIndex,
+  inspectProjectOutputConflicts,
   serializeProjectFiles,
   type Component,
   type Document,
@@ -170,6 +171,22 @@ function quickDiagnostics(
       }
       seenResourceIds.add(resourceId);
     }
+  }
+
+  for (const conflict of inspectProjectOutputConflicts(document)) {
+    if (!scope.packageIds.has(conflict.packageId)) continue;
+    const assetRoot = conflict.branch
+      ? `assets_${conflict.branch}`
+      : "assets";
+    diagnostics.push({
+      severity: "error",
+      code: "DUPLICATE_SOURCE_OUTPUT",
+      message:
+        `包 ${conflict.packageName} 的工程源输出路径重复：`
+        + conflict.outputPath,
+      path: `${assetRoot}/${conflict.packageName}/${conflict.outputPath}`,
+      details: { ...conflict }
+    });
   }
 
   for (const { pkg, component } of scope.components) {

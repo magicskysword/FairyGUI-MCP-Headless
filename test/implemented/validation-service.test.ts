@@ -27,6 +27,7 @@ afterEach(async () => {
 async function createProject(options: {
   brokenReference?: boolean;
   codeGeneration?: boolean;
+  duplicateSourceOutput?: boolean;
   extraEmptyComponents?: number;
 } = {}): Promise<{
   directory: string;
@@ -58,6 +59,9 @@ async function createProject(options: {
         + `name="Empty${index}.xml" path="/"/>`
     ).join("\n    ")}
     <image id="img01" name="hero.png" path="/" exported="true"/>
+    ${options.duplicateSourceOutput
+    ? '<image id="img02" name="hero.png" path="/" exported="false"/>'
+    : ""}
   </resources>
 </packageDescription>`,
     "utf8"
@@ -105,6 +109,7 @@ async function createProject(options: {
 async function openValidator(options: {
   brokenReference?: boolean;
   codeGeneration?: boolean;
+  duplicateSourceOutput?: boolean;
   extraEmptyComponents?: number;
 } = {}): Promise<{
   registry: ProjectRegistry;
@@ -147,6 +152,58 @@ test("quick validation returns valid:false as a successful project finding", asy
     ));
     assert.equal(result.data.checked.packageCount, 1);
     assert.equal(result.data.checked.componentCount, 1);
+  }
+  finally {
+    await registry.closeAll();
+  }
+});
+
+test("quick validation reports every producer of a duplicate source output", async () => {
+  const { registry, validator, projectId } = await openValidator({
+    duplicateSourceOutput: true
+  });
+  try {
+    const result = await validator.validate(ValidateInputSchema.parse({
+      projectId,
+      mode: "quick",
+      detail: "full"
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    assert.equal(result.data.valid, false);
+    const finding = result.data.diagnostics.find((diagnostic) =>
+      diagnostic.code === "DUPLICATE_SOURCE_OUTPUT"
+    );
+    assert.ok(finding);
+    assert.equal(finding.severity, "error");
+    assert.equal(finding.path, "assets/Demo/hero.png");
+    assert.deepEqual(finding.details, {
+      packageId: "pkg00001",
+      packageName: "Demo",
+      branch: "",
+      outputPath: "hero.png",
+      first: {
+        kind: "resource",
+        packageId: "pkg00001",
+        packageName: "Demo",
+        branch: "",
+        resourceId: "img01",
+        resourceType: "ImageResource",
+        resourceName: "hero",
+        resourcePath: "/"
+      },
+      conflicting: {
+        kind: "resource",
+        packageId: "pkg00001",
+        packageName: "Demo",
+        branch: "",
+        resourceId: "img02",
+        resourceType: "ImageResource",
+        resourceName: "hero",
+        resourcePath: "/"
+      }
+    });
   }
   finally {
     await registry.closeAll();

@@ -32,7 +32,9 @@ afterEach(async () => {
   );
 });
 
-async function createProject(label: string): Promise<{
+async function createProject(label: string, options: {
+  unrelatedOutputConflict?: boolean;
+} = {}): Promise<{
   directory: string;
   projectFile: string;
   packageFile: string;
@@ -58,6 +60,9 @@ async function createProject(label: string): Promise<{
   <resources>
     <component id="cmp01" name="Main.xml" path="/" exported="true"/>
     <component id="btn01" name="Button.xml" path="/" exported="true"/>
+    ${options.unrelatedOutputConflict
+      ? '<image id="dupimg1" name="Collision.png" path="/images/" width="16" height="16"/>\n    <image id="dupimg2" name="Collision.png" path="/images/" width="16" height="16"/>'
+      : ""}
   </resources>
 </packageDescription>`,
     "utf8"
@@ -102,8 +107,9 @@ async function setup(label: string, options: {
   beforeCommit?: DomPatchServiceOptions["beforeCommit"];
   engine?: DomPatchEngine;
   coordinator?: ProjectCommitCoordinator;
+  unrelatedOutputConflict?: boolean;
 } = {}) {
-  const project = await createProject(label);
+  const project = await createProject(label, options);
   const logDirectory = await mkdtemp(path.join(os.tmpdir(), "fgui-patch-log-"));
   const validationDirectory = await mkdtemp(
     path.join(os.tmpdir(), "fgui-patch-roundtrip-")
@@ -279,6 +285,39 @@ test("DOM patch service writes one component atomically and preserves opaque XML
       ok: true,
       data: { text: "After", ids: ["n2", "n0", "n3"] }
     });
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("DOM patch roundtrip ignores unrelated package output conflicts", async () => {
+  const context = await setup("unrelated-output-conflict", {
+    unrelatedOutputConflict: true
+  });
+  try {
+    const packageBefore = await readFile(context.project.packageFile, "utf8");
+    const result = await context.service.apply(patch(context.projectId, [{
+      op: "update",
+      selector: "#n0",
+      expectedMatches: 1,
+      changes: { content: { text: "Conflict-safe" } }
+    }]));
+
+    if (!result.ok) {
+      assert.fail(`${result.error.code}: ${result.error.message} ${
+        JSON.stringify(result.error.actual)
+      }`);
+    }
+    assert.deepEqual(result.data.affectedFiles, ["assets/Demo/Main.xml"]);
+    assert.match(
+      await readFile(context.project.componentFile, "utf8"),
+      /text="Conflict-safe"/
+    );
+    assert.equal(
+      await readFile(context.project.packageFile, "utf8"),
+      packageBefore
+    );
   }
   finally {
     await context.registry.closeAll();

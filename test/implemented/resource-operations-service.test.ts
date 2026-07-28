@@ -27,7 +27,9 @@ afterEach(async () => {
   );
 });
 
-async function createProject(): Promise<{
+async function createProject(options: {
+  unrelatedOutputConflict?: boolean;
+} = {}): Promise<{
   directory: string;
   projectFile: string;
   packageFile: string;
@@ -54,6 +56,9 @@ async function createProject(): Promise<{
   <resources>
     <component id="cmp01" name="Main.xml" path="/" exported="true"/>
     <image id="img01" name="Icon.png" path="/icons/" exported="true"/>
+    ${options.unrelatedOutputConflict
+      ? '<image id="dupimg1" name="Collision.png" path="/images/" width="16" height="16"/>\n    <image id="dupimg2" name="Collision.png" path="/images/" width="16" height="16"/>'
+      : ""}
   </resources>
 </packageDescription>`,
     "utf8"
@@ -87,8 +92,9 @@ async function setup(options: {
   transactions?: FileTransactionManager;
   coordinator?: ProjectCommitCoordinator;
   directoryCleaner?: EmptyDirectoryCleaner;
+  unrelatedOutputConflict?: boolean;
 } = {}) {
-  const project = await createProject();
+  const project = await createProject(options);
   const logDirectory = await mkdtemp(path.join(os.tmpdir(), "fgui-resource-log-"));
   const roundtripDirectory = await mkdtemp(
     path.join(os.tmpdir(), "fgui-resource-roundtrip-")
@@ -246,6 +252,40 @@ test("resource service atomically creates package and component files", async ()
         card: "Card"
       });
     }
+  }
+  finally {
+    await context.registry.closeAll();
+  }
+});
+
+test("resource roundtrip ignores unrelated package output conflicts", async () => {
+  const context = await setup({ unrelatedOutputConflict: true });
+  try {
+    const mainBefore = await readFile(context.project.mainFile, "utf8");
+    const result = await context.service.apply(
+      ApplyResourceOperationsInputSchema.parse({
+        projectId: context.projectId,
+        operations: [{
+          op: "create-component",
+          packageId: "pkg00001",
+          clientRef: "card",
+          name: "ConflictSafeCard",
+          width: 100,
+          height: 40
+        }]
+      })
+    );
+
+    if (!result.ok) {
+      assert.fail(`${result.error.code}: ${result.error.message} ${
+        JSON.stringify(result.error.actual)
+      }`);
+    }
+    const packageXml = await readFile(context.project.packageFile, "utf8");
+    assert.match(packageXml, /id="dupimg1"/);
+    assert.match(packageXml, /id="dupimg2"/);
+    assert.match(packageXml, /name="ConflictSafeCard\.xml"/);
+    assert.equal(await readFile(context.project.mainFile, "utf8"), mainBefore);
   }
   finally {
     await context.registry.closeAll();

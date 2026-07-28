@@ -1,11 +1,7 @@
 import {
   lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm
+  readFile
 } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   serializeAffectedProjectFiles,
@@ -31,6 +27,7 @@ import {
   type FileTransactionData,
   type TransactionFileChange
 } from "../write/file-transaction.js";
+import { readProjectWithOverlay } from "../write/project-overlay-reader.js";
 import {
   readImportInboxFile,
   type ImportInboxFile
@@ -84,6 +81,7 @@ export interface ResourceOperationsServiceOptions {
   transactions?: FileTransactionManager;
   engine?: ResourceOperationsEngine;
   directoryCleaner?: EmptyDirectoryCleaner;
+  /** @deprecated 往返校验已改用只读覆盖层，不再创建临时工程。 */
   temporaryRoot?: string;
   maxFreshRetries?: number;
 }
@@ -268,7 +266,6 @@ export class ResourceOperationsService {
   readonly #transactions: FileTransactionManager;
   readonly #engine: ResourceOperationsEngine;
   readonly #directoryCleaner: EmptyDirectoryCleaner;
-  readonly #temporaryRoot: string;
   readonly #maxFreshRetries: number;
 
   public constructor(
@@ -281,14 +278,6 @@ export class ResourceOperationsService {
     this.#engine = options.engine ?? new ResourceOperationsEngine();
     this.#directoryCleaner = options.directoryCleaner
       ?? new SafeEmptyDirectoryCleaner();
-    this.#temporaryRoot = path.resolve(
-      options.temporaryRoot
-      ?? path.join(
-        os.tmpdir(),
-        "fairygui-mcp-headless",
-        "resource-roundtrip"
-      )
-    );
     this.#maxFreshRetries = options.maxFreshRetries ?? DEFAULT_FRESH_RETRIES;
     if (
       !Number.isSafeInteger(this.#maxFreshRetries)
@@ -455,6 +444,7 @@ export class ResourceOperationsService {
         document,
         input,
         project.projectDirectory,
+        project.projectFile,
         importFiles.data
       );
     }
@@ -496,6 +486,7 @@ export class ResourceOperationsService {
     document: Document,
     input: ApplyResourceOperationsInput,
     projectDirectory: string,
+    projectFile: string,
     importFiles: ReadonlyMap<number, ImportInboxFile>
   ): Promise<ResultEnvelope<PreparedResourceOperations>> {
     const applied = this.#engine.apply(document, input, { importFiles });
@@ -517,9 +508,15 @@ export class ResourceOperationsService {
     }
 
     const roundtrip = await this.validateRoundtrip(
-      document,
+      projectFile,
       targetsFor(applied.data),
-      files
+      files,
+      [
+        ...applied.data.fileMoves.map((move) => move.from),
+        ...applied.data.deletedFiles,
+        ...applied.data.assetMoves.map((move) => move.from),
+        ...applied.data.deletedAssetFiles
+      ]
     );
     if (!roundtrip.ok) return roundtrip;
     files = roundtrip.data;
@@ -666,19 +663,16 @@ export class ResourceOperationsService {
   }
 
   private async validateRoundtrip(
-    document: Document,
+    projectFile: string,
     targets: ProjectFileTarget[],
-    expected: SerializedProjectFile[]
+    expected: SerializedProjectFile[],
+    deletedPaths: string[]
   ): Promise<ResultEnvelope<SerializedProjectFile[]>> {
-    await mkdir(this.#temporaryRoot, { recursive: true });
-    const temporaryDirectory = await mkdtemp(
-      path.join(this.#temporaryRoot, "resources-")
-    );
     try {
-      const io = new NodeIO();
-      const projectFile = path.join(temporaryDirectory, "Roundtrip.fairy");
-      await io.writeProject(document, projectFile);
-      const reparsed = await io.readProject(projectFile);
+      const reparsed = await readProjectWithOverlay(projectFile, {
+        files: expected,
+        deletedPaths
+      });
       const actual = (await serializeAffectedProjectFiles(reparsed, targets))
         .sort((left, right) =>
           left.relativePath.localeCompare(right.relativePath)
@@ -711,11 +705,10 @@ export class ResourceOperationsService {
           }
         );
       }
-      const stableDirectory = path.join(temporaryDirectory, "stable");
-      await mkdir(stableDirectory, { recursive: true });
-      const stableProjectFile = path.join(stableDirectory, "Stable.fairy");
-      await io.writeProject(reparsed, stableProjectFile);
-      const stableDocument = await io.readProject(stableProjectFile);
+      const stableDocument = await readProjectWithOverlay(projectFile, {
+        files: actual,
+        deletedPaths
+      });
       const stable = (await serializeAffectedProjectFiles(
         stableDocument,
         targets
@@ -746,9 +739,6 @@ export class ResourceOperationsService {
       return fail("SERIALIZATION_FAILED", "资源批处理回读校验失败", {
         actual: error instanceof Error ? error.message : String(error)
       });
-    }
-    finally {
-      await rm(temporaryDirectory, { recursive: true, force: true });
     }
   }
 

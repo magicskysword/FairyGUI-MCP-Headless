@@ -1,10 +1,4 @@
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm
-} from "node:fs/promises";
-import os from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   PropertyType,
@@ -29,6 +23,7 @@ import {
   FileTransactionManager,
   type FileTransactionData
 } from "../write/file-transaction.js";
+import { readProjectWithOverlay } from "../write/project-overlay-reader.js";
 import {
   DomPatchEngine,
   type DomPatchOperationResult
@@ -61,6 +56,7 @@ export interface DomPatchServiceOptions {
   coordinator?: ProjectCommitCoordinator;
   transactions?: FileTransactionManager;
   engine?: DomPatchEngine;
+  /** @deprecated 往返校验已改用只读覆盖层，不再创建临时工程。 */
   temporaryRoot?: string;
   maxFreshRetries?: number;
   beforeCommit?: (
@@ -192,7 +188,6 @@ export class DomPatchService {
   readonly #coordinator: ProjectCommitCoordinator;
   readonly #transactions: FileTransactionManager;
   readonly #engine: DomPatchEngine;
-  readonly #temporaryRoot: string;
   readonly #maxFreshRetries: number;
   readonly #beforeCommit:
     | DomPatchServiceOptions["beforeCommit"]
@@ -206,10 +201,6 @@ export class DomPatchService {
     this.#coordinator = options.coordinator ?? new ProjectCommitCoordinator();
     this.#transactions = options.transactions ?? new FileTransactionManager();
     this.#engine = options.engine ?? new DomPatchEngine();
-    this.#temporaryRoot = path.resolve(
-      options.temporaryRoot
-      ?? path.join(os.tmpdir(), "fairygui-mcp-headless", "dom-roundtrip")
-    );
     this.#maxFreshRetries = options.maxFreshRetries ?? DEFAULT_FRESH_RETRIES;
     if (
       !Number.isSafeInteger(this.#maxFreshRetries)
@@ -332,7 +323,7 @@ export class DomPatchService {
 
     try {
       const document = await new NodeIO().readProject(project.projectFile);
-      return await this.prepare(document, input);
+      return await this.prepare(document, input, project.projectFile);
     }
     catch (error) {
       return fail(
@@ -349,7 +340,8 @@ export class DomPatchService {
 
   private async prepare(
     document: Document,
-    input: ApplyDomPatchInput
+    input: ApplyDomPatchInput,
+    projectFile: string
   ): Promise<ResultEnvelope<PreparedPatch>> {
     const pkg = document.getRoot().getPackageById(input.packageId);
     if (!pkg) {
@@ -405,7 +397,7 @@ export class DomPatchService {
     }
 
     const roundtrip = await this.validateRoundtrip(
-      document,
+      projectFile,
       input,
       serialized,
       applied.data.dom
@@ -422,23 +414,18 @@ export class DomPatchService {
   }
 
   private async validateRoundtrip(
-    document: Document,
+    projectFile: string,
     input: ApplyDomPatchInput,
     serialized: SerializedProjectFile,
     expectedDom: FairyDomDocument
   ): Promise<ResultEnvelope<FairyDomDocument>> {
-    await mkdir(this.#temporaryRoot, { recursive: true });
-    const temporaryDirectory = await mkdtemp(
-      path.join(this.#temporaryRoot, "patch-")
-    );
     try {
-      const io = new NodeIO();
-      const temporaryProject = path.join(
-        temporaryDirectory,
-        "Roundtrip.fairy"
-      );
-      await io.writeProject(document, temporaryProject);
-      const reparsed = await io.readProject(temporaryProject);
+      const reparsed = await readProjectWithOverlay(projectFile, {
+        files: [{
+          relativePath: serialized.relativePath,
+          content: serialized.content
+        }]
+      });
       const files = await serializeAffectedProjectFiles(reparsed, [{
         kind: "component",
         packageId: input.packageId,
@@ -491,9 +478,6 @@ export class DomPatchService {
         path: serialized.relativePath,
         actual: error instanceof Error ? error.message : String(error)
       });
-    }
-    finally {
-      await rm(temporaryDirectory, { recursive: true, force: true });
     }
   }
 

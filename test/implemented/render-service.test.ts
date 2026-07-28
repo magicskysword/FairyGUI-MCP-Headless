@@ -26,6 +26,7 @@ import {
   RenderService,
   type RenderBrowserType
 } from "../../src/render/render-service.js";
+import { compileRuntimeArtifacts } from "../../src/render/runtime-compiler.js";
 import { toFairyDomDocument } from "../../src/dom/openfairygui-adapter.js";
 
 const temporaryDirectories: string[] = [];
@@ -235,6 +236,111 @@ async function createHighResolutionImageProject(): Promise<{
       componentFile,
       baseImageFile,
       highResolutionImageFile
+    ]
+  };
+}
+
+async function createMixedAtlasProject(): Promise<{
+  directory: string;
+  projectFile: string;
+  sourceFiles: string[];
+}> {
+  const directory = await mkdtemp(path.join(
+    os.tmpdir(),
+    "fgui-mixed-atlas-render-"
+  ));
+  temporaryDirectories.push(directory);
+  const packageDirectory = path.join(directory, "assets", "Mixed");
+  const settingsDirectory = path.join(directory, "settings");
+  await mkdir(packageDirectory, { recursive: true });
+  await mkdir(settingsDirectory, { recursive: true });
+  const projectFile = path.join(directory, "Mixed.fairy");
+  const packageFile = path.join(packageDirectory, "package.xml");
+  const componentFile = path.join(packageDirectory, "Main.xml");
+  const publishSettingsFile = path.join(settingsDirectory, "Publish.json");
+  await writeFile(
+    projectFile,
+    `<?xml version="1.0" encoding="utf-8"?>
+<projectDescription id="mixed-atlas-project" type="DOM" version="5.0"/>`,
+    "utf8"
+  );
+  await writeFile(
+    publishSettingsFile,
+    JSON.stringify({
+      binaryFormat: true,
+      compressDesc: true,
+      codeGeneration: {
+        allowGenCode: false,
+        codePath: "generated",
+        codeType: ""
+      },
+      atlasSetting: {
+        maxSize: 64,
+        paging: true,
+        sizeOption: "any",
+        allowRotation: false,
+        trimImage: false
+      }
+    }),
+    "utf8"
+  );
+  await writeFile(
+    packageFile,
+    `<?xml version="1.0" encoding="utf-8"?>
+<packageDescription id="mixpkg01">
+  <resources>
+    <folder id="/Fixed/" name="Fixed" path="/" atlas="1"/>
+    <image id="auto1" name="auto1.png" path="/Auto/"/>
+    <image id="auto2" name="auto2.png" path="/Auto/"/>
+    <image id="auto3" name="auto3.png" path="/Auto/"/>
+    <image id="fixed" name="fixed.png" path="/Fixed/"/>
+    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
+  </resources>
+</packageDescription>`,
+    "utf8"
+  );
+  await writeFile(
+    componentFile,
+    `<?xml version="1.0" encoding="utf-8"?>
+<component size="192,48">
+  <displayList>
+    <image id="n0" name="auto1" src="auto1" xy="0,0" size="48,48"/>
+    <image id="n1" name="auto2" src="auto2" xy="48,0" size="48,48"/>
+    <image id="n2" name="auto3" src="auto3" xy="96,0" size="48,48"/>
+    <image id="n3" name="fixed" src="fixed" xy="144,0" size="48,48"/>
+  </displayList>
+</component>`,
+    "utf8"
+  );
+  const imageFiles: string[] = [];
+  for (const [subdirectory, fileName, color] of [
+    ["Auto", "auto1.png", { r: 220, g: 40, b: 40, alpha: 1 }],
+    ["Auto", "auto2.png", { r: 40, g: 180, b: 80, alpha: 1 }],
+    ["Auto", "auto3.png", { r: 40, g: 90, b: 220, alpha: 1 }],
+    ["Fixed", "fixed.png", { r: 230, g: 190, b: 30, alpha: 1 }]
+  ] as const) {
+    const imageDirectory = path.join(packageDirectory, subdirectory);
+    await mkdir(imageDirectory, { recursive: true });
+    const imageFile = path.join(imageDirectory, fileName);
+    await sharp({
+      create: {
+        width: 48,
+        height: 48,
+        channels: 4,
+        background: color
+      }
+    }).png().toFile(imageFile);
+    imageFiles.push(imageFile);
+  }
+  return {
+    directory,
+    projectFile,
+    sourceFiles: [
+      projectFile,
+      publishSettingsFile,
+      packageFile,
+      componentFile,
+      ...imageFiles
     ]
   };
 }
@@ -737,6 +843,81 @@ test("render_component previews an unexported component without changing setting
   finally {
     await renderer.close();
     await registry.closeAll();
+  }
+});
+
+test("render_component compiles mixed automatic and fixed atlas pages without touching sources", async () => {
+  const project = await createMixedAtlasProject();
+  const before = await Promise.all(project.sourceFiles.map((file) =>
+    readFile(file)
+  ));
+
+  const compiled = await compileRuntimeArtifacts(
+    project.projectFile,
+    project.directory
+  );
+  const artifactNames = compiled.artifacts.map((artifact) =>
+    artifact.fileName
+  );
+  assert.deepEqual(artifactNames, [
+    "Mixed.fui",
+    "Mixed_atlas0.png",
+    "Mixed_atlas1.png",
+    "Mixed_atlas2.png",
+    "Mixed_atlas3.png"
+  ]);
+  assert.equal(new Set(artifactNames).size, artifactNames.length);
+
+  const registry = new ProjectRegistry();
+  const opened = await registry.open(project.directory);
+  if (!opened.ok) assert.fail(opened.error.message);
+  const renderer = new RenderService(registry);
+  try {
+    const result = await renderSingle(renderer, {
+      projectId: opened.data.projectId,
+      packageId: "mixpkg01",
+      componentId: "cmp01"
+    });
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    const decoded = await sharp(Buffer.from(
+      inlineImageData(result.data),
+      "base64"
+    )).raw().toBuffer({ resolveWithObject: true });
+    const expectedColors = [
+      [220, 40, 40],
+      [40, 180, 80],
+      [40, 90, 220],
+      [230, 190, 30]
+    ];
+    for (const [index, expected] of expectedColors.entries()) {
+      const sampleX = index * 48 + 24;
+      const offset = (24 * decoded.info.width + sampleX)
+        * decoded.info.channels;
+      const actual = [...decoded.data.subarray(offset, offset + 3)];
+      assert.ok(
+        actual.every((channel, channelIndex) =>
+          Math.abs(channel - expected[channelIndex]!) <= 5
+        ),
+        `图集页 ${index} 的中心像素应为 ${expected.join(",")}，实际为 ${actual.join(",")}`
+      );
+    }
+  }
+  finally {
+    await renderer.close();
+    await registry.closeAll();
+  }
+
+  const after = await Promise.all(project.sourceFiles.map((file) =>
+    readFile(file)
+  ));
+  for (const [index, original] of before.entries()) {
+    assert.equal(
+      Buffer.compare(original, after[index]!),
+      0,
+      `运行时预览不得修改源文件：${project.sourceFiles[index]}`
+    );
   }
 });
 

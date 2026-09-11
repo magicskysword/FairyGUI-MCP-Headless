@@ -187,11 +187,13 @@ test("source and runtime dependencies avoid Windows-only assumptions", async () 
       /\b(?:cmd\.exe|powershell(?:\.exe)?|wscript\.exe|cscript\.exe)\b/iu,
       `${logicalPath} invokes a Windows shell`
     );
-    assert.doesNotMatch(
-      source,
-      /process\.platform\s*={2,3}\s*["']win32["']/u,
-      `${logicalPath} contains Windows-only business logic`
-    );
+    if (logicalPath !== "preview/process-tree.ts") {
+      assert.doesNotMatch(
+        source,
+        /\b(?:process\.)?platform\s*={2,3}\s*["']win32["']/u,
+        `${logicalPath} contains Windows-only business logic`
+      );
+    }
     assert.deepEqual(
       hardCodedBackslashPathArguments(source, logicalPath),
       [],

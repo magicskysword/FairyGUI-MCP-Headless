@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
+import sharp from "sharp";
 import { EditService } from "../../src/edit/edit-service.js";
 import { ProjectRegistry } from "../../src/project/project-registry.js";
 import { FileTransactionManager } from "../../src/write/file-transaction.js";
@@ -29,6 +30,43 @@ async function fixture(options: { now?: () => number; failWrite?: boolean } = {}
   const target = { kind: "node" as const, packageId: "package1", componentId: "panel", nodeId: "n0" };
   return { directory, assets, transactions, registry, projectId, service, target };
 }
+
+test("resource plans preserve inbox bytes, reject stale imports and consume only successful commits", async () => {
+  const f = await fixture();
+  const inbox = path.join(f.directory, ".fairygui-mcp", "import-inbox");
+  await mkdir(inbox, { recursive: true });
+  const file = path.join(inbox, "icon.png");
+  const png = await sharp({ create: { width: 8, height: 6, channels: 4, background: "red" } }).png().toBuffer();
+  await writeFile(file, png);
+  const input = { action: "plan" as const, projectId: f.projectId, operations: [{ op: "import" as const, target: { kind: "resource" as const, packageId: "package1" }, inboxPath: "icon.png", props: { name: "Icon" }, clientRef: "icon" }] };
+  const planned = await f.service.execute(input);
+  assert.equal(planned.ok, true, JSON.stringify(planned)); if (!planned.ok) return;
+  assert.deepEqual(await readFile(file), png);
+  assert.ok(planned.data.files.some(change => change.relativePath === ".fairygui-mcp/import-inbox/icon.png" && change.action === "remove"));
+  await writeFile(file, Buffer.concat([png, Buffer.from([1])]));
+  const stale = await f.service.execute({ action: "commit", projectId: f.projectId, planId: planned.data.planId, requestId: "stale-import" });
+  assert.equal(stale.ok, false); if (!stale.ok) assert.equal(stale.error.code, "SOURCE_CONFLICT");
+  await writeFile(file, png);
+  const committed = await f.service.execute({ action: "commit", projectId: f.projectId, planId: planned.data.planId, requestId: "import-success" });
+  assert.equal(committed.ok, true, JSON.stringify(committed));
+  await assert.rejects(readFile(file), { code: "ENOENT" });
+  assert.deepEqual(await readFile(path.join(f.assets, "Icon.png")), png);
+  const replay = await f.service.execute({ action: "commit", projectId: f.projectId, planId: planned.data.planId, requestId: "import-success" });
+  assert.deepEqual(replay, committed);
+});
+
+test("failed resource transactions restore both inbox and project assets", async () => {
+  const f = await fixture({ failWrite: true });
+  const inbox = path.join(f.directory, ".fairygui-mcp", "import-inbox");
+  await mkdir(inbox, { recursive: true }); await writeFile(path.join(inbox, "data.bin"), new Uint8Array([1, 2]));
+  const before = await readFile(path.join(f.assets, "package.xml"));
+  const result = await f.service.execute({ action: "apply", projectId: f.projectId, requestId: "failed-import", operations: [{ op: "import", target: { kind: "resource", packageId: "package1" }, inboxPath: "data.bin", props: { name: "Data" } }] });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.error.code, "TRANSACTION_FAILED");
+  assert.deepEqual(await readFile(path.join(inbox, "data.bin")), Buffer.from([1, 2]));
+  assert.deepEqual(await readFile(path.join(f.assets, "package.xml")), before);
+  await assert.rejects(readFile(path.join(f.assets, "Data.bin")), { code: "ENOENT" });
+});
 
 test("edit plans capture native and XML changes without writes and commit atomically", async () => {
   const f = await fixture();

@@ -522,11 +522,106 @@
           "type": "object",
           "additionalProperties": true,
           "description": "Native property patch; omitted fields retain values, null clears optional fields, arrays replace."
+        },
+        "inboxPath": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
         "op",
         "target"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "op": {
+          "const": "import"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "project",
+                "package",
+                "resource",
+                "component",
+                "node",
+                "controller",
+                "page",
+                "gear",
+                "transition",
+                "transition-item",
+                "controller-action"
+              ]
+            },
+            "packageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "componentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controllerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "inboxPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Native property patch; omitted fields retain values, null clears optional fields, arrays replace."
+        },
+        "clientRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "op",
+        "target",
+        "inboxPath"
       ],
       "additionalProperties": false
     },

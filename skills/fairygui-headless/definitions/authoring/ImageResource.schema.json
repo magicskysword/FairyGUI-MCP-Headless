@@ -62,16 +62,6 @@
     "tileGridIndice": {
       "type": "number"
     },
-    "imageData": {
-      "type": [
-        "null",
-        "string",
-        "number",
-        "boolean",
-        "object",
-        "array"
-      ]
-    },
     "pixelHitTestData": {
       "type": [
         "null",

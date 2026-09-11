@@ -6,6 +6,7 @@ test("six-tool contract validates native edits and required request identities",
   assert.deepEqual(Object.keys(TOOL_INPUT_SCHEMAS), ["fairygui.project", "fairygui.query", "fairygui.edit", "fairygui.preview", "fairygui.validate", "fairygui.publish"]);
   const edit = { action: "apply", projectId: "p", requestId: "one", operations: [{ op: "update", target: { kind: "node", packageId: "pkg", componentId: "cmp", nodeId: "n0" }, props: { x: 42, alpha: 0.5 } }] };
   assert.equal(EditInputSchema.safeParse(edit).success, true);
+  assert.equal(EditInputSchema.safeParse({ ...edit, operations: [{ op: "import", target: { kind: "resource", packageId: "pkg" }, inboxPath: "image.png", clientRef: "image" }] }).success, true);
   assert.equal(EditInputSchema.safeParse({ ...edit, requestId: undefined }).success, false);
   assert.equal(EditInputSchema.safeParse({ ...edit, operations: [{ ...edit.operations[0], unexpected: true }] }).success, false);
   assert.equal(EditInputSchema.safeParse({ action: "commit", projectId: "p", requestId: "one", planId: "plan", operations: [] }).success, false);

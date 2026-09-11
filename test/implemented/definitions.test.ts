@@ -16,6 +16,6 @@ test('generated definitions have real model types, runtime declarations and reso
   assert.ok(text.properties.x);
   assert.equal(text.additionalProperties, false);
   const operations = JSON.parse(await readFile(path.join(directory, 'authoring/operations.schema.json'), 'utf8'));
-  assert.equal(operations.oneOf.length, 7);
+  assert.deepEqual(operations.oneOf.map((entry: { properties: { op: { const: string } } }) => entry.properties.op.const), ['create', 'update', 'remove', 'move', 'replace', 'import', 'clone', 'xml']);
   assert.ok(index.versions['@magicskysword/fairygui-dom']);
 });

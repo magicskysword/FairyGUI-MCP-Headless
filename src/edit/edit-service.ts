@@ -5,6 +5,7 @@ import { prepareSnapshotEdits, type ProjectSnapshot, type SnapshotEditOperation 
 import { ERROR_CODES, fail, ok, type ErrorCode, type ResultEnvelope } from "../contracts/result.js";
 import type { ProjectRegistry } from "../project/project-registry.js";
 import { projectSourceFileSystem, snapshotProject } from "../project/source-snapshot.js";
+import { readImportInboxFile } from "../resources/import-inbox.js";
 import { ProjectCommitCoordinator } from "../write/commit-coordinator.js";
 import { FileTransactionManager } from "../write/file-transaction.js";
 
@@ -90,7 +91,15 @@ export class EditService {
           if (existing.expiresAt <= this.now()) { this.plans.delete(input.planId); return fail("PLAN_EXPIRED", "编辑计划已过期", { suggestedFix: "重新生成编辑计划" }); }
           plan = existing;
         } else {
-          const source = await snapshotProject(projectFile);
+          let source = await snapshotProject(projectFile);
+          const inbox = [];
+          for (const [index, operation] of input.operations.entries()) {
+            if (operation.op === "xml" || !operation.inboxPath) continue;
+            const imported = await readImportInboxFile(projectDirectory, operation.inboxPath, `operations[${index}].inboxPath`);
+            if (!imported.ok) return imported;
+            inbox.push({ relativePath: imported.data.sourceRelativePath, content: imported.data.content });
+          }
+          if (inbox.length) source = await source.withChanges(inbox);
           const prepared = await prepareSnapshotEdits(source, input.operations);
           const originals = new Map(source.listFiles().map((file) => [fileKey(file.path), file.data]));
           const expiresAt = this.now() + 30 * 60 * 1000;

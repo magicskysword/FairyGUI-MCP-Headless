@@ -254,7 +254,7 @@ function quickDiagnostics(
   }
   for (const finding of buildProjectReferenceGraph(document).diagnostics) {
     const source = finding.reference?.source;
-    if (source && !scope.componentKeys.has(`${source.packageId}\0${source.componentId}`)) continue;
+    if (source && (source.resourceId ? !scope.packageIds.has(source.packageId) : !scope.componentKeys.has(`${source.packageId}\0${source.componentId}`))) continue;
     if (!source && !scope.components.some(({ pkg, component }) => finding.path.startsWith(`${pkg.getId()}/${component.getId()}/`))) continue;
     if (diagnostics.some(d => d.code === finding.code && d.path === finding.path)) continue;
     diagnostics.push({ severity: finding.severity, code: finding.code, message: finding.message, path: finding.path, ...(finding.reference ? { details: { reference: finding.reference } } : {}) });

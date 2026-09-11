@@ -55,3 +55,12 @@ test('XML fragments, controller pages and local references share stable target l
   const controllers = result.results.controllers!; assert.equal(controllers.ok, true); if (controllers.ok) assert.equal((controllers.data.items[0] as any).pages.length, 2);
   const refs = result.results.refs!; assert.equal(refs.ok, true); if (refs.ok) assert.equal(refs.data.items.length, 1);
 });
+
+test('resource dependency queries stay within the requested resource source', () => {
+  const document = fixture(); const pkg = document.getRoot().listPackages()[0]!;
+  pkg.addResource(document.createImageResource('base').setId('base').setHighResolutionItemIds(['high']));
+  pkg.addResource(document.createImageResource('high').setId('high'));
+  const result = queryAuthoringDocument(document, { projectId: 'p', queries: { resource: { kind: 'references', target: { kind: 'resource', packageId: 'package1', resourceId: 'base' }, direction: 'outgoing' } } });
+  const resource = result.results.resource!; assert.ok(resource.ok); if (!resource.ok) return;
+  assert.equal(resource.data.items.length, 1); assert.equal((resource.data.items[0] as any).target.id, 'high');
+});

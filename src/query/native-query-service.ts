@@ -60,7 +60,7 @@ function referenceMatches(edge: ProjectReferenceEdge, target: AuthoringTarget, d
     && (target.controllerName === undefined || (target.kind === "page" ? edge.target.controller : edge.target.id) === target.controllerName)
     && (target.pageId === undefined || edge.target.id === target.pageId)
     && (target.transitionName === undefined || edge.target.id === target.transitionName)));
-  const outgoing = edge.source.packageId === target.packageId && (target.componentId === undefined || edge.source.componentId === target.componentId) && (target.nodeId === undefined || edge.source.nodeId === target.nodeId) && (target.controllerName === undefined || edge.source.controller === target.controllerName) && (target.transitionName === undefined || edge.source.transition === target.transitionName);
+  const outgoing = edge.source.packageId === target.packageId && (target.componentId === undefined || edge.source.componentId === target.componentId) && (target.resourceId === undefined || (edge.source.resourceId ?? edge.source.componentId) === target.resourceId) && (target.nodeId === undefined || edge.source.nodeId === target.nodeId) && (target.controllerName === undefined || edge.source.controller === target.controllerName) && (target.transitionName === undefined || edge.source.transition === target.transitionName);
   return (direction !== "outgoing" && incoming) || (direction !== "incoming" && outgoing);
 }
 function values(document: Document, request: NativeQueryRequest): unknown[] {

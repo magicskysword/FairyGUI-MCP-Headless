@@ -7,7 +7,8 @@ import { PreviewExecutorError } from "./preview-executor.js";
 
 async function compile(snapshot: ProjectSnapshot, timeoutMs: number): Promise<PreviewArtifacts> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
-  const options: ForkOptions & { windowsHide: boolean } = { serialization: "advanced", windowsHide: true, detached: process.platform !== "win32", stdio: ["ignore", "ignore", "ignore", "ipc"] };
+  const env = Object.fromEntries(["PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR"].filter(key => process.env[key]).map(key => [key, process.env[key]!]));
+  const options: ForkOptions & { windowsHide: boolean } = { serialization: "advanced", windowsHide: true, detached: process.platform !== "win32", stdio: ["ignore", "ignore", "ignore", "ipc"], env };
   const worker = fork(fileURLToPath(new URL(`./compile-worker.${extension}`, import.meta.url)), [], options);
   try {
     return await new Promise<PreviewArtifacts>((resolve, reject) => {

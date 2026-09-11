@@ -1,11 +1,14 @@
 import { fork, type ChildProcess, type ForkOptions } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { access } from "node:fs/promises";
 import { terminateProcessTree } from "./process-tree.js";
 import { PreviewRecipeSchema, PreviewRunSchema, type ExecutorInput, type PreviewFrame, type PreviewRunInput, type PreviewRunResult, type PreviewState } from "../contracts/preview.js";
 
 export class PreviewExecutorError extends Error {
-  constructor(public readonly code: string, message: string) { super(message); this.name = "PreviewExecutorError"; }
+  public readonly path?: string;
+  public readonly time?: number;
+  constructor(public readonly code: string, message: string, location?: { path?: string; time?: number }) { super(message); this.name = "PreviewExecutorError"; if (location?.path !== undefined) this.path = location.path; if (location?.time !== undefined) this.time = location.time; }
 }
 export class PreviewExecutor {
   private worker: ChildProcess | undefined;
@@ -18,22 +21,24 @@ export class PreviewExecutor {
 
   async initialize(input: ExecutorInput): Promise<PreviewState> {
     const recipe = PreviewRecipeSchema.parse(input.recipe);
+    const executablePath = chromium.executablePath();
+    try { await access(executablePath); } catch { throw new PreviewExecutorError("BROWSER_NOT_INSTALLED", "未找到预览浏览器，请安装 Playwright Chromium"); }
     this.pixels = Math.ceil(recipe.environment.width * recipe.environment.scale) * Math.ceil(recipe.environment.height * recipe.environment.scale);
     const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
     const env = Object.fromEntries(["PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR", "DISPLAY"].filter(key => process.env[key]).map(key => [key, process.env[key]!]));
     const options: ForkOptions & { windowsHide: boolean } = { serialization: "advanced", windowsHide: true, detached: process.platform !== "win32", stdio: ["ignore", "ignore", "pipe", "ipc"], env };
     this.worker = fork(fileURLToPath(new URL(`./preview-worker.${extension}`, import.meta.url)), [], options);
     this.worker.stderr?.on("data", () => {});
-    this.worker.on("message", (message: { id: number; result?: unknown; error?: { code: string; message: string } }) => {
+    this.worker.on("message", (message: { id: number; result?: unknown; error?: { code: string; message: string; path?: string; time?: number } }) => {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id); clearTimeout(pending.timer);
-      if (message.error) pending.reject(new PreviewExecutorError(message.error.code, message.error.message));
+      if (message.error) pending.reject(new PreviewExecutorError(message.error.code, message.error.message, message.error));
       else pending.resolve(message.result);
     });
     this.worker.on("error", error => this.rejectPending(error));
     this.worker.on("exit", () => { this.rejectPending(new PreviewExecutorError("PREVIEW_WORKER_EXITED", "预览执行进程已结束")); this.worker = undefined; });
-    try { return await this.command("initialize", { ...input, recipe, executablePath: chromium.executablePath() }); }
+    try { return await this.command("initialize", { ...input, recipe, executablePath }); }
     catch (error) { await this.close(); throw error; }
   }
   async run(input: PreviewRunInput): Promise<PreviewRunResult> {

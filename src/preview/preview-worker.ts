@@ -90,7 +90,13 @@ process.on("message", (message: { id: number; action: string; data: unknown }) =
       else if (message.action === "capture") result = await capture(message.data);
       else throw new Error("Unknown preview worker command");
       process.send?.({ id: message.id, result });
-    } catch (error) { process.send?.({ id: message.id, error: { code: "PREVIEW_EXECUTION_FAILED", message: error instanceof Error ? error.message : String(error) } }); }
+    } catch (error) {
+      let failure = { code: "PREVIEW_EXECUTION_FAILED", message: error instanceof Error ? error.message : String(error) };
+      if (page && !page.isClosed()) {
+        try { failure = await evaluate("failure", failure); } catch {}
+      }
+      process.send?.({ id: message.id, error: failure });
+    }
   });
 });
 process.on("disconnect", () => { void browser?.close().finally(() => process.exit(0)); });

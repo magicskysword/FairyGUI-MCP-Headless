@@ -109,3 +109,14 @@ test('realtime sampling reports measured monotonic time with native timers', asy
   assert.ok(result.frames[1]!.time >= result.frames[0]!.time);
   assert.equal(result.frames[1]!.nodes[0]!.props.x, 42);
 });
+
+test('preconstruction failures retain script location and simulation time', async t => {
+  const executor = new PreviewExecutor(); t.after(() => executor.close());
+  const artifacts = await runtime();
+  await assert.rejects(() => executor.initialize({ previewId: 'preconstruct-error', runtime: artifacts, packageId: 'package1', componentId: 'panel', recipe: { preconstruct: 'throw new Error("registration failed");' } }), error => {
+    assert.equal((error as { code: string }).code, 'PREVIEW_SCRIPT_FAILED');
+    assert.equal((error as { path: string }).path, 'preconstruct');
+    assert.equal((error as { time: number }).time, 0); return true;
+  });
+  assert.equal(executor.alive, false);
+});

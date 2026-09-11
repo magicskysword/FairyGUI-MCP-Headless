@@ -121,7 +121,7 @@ export class PreviewService {
       } catch (error) {
         if (session) session.failed = true;
         if (error instanceof ZodError) return fail("INVALID_ARGUMENT", "预览配方不符合字段契约", { actual: error.issues });
-        if (error instanceof PreviewExecutorError || error instanceof DocumentEditError) return fail(ERROR_CODES.includes(error.code as ErrorCode) ? error.code as ErrorCode : "PREVIEW_EXECUTION_FAILED", error.message);
+        if (error instanceof PreviewExecutorError || error instanceof DocumentEditError) return fail(ERROR_CODES.includes(error.code as ErrorCode) ? error.code as ErrorCode : "PREVIEW_EXECUTION_FAILED", error.message, { ...(error.path ? { path: error.path } : {}), ...(error instanceof PreviewExecutorError && error.time !== undefined ? { actual: { time: error.time } } : {}) });
         return fail("PREVIEW_EXECUTION_FAILED", "预览执行失败", { actual: error instanceof Error ? error.message : String(error) });
       } finally { if (ephemeral) await session?.executor.close(); }
     });

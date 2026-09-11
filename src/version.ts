@@ -6,7 +6,7 @@ import { FAIRY_DOM_SCHEMA_VERSION } from "./contracts/dom.js";
 export const SKILL_PATH = fileURLToPath(new URL("../skills/fairygui-headless/SKILL.md", import.meta.url));
 
 export const PACKAGE_NAME = "@magicskysword/fairygui-mcp-headless";
-export const PACKAGE_VERSION = "0.1.5";
+export const PACKAGE_VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 export const SERVER_NAME = "fairygui-mcp-headless";
 
 const RUNTIME_PACKAGES = [

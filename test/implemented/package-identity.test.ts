@@ -102,7 +102,7 @@ function hardCodedBackslashPathArguments(
 
 test("package identity and executable contract remain stable", () => {
   assert.equal(manifest.name, "@magicskysword/fairygui-mcp-headless");
-  assert.equal(manifest.version, "0.1.5");
+  assert.equal(manifest.version, "0.2.0");
   assert.equal(PACKAGE_NAME, manifest.name);
   assert.equal(PACKAGE_VERSION, manifest.version);
   assert.equal(SERVER_NAME, "fairygui-mcp-headless");
@@ -120,18 +120,18 @@ test("runtime dependencies use registry semver instead of sibling paths", () => 
   }
 });
 
-test("fork package ranges match the local V1 package contracts", () => {
+test("fork package ranges match the local native authoring package contracts", () => {
   assert.equal(
     manifest.dependencies["@magicskysword/openfairygui-core"],
-    "^0.2.5"
+    "^0.3.0"
   );
   assert.equal(
     manifest.dependencies["@magicskysword/openfairygui-functions"],
-    "^0.2.5"
+    "^0.3.0"
   );
   assert.equal(
     manifest.dependencies["@magicskysword/fairygui-dom"],
-    "^1.1.2"
+    "^1.2.0"
   );
 });
 
@@ -234,9 +234,8 @@ test("package exposes an isolated tarball installation smoke test", async () => 
   for (const toolName of [
     "fairygui.project",
     "fairygui.query",
-    "fairygui.apply_dom_patch",
-    "fairygui.apply_resource_operations",
-    "fairygui.render_component",
+    "fairygui.edit",
+    "fairygui.preview",
     "fairygui.publish",
     "fairygui.validate"
   ]) {
@@ -245,11 +244,13 @@ test("package exposes an isolated tarball installation smoke test", async () => 
       new RegExp(`callTool[\\s\\S]*${toolName.replace(".", "\\.")}`)
     );
   }
-  assert.match(smoke, /dryRun:\s*true/);
-  assert.match(smoke, /dryRun:\s*false/);
+  assert.match(smoke, /action:\s*["']plan["']/);
+  assert.match(smoke, /action:\s*["']commit["']/);
+  assert.match(smoke, /requestId/);
   assert.match(smoke, /detail:\s*"summary"/);
   assert.match(smoke, /detail:\s*"full"/);
-  assert.match(smoke, /imageResult:\s*"file"[\s\S]*renders:/);
+  assert.match(smoke, /imageResult:\s*"file"/);
+  assert.match(smoke, /times:/);
   assert.match(smoke, /publishType:\s*"definitions"/);
   assert.match(smoke, /mode:\s*"full"/);
   assert.match(smoke, /action:\s*"close"/);
@@ -273,11 +274,11 @@ test("npm trusted publishing builds fixed GitHub dependency sources", async () =
   assert.match(workflow, /name:\s*Checkout Headless[\s\S]*path:\s*FairyGUI-MCP-Headless/);
   assert.match(
     workflow,
-    /repository:\s*magicskysword\/OpenFairyGUI[\s\S]*ref:\s*["']npm-v0\.2\.5["'][\s\S]*path:\s*OpenFairyGUI/
+    /repository:\s*magicskysword\/OpenFairyGUI[\s\S]*ref:\s*["']npm-v0\.3\.0["'][\s\S]*path:\s*OpenFairyGUI/
   );
   assert.match(
     workflow,
-    /repository:\s*magicskysword\/FairyGUI-dom[\s\S]*ref:\s*["']npm-v1\.1\.2["'][\s\S]*path:\s*FairyGUI-dom/
+    /repository:\s*magicskysword\/FairyGUI-dom[\s\S]*ref:\s*["']npm-v1\.2\.0["'][\s\S]*path:\s*FairyGUI-dom/
   );
   assert.match(workflow, /pnpm\/action-setup@v4/);
   assert.match(workflow, /version:\s*["']10\.14\.0["']/);

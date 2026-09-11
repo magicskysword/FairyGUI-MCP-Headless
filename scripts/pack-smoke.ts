@@ -1,620 +1,187 @@
-import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  writeFile
-} from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, copyFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
-interface PackedPackage {
-  name: string;
-  version: string;
-  directory: string;
-  tarball: string;
-}
+interface PackedPackage { name: string; version: string; directory: string; tarball: string; }
+const workspaceRoot = path.resolve(import.meta.dirname, '../..');
+const mcpDirectory = path.resolve(import.meta.dirname, '..');
+const packageDirectories = [path.join(workspaceRoot, 'OpenFairyGUI/packages/core'), path.join(workspaceRoot, 'OpenFairyGUI/packages/functions'), path.join(workspaceRoot, 'FairyGUI-dom'), mcpDirectory];
 
-const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
-const mcpDirectory = path.resolve(import.meta.dirname, "..");
-const packages = [
-  {
-    name: "@magicskysword/openfairygui-core",
-    version: "0.2.5",
-    directory: path.join(workspaceRoot, "OpenFairyGUI", "packages", "core")
-  },
-  {
-    name: "@magicskysword/openfairygui-functions",
-    version: "0.2.5",
-    directory: path.join(workspaceRoot, "OpenFairyGUI", "packages", "functions")
-  },
-  {
-    name: "@magicskysword/fairygui-dom",
-    version: "1.1.2",
-    directory: path.join(workspaceRoot, "FairyGUI-dom")
-  },
-  {
-    name: "@magicskysword/fairygui-mcp-headless",
-    version: "0.1.5",
-    directory: mcpDirectory
-  }
-] as const;
-
-function pnpmCommand(args: string[]): {
-  command: string;
-  args: string[];
-} {
-  const pnpmCli = process.env.npm_execpath;
-  if (!pnpmCli) {
-    throw new Error("请通过 pnpm test:pack 运行发布冒烟测试");
-  }
-  return {
-    command: process.execPath,
-    args: [pnpmCli, ...args]
-  };
-}
-
-async function run(
-  command: string,
-  args: string[],
-  cwd: string,
-  environment: NodeJS.ProcessEnv = process.env
-): Promise<string> {
+async function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env, stream = false): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
-    child.once("error", reject);
-    child.once("close", (code) => {
-      if (code === 0) {
-        resolve(stdout);
-        return;
-      }
-      reject(new Error(
-        `命令失败 (${code ?? "signal"}): ${command} ${args.join(" ")}\n${
-          stderr || stdout
-        }`
-      ));
-    });
+    const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    let stdout = ''; let stderr = '';
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+    child.stdout.on('data', chunk => { stdout += chunk; if (stream) process.stderr.write(chunk); }); child.stderr.on('data', chunk => { stderr += chunk; if (stream) process.stderr.write(chunk); });
+    child.once('error', reject);
+    child.once('close', code => code === 0 ? resolve(stdout) : reject(new Error(`命令失败 (${code}): ${command} ${args.join(' ')}\n${stderr}\n${stdout}`)));
   });
 }
-
 async function runPnpm(args: string[], cwd: string): Promise<string> {
-  const invocation = pnpmCommand(args);
-  return run(invocation.command, invocation.args, cwd, {
-    ...process.env,
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
-  });
+  const cli = process.env.npm_execpath;
+  if (!cli) throw new Error('请通过 pnpm test:pack 运行安装冒烟测试');
+  return run(process.execPath, [cli, ...args], cwd, { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' }, args[0] === 'install');
 }
+const tarballSpec = (file: string) => `file:${file.split(path.sep).join('/')}`;
 
-function tarballSpec(filePath: string): string {
-  return `file:${filePath.split(path.sep).join("/")}`;
-}
-
-async function buildAndPack(
-  entry: Omit<PackedPackage, "tarball">,
-  archiveDirectory: string
-): Promise<PackedPackage> {
-  await runPnpm(["run", "build"], entry.directory);
-  const before = new Set(await readdir(archiveDirectory));
-  await runPnpm(
-    ["pack", "--pack-destination", archiveDirectory],
-    entry.directory
-  );
-  const created = (await readdir(archiveDirectory))
-    .filter((fileName) => fileName.endsWith(".tgz") && !before.has(fileName));
-  if (created.length !== 1) {
-    throw new Error(
-      `${entry.name} 应生成一个 tarball，实际得到 ${created.length} 个`
-    );
-  }
-  return {
-    ...entry,
-    tarball: path.join(archiveDirectory, created[0]!)
-  };
+async function buildAndPack(directory: string, archives: string): Promise<PackedPackage> {
+  const manifest = JSON.parse(await readFile(path.join(directory, 'package.json'), 'utf8')) as { name: string; version: string };
+  process.stderr.write(`构建并打包 ${manifest.name}@${manifest.version}\n`);
+  await runPnpm(['run', 'build'], directory);
+  const before = new Set(await readdir(archives));
+  await runPnpm(['pack', '--pack-destination', archives], directory);
+  const added = (await readdir(archives)).filter(file => file.endsWith('.tgz') && !before.has(file));
+  assert.equal(added.length, 1);
+  return { ...manifest, directory, tarball: path.join(archives, added[0]!) };
 }
 
 async function createSmokeProject(temporaryRoot: string): Promise<string> {
-  const projectDirectory = path.join(temporaryRoot, "project");
-  const packageDirectory = path.join(projectDirectory, "assets", "Demo");
-  await mkdir(packageDirectory, { recursive: true });
-  await writeFile(
-    path.join(projectDirectory, "PackSmoke.fairy"),
-    `<?xml version="1.0" encoding="utf-8"?>
-<projectDescription id="pack-smoke-project" type="Unity" version="5.0"/>`,
-    "utf8"
-  );
-  await writeFile(
-    path.join(packageDirectory, "package.xml"),
-    `<?xml version="1.0" encoding="utf-8"?>
-<packageDescription id="pkg00001">
-  <resources>
-    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
-  </resources>
-</packageDescription>`,
-    "utf8"
-  );
-  await writeFile(
-    path.join(packageDirectory, "Main.xml"),
-    `<?xml version="1.0" encoding="utf-8"?>
-<component size="320,180">
-  <displayList>
-    <text id="n0" name="title" xy="20,20" size="280,40"
-      text="Pack smoke" fontSize="24"/>
-  </displayList>
-</component>`,
-    "utf8"
-  );
-  return projectDirectory;
+  const directory = path.join(temporaryRoot, 'project');
+  const assets = path.join(directory, 'assets/Demo'); await mkdir(assets, { recursive: true });
+  await writeFile(path.join(directory, 'PackSmoke.fairy'), '<projectDescription id="pack-smoke" type="Unity" version="5.0"/>');
+  await writeFile(path.join(assets, 'package.xml'), '<packageDescription id="pkg00001"><resources><component id="cmp01" name="Main.xml" path="/" exported="true"/><component id="row01" name="Row.xml" path="/" exported="true"/></resources></packageDescription>');
+  await writeFile(path.join(assets, 'Main.xml'), '<component size="320,180"><displayList><text id="n0" name="title" xy="20,20" size="200,30" text="Pack smoke" fontSize="24"/></displayList></component>');
+  await writeFile(path.join(assets, 'Row.xml'), '<component size="150,24" extention="Label"><displayList><text id="n0" name="title" xy="0,0" size="150,24" text="Row"/></displayList><Label/></component>');
+  return directory;
 }
 
 function smokeProgram(): string {
-  return `import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import {
-  PACKAGE_NAME,
-  PACKAGE_VERSION
-} from "@magicskysword/fairygui-mcp-headless";
+  return String.raw`import assert from 'node:assert/strict';
+import { readFile, readdir, mkdir, writeFile, access } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { PACKAGE_NAME, PACKAGE_VERSION } from '@magicskysword/fairygui-mcp-headless';
 
-assert.equal(PACKAGE_NAME, "@magicskysword/fairygui-mcp-headless");
-assert.equal(PACKAGE_VERSION, "0.1.5");
 const projectDirectory = process.env.FAIRYGUI_PACK_SMOKE_PROJECT;
-assert.ok(projectDirectory, "缺少隔离冒烟工程路径");
-const serverEntry = path.resolve(
-  "node_modules",
-  "@magicskysword",
-  "fairygui-mcp-headless",
-  "dist",
-  "cli.js"
-);
-const transport = new StdioClientTransport({
-  command: process.execPath,
-  args: [serverEntry],
-  stderr: "pipe"
-});
-const client = new Client(
-  { name: "pack-smoke", version: "1.0.0" },
-  { capabilities: {} }
-);
-
-function successful(result, label) {
-  assert.ok(
-    "structuredContent" in result,
-    label + " 缺少 structuredContent"
-  );
+const expectedVersions = JSON.parse(process.env.FAIRYGUI_PACK_SMOKE_VERSIONS);
+assert.equal(PACKAGE_VERSION, expectedVersions[PACKAGE_NAME]);
+const client = new Client({ name: 'pack-smoke', version: '1.0.0' }, { capabilities: {} });
+const transport = new StdioClientTransport({ command: process.execPath, args: [path.resolve('node_modules/@magicskysword/fairygui-mcp-headless/dist/cli.js')], stderr: 'pipe' });
+async function callTool(name, args) {
+  const result = await client.callTool({ name, arguments: args });
+  assert.notEqual(result.isError, true, JSON.stringify(result.structuredContent));
   const envelope = result.structuredContent;
-  assert.notEqual(
-    result.isError,
-    true,
-    label + " 返回 MCP isError: " + JSON.stringify(envelope)
-  );
-  assert.equal(envelope.ok, true, label + ": " + JSON.stringify(envelope));
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
   return envelope.data;
 }
-
-async function callTool(name, argumentsValue) {
-  return successful(
-    await client.callTool({ name, arguments: argumentsValue }),
-    name
-  );
+const hash = data => createHash('sha256').update(data).digest('hex');
+async function sourceHashes(directory) {
+  const result = {};
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) Object.assign(result, await sourceHashes(file)); else result[file] = hash(await readFile(file));
+  }
+  return result;
 }
-
 try {
   await client.connect(transport);
-  const listed = await client.listTools();
-  const toolNames = listed.tools.map((tool) => tool.name);
-  assert.deepEqual(toolNames, [
-    "fairygui.project",
-    "fairygui.query",
-    "fairygui.apply_dom_patch",
-    "fairygui.apply_resource_operations",
-    "fairygui.render_component",
-    "fairygui.publish",
-    "fairygui.validate"
-  ]);
-
-  const opened = await callTool("fairygui.project", {
-    action: "open",
-    path: projectDirectory
-  });
+  const tools = (await client.listTools()).tools.map(tool => tool.name);
+  assert.deepEqual(tools, ['fairygui.project', 'fairygui.query', 'fairygui.edit', 'fairygui.preview', 'fairygui.validate', 'fairygui.publish']);
+  const opened = await callTool('fairygui.project', { action: 'open', path: projectDirectory });
   const projectId = opened.projectId;
-  assert.ok(projectId);
+  assert.equal(opened.service.version, PACKAGE_VERSION);
+  for (const [name, version] of Object.entries(opened.service.runtimeVersions)) assert.equal(version, expectedVersions[name]);
+  const skillDirectory = path.dirname(opened.service.skillPath);
+  await readFile(opened.service.skillPath);
+  const definitions = JSON.parse(await readFile(path.join(skillDirectory, 'definitions/index.json'), 'utf8'));
+  assert.deepEqual(definitions.versions, expectedVersions);
+  for (const entry of [...definitions.authoring, ...definitions.preview, ...definitions.runtime]) await access(path.join(skillDirectory, 'definitions', entry.file));
+  await readFile(path.join(skillDirectory, 'examples/list.json'));
+  const queried = await callTool('fairygui.query', { projectId, queries: {
+    packages: { kind: 'packages', limit: 50 }, compact: { kind: 'components', packageId: 'pkg00001', detail: "summary" },
+    full: { kind: 'object', target: { kind: 'node', packageId: 'pkg00001', componentId: 'cmp01', nodeId: 'n0' }, detail: "full" }
+  } });
+  for (const result of Object.values(queried.results)) assert.equal(result.ok, true);
+  assert.equal(queried.results.full.data.items.length, 1);
+  await readFile(queried.results.full.data.items[0].definition.file);
 
-  const queried = await callTool("fairygui.query", {
-    projectId,
-    queries: {
-      packages: { kind: "packages", limit: 50 },
-      compact: {
-        kind: "components",
-        packageId: "pkg00001",
-        detail: "summary"
-      },
-      full: {
-        kind: "dom",
-        packageId: "pkg00001",
-        componentId: "cmp01",
-        detail: "full",
-        instanceProjection: "none"
-      }
-    }
-  });
-  assert.deepEqual(Object.keys(queried.results), [
-    "packages",
-    "compact",
-    "full"
-  ]);
-  for (const result of Object.values(queried.results)) {
-    assert.equal(result.ok, true, JSON.stringify(result));
-  }
-
-  const resourceOperations = [
-    {
-      op: "create-package",
-      clientRef: "widgets",
-      name: "SmokeWidgets"
-    },
-    {
-      op: "create-component",
-      packageRef: "widgets",
-      clientRef: "panel",
-      name: "Panel",
-      width: 320,
-      height: 180
-    }
-  ];
-  const resourcePreview = await callTool(
-    "fairygui.apply_resource_operations",
-    {
-      projectId,
-      dryRun: true,
-      operations: resourceOperations
-    }
-  );
-  assert.equal(resourcePreview.dryRun, true);
-  assert.equal("transactionId" in resourcePreview, false);
-
-  const resourceApplied = await callTool(
-    "fairygui.apply_resource_operations",
-    {
-      projectId,
-      dryRun: false,
-      operations: resourceOperations
-    }
-  );
-  assert.equal(resourceApplied.dryRun, false);
-  assert.ok(resourceApplied.transactionId);
-  const generatedPackageId = resourceApplied.clientRefs.widgets.packageId;
-  const generatedComponentId =
-    resourceApplied.clientRefs.panel.resourceId;
-  assert.ok(generatedPackageId);
-  assert.ok(generatedComponentId);
-
-  const patched = await callTool("fairygui.apply_dom_patch", {
-    projectId,
-    packageId: generatedPackageId,
-    componentId: generatedComponentId,
-    operations: [
-      {
-        op: "insert",
-        parentSelector: "component-root",
-        expectedMatches: 1,
-        clientRef: "background",
-        node: {
-          type: "graph",
-          name: "background",
-          style: { width: 320, height: 180 },
-          relations: [],
-          content: {
-            shape: "rectangle",
-            fillColor: "#203040"
-          }
-        }
-      },
-      {
-        op: "insert",
-        parentSelector: "component-root",
-        expectedMatches: 1,
-        clientRef: "label",
-        node: {
-          type: "text",
-          name: "label",
-          style: {
-            left: 20,
-            top: 60,
-            width: 280,
-            height: 50
-          },
-          relations: [],
-          content: {
-            text: "Before update",
-            fontSize: 24,
-            color: "#FFFFFF"
-          }
-        }
-      },
-      {
-        op: "update",
-        targetRef: "label",
-        expectedMatches: 1,
-        changes: {
-          name: "headline",
-          style: { left: 24 },
-          relations: [{
-            targetId: "background",
-            type: "Left_Left",
-            percent: false
-          }],
-          content: { text: "Repository MCP smoke" }
-        }
-      }
+  const common = { packageId: 'pkg00001', componentId: '@panel' };
+  const before = await sourceHashes(projectDirectory);
+  const planned = await callTool('fairygui.edit', { action: "plan", projectId, operations: [
+    { op: 'clone', target: { kind: 'component', packageId: 'pkg00001', componentId: 'cmp01' }, props: { name: 'Panel' }, clientRef: 'panel' },
+    { op: 'create', target: { ...common, kind: 'controller' }, props: { name: 'mode' } },
+    { op: 'create', target: { ...common, kind: 'page', controllerName: 'mode' }, props: { name: 'Rest' } },
+    { op: 'create', target: { ...common, kind: 'page', controllerName: 'mode' }, props: { name: 'Active' } },
+    { op: 'create', target: { ...common, kind: 'gear', nodeId: 'n0', controllerName: 'mode' }, props: { gearType: 1, pages: '0,1', values: '20,20|80,20', tween: true, tweenDuration: 0.5, easeType: 0 } },
+    { op: 'create', target: { ...common, kind: 'node' }, type: 'GList', props: { name: 'rows', x: 20, y: 60, width: 180, height: 90, defaultItem: 'ui://pkg00001row01' } },
+    { op: 'create', target: { ...common, kind: 'transition' }, props: { name: 'rotate' } },
+    { op: 'create', target: { ...common, kind: 'transition-item', transitionName: 'rotate' }, props: { actionType: 5, targetId: 'n0', tween: true, duration: 12, startValue: [0], endValue: [30], easeType: 0 } },
+    { op: 'xml', action: 'insert', target: { ...common, kind: 'component' }, xml: '<graph id="marker" name="marker" xy="270,130" size="20,20" type="rect" fillColor="#38bdf8"/>' }
+  ] });
+  assert.deepEqual(await sourceHashes(projectDirectory), before);
+  const componentId = planned.clientRefs.panel.componentId;
+  const previewInput = { action: 'run', source: { projectId, packageId: 'pkg00001', componentId, planId: planned.planId }, imageResult: "file", recipe: {
+    data: ['Apple', 'Pear'], setup: [
+      { op: 'script', code: "const list = ctx.root.getChild('rows'); list.itemRenderer = (i, cell) => cell.text = ctx.data[i]; list.numItems = ctx.data.length;" },
+      { op: 'controller', name: 'mode', index: 1 }
     ]
-  });
-  assert.equal(patched.appliedOperations, 3);
-  assert.deepEqual(
-    patched.affectedNodeIds,
-    [patched.clientRefs.background, patched.clientRefs.label]
-  );
-  assert.equal("dom" in patched, false);
+  }, run: { times: [0, 250, 500], properties: ['x', 'text'] } };
+  const preview = await callTool('fairygui.preview', previewInput);
+  assert.equal(preview.complete, true); assert.equal(preview.sourceStatus, 'plan'); assert.equal(preview.frames.length, 3);
+  assert.ok(preview.frames[2].nodes.some(node => node.props.text === 'Apple'));
+  assert.equal(preview.frames[2].nodes.find(node => node.id === 'n0' && node.parentRef === preview.state.nodes[0].ref).props.x, 80);
+  assert.deepEqual(preview.images, []); assert.ok(preview.contactSheet.path);
+  for (const frame of preview.frames) assert.equal((await readFile(frame.path)).subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  assert.equal((await callTool('fairygui.preview', previewInput)).cacheHit, true);
+  assert.deepEqual(await sourceHashes(projectDirectory), before);
+  const commit = { action: "commit", projectId, planId: planned.planId, requestId: 'commit-panel' };
+  const committed = await callTool('fairygui.edit', commit);
+  assert.deepEqual(await callTool('fairygui.edit', commit), committed);
+  assert.ok(committed.transactionId);
 
-  const patchedQuery = await callTool("fairygui.query", {
-    projectId,
-    queries: {
-      full: {
-        kind: "dom",
-        packageId: generatedPackageId,
-        componentId: generatedComponentId,
-        detail: "full",
-        instanceProjection: "none"
-      }
-    }
-  });
-  assert.equal(
-    patchedQuery.results.full.ok,
-    true,
-    JSON.stringify(patchedQuery.results.full)
-  );
-  const patchedChildren =
-    patchedQuery.results.full.data.document.root.children;
-  assert.equal(patchedChildren.length, 2);
-  const headline = patchedChildren.find((node) => node.name === "headline");
-  assert.ok(headline);
-  assert.equal(
-    headline.content.text,
-    "Repository MCP smoke"
-  );
-
-  const rendered = await callTool("fairygui.render_component", {
-    projectId,
-    imageResult: "file",
-    stateDetail: "full",
-    renders: {
-      normal: {
-        packageId: generatedPackageId,
-        componentId: generatedComponentId,
-        background: "#101820"
-      },
-      compact: {
-        packageId: generatedPackageId,
-        componentId: generatedComponentId,
-        width: 160,
-        height: 90,
-        scale: 1
-      }
-    }
-  });
-  for (const key of ["normal", "compact"]) {
-    const result = rendered.results[key];
-    assert.equal(result.ok, true, JSON.stringify(result));
-    const filePath = result.data.image.filePath;
-    assert.ok(filePath);
-    assert.equal(
-      (await readFile(filePath)).subarray(0, 8).toString("hex"),
-      "89504e470d0a1a0a"
-    );
-  }
-
-  const published = await callTool("fairygui.publish", {
-    projectId,
-    packageIds: [generatedPackageId],
-    publishType: "definitions",
-    outputPath: "smoke-release"
-  });
-  assert.equal(published.publishType, "definitions");
-  assert.equal(published.outputPathSource, "override");
+  const inbox = path.join(projectDirectory, '.fairygui-mcp/import-inbox'); await mkdir(inbox, { recursive: true });
+  await writeFile(path.join(inbox, 'pixel.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64'));
+  await callTool('fairygui.edit', { action: 'apply', projectId, requestId: 'import-pixel', operations: [{ op: 'import', target: { kind: 'resource', packageId: 'pkg00001' }, inboxPath: 'pixel.png' }] });
+  await assert.rejects(() => access(path.join(inbox, 'pixel.png')));
+  const published = await callTool('fairygui.publish', { projectId, packageIds: ['pkg00001'], publishType: "definitions", outputPath: 'smoke-release' });
   assert.ok(published.writtenFiles.length > 0);
-  await readFile(published.writtenFiles[0].path);
-
-  const validated = await callTool("fairygui.validate", {
-    projectId,
-    mode: "full",
-    detail: "summary",
-    packageIds: [generatedPackageId],
-    componentIds: [generatedComponentId]
-  });
+  const validated = await callTool('fairygui.validate', { projectId, mode: "full", detail: "summary" });
   assert.equal(validated.valid, true, JSON.stringify(validated));
-
-  const closed = await callTool("fairygui.project", {
-    action: "close",
-    projectId
-  });
-  assert.equal(closed.projectId, projectId);
-
-  process.stdout.write(JSON.stringify({
-    packageName: PACKAGE_NAME,
-    packageVersion: PACKAGE_VERSION,
-    tools: toolNames,
-    workflow: {
-      queried: Object.keys(queried.results),
-      resourceDryRun: resourcePreview.dryRun,
-      resourceApplied: resourceApplied.appliedOperations,
-      patched: patched.appliedOperations,
-      rendered: Object.keys(rendered.results),
-      published: published.writtenFiles.length,
-      valid: validated.valid,
-      closed: closed.projectId
-    }
-  }));
-}
-finally {
-  await client.close();
-}
+  await callTool('fairygui.project', { action: "close", projectId });
+  process.stdout.write(JSON.stringify({ packageName: PACKAGE_NAME, packageVersion: PACKAGE_VERSION, tools, workflow: { planId: planned.planId, operations: planned.operationResults.length, frames: preview.frames.length, cacheHit: true, idempotent: true, sourceUnchangedDuringPreview: true, valid: validated.valid, published: published.writtenFiles.length } }));
+} finally { await client.close(); }
 `;
 }
 
-const temporaryRoot = await mkdtemp(
-  path.join(os.tmpdir(), "fairygui-mcp-pack-smoke-")
-);
-const relativeToTemp = path.relative(os.tmpdir(), temporaryRoot);
-assert.ok(
-  relativeToTemp !== ""
-  && relativeToTemp !== ".."
-  && !relativeToTemp.startsWith(`..${path.sep}`)
-  && !path.isAbsolute(relativeToTemp),
-  "发布冒烟临时目录必须位于 os.tmpdir() 内"
-);
+const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'fairygui-mcp-pack-smoke-'));
+const relative = path.relative(os.tmpdir(), temporaryRoot);
+assert.ok(relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 let completed = false;
-
 try {
-  const archiveDirectory = path.join(temporaryRoot, "archives");
-  const installDirectory = path.join(temporaryRoot, "install");
-  const projectDirectory = await createSmokeProject(temporaryRoot);
-  await mkdir(archiveDirectory, { recursive: true });
-  await mkdir(installDirectory, { recursive: true });
-
+  const archives = path.join(temporaryRoot, 'archives'); const installation = path.join(temporaryRoot, 'install');
+  await mkdir(archives); await mkdir(installation);
   const packed: PackedPackage[] = [];
-  for (const entry of packages) {
-    packed.push(await buildAndPack(entry, archiveDirectory));
-  }
-  const byName = new Map(packed.map((entry) => [entry.name, entry]));
-  const manifest = {
-    name: "fairygui-mcp-pack-smoke",
-    version: "1.0.0",
-    private: true,
-    type: "module",
-    dependencies: {
-      "@magicskysword/openfairygui-core": tarballSpec(
-        byName.get("@magicskysword/openfairygui-core")!.tarball
-      ),
-      "@magicskysword/openfairygui-functions": tarballSpec(
-        byName.get("@magicskysword/openfairygui-functions")!.tarball
-      ),
-      "@magicskysword/fairygui-dom": tarballSpec(
-        byName.get("@magicskysword/fairygui-dom")!.tarball
-      ),
-      "@magicskysword/fairygui-mcp-headless": tarballSpec(
-        byName.get("@magicskysword/fairygui-mcp-headless")!.tarball
-      ),
-      "@modelcontextprotocol/sdk": "^1.29.0"
-    },
-    pnpm: {
-      overrides: {
-        "@magicskysword/openfairygui-core": tarballSpec(
-          byName.get("@magicskysword/openfairygui-core")!.tarball
-        ),
-        "@magicskysword/openfairygui-functions": tarballSpec(
-          byName.get("@magicskysword/openfairygui-functions")!.tarball
-        ),
-        "@magicskysword/fairygui-dom": tarballSpec(
-          byName.get("@magicskysword/fairygui-dom")!.tarball
-        )
-      }
-    }
-  };
-  await writeFile(
-    path.join(installDirectory, "package.json"),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    "utf8"
-  );
-  await writeFile(
-    path.join(installDirectory, "smoke.mjs"),
-    smokeProgram(),
-    "utf8"
-  );
-  await runPnpm(
-    [
-      "install",
-      "--config.link-workspace-packages=false",
-      "--ignore-scripts"
-    ],
-    installDirectory
-  );
+  for (const directory of packageDirectories) packed.push(await buildAndPack(directory, archives));
+  assert.deepEqual(packed.map(entry => entry.name), ['@magicskysword/openfairygui-core', '@magicskysword/openfairygui-functions', '@magicskysword/fairygui-dom', '@magicskysword/fairygui-mcp-headless']);
+  const overrides = Object.fromEntries(packed.filter(entry => entry.directory !== mcpDirectory).map(entry => [entry.name, tarballSpec(entry.tarball)]));
+  const dependencies = { ...Object.fromEntries(packed.map(entry => [entry.name, tarballSpec(entry.tarball)])), '@modelcontextprotocol/sdk': '^1.29.0' };
+  await writeFile(path.join(installation, 'package.json'), JSON.stringify({ name: 'fairygui-mcp-pack-smoke', version: '1.0.0', private: true, type: 'module', dependencies, pnpm: { overrides } }, null, 2));
+  await writeFile(path.join(installation, 'smoke.mjs'), smokeProgram());
+  process.stderr.write('在独立目录安装四个 tarball\n');
+  await runPnpm(['install', '--config.link-workspace-packages=false', '--ignore-scripts', '--prefer-offline', '--network-concurrency=4', '--fetch-timeout=30000', '--fetch-retries=1'], installation);
   for (const entry of packed) {
-    const installedManifest = JSON.parse(await readFile(
-      path.join(
-        installDirectory,
-        "node_modules",
-        ...entry.name.split("/"),
-        "package.json"
-      ),
-      "utf8"
-    )) as { name: string; version: string };
-    assert.equal(installedManifest.name, entry.name);
-    assert.equal(installedManifest.version, entry.version);
+    const installed = JSON.parse(await readFile(path.join(installation, 'node_modules', ...entry.name.split('/'), 'package.json'), 'utf8'));
+    assert.equal(installed.name, entry.name); assert.equal(installed.version, entry.version);
   }
-  const smokeOutput = await run(
-    process.execPath,
-    ["smoke.mjs"],
-    installDirectory,
-    {
-      ...process.env,
-      FAIRYGUI_PACK_SMOKE_PROJECT: projectDirectory
-    }
-  );
-  const smoke = JSON.parse(smokeOutput) as {
-    packageName: string;
-    packageVersion: string;
-    tools: string[];
-    workflow: {
-      queried: string[];
-      resourceDryRun: boolean;
-      resourceApplied: number;
-      patched: number;
-      rendered: string[];
-      published: number;
-      valid: boolean;
-      closed: string;
-    };
-  };
-  process.stdout.write(`${JSON.stringify({
-    isolatedInstall: true,
-    packed: packed.map((entry) => ({
-      name: entry.name,
-      version: entry.version,
-      tarball: path.basename(entry.tarball)
-    })),
-    ...smoke
-  }, null, 2)}\n`);
-  completed = true;
-}
-finally {
-  if (completed || process.env.KEEP_PACK_SMOKE !== "1") {
-    await rm(temporaryRoot, {
-      recursive: true,
-      force: true,
-      maxRetries: 10,
-      retryDelay: 200
-    });
+  const projectDirectory = await createSmokeProject(temporaryRoot);
+  process.stderr.write('运行独立 stdio 创作、计划预览、提交与发布校验\n');
+  const smoke = JSON.parse(await run(process.execPath, ['smoke.mjs'], installation, { ...process.env, FAIRYGUI_PACK_SMOKE_PROJECT: projectDirectory, FAIRYGUI_PACK_SMOKE_VERSIONS: JSON.stringify(Object.fromEntries(packed.map(entry => [entry.name, entry.version]))) }));
+  const artifactRoot = path.join(workspaceRoot, 'artifacts'); await mkdir(artifactRoot, { recursive: true });
+  const output = await mkdtemp(path.join(artifactRoot, 'v2-local-'));
+  const delivered = [];
+  for (const entry of packed) {
+    const target = path.join(output, path.basename(entry.tarball)); await copyFile(entry.tarball, target);
+    delivered.push({ name: entry.name, version: entry.version, tarball: target, sha256: createHash('sha256').update(await readFile(target)).digest('hex') });
   }
-  else {
-    process.stderr.write(`保留失败现场：${temporaryRoot}\n`);
-  }
+  const result = { isolatedInstall: true, artifactDirectory: output, packed: delivered, ...smoke };
+  await writeFile(path.join(output, 'verification.json'), JSON.stringify(result, null, 2) + '\n');
+  process.stdout.write(JSON.stringify(result, null, 2) + '\n'); completed = true;
+} finally {
+  if (completed || process.env.KEEP_PACK_SMOKE !== '1') await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  else process.stderr.write(`保留失败现场：${temporaryRoot}\n`);
 }

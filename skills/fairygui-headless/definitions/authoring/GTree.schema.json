@@ -122,9 +122,9 @@
         "null"
       ],
       "enum": [
-        "left",
-        "center",
-        "right",
+        0,
+        1,
+        2,
         null
       ]
     },
@@ -132,6 +132,12 @@
       "type": [
         "number",
         "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        null
       ]
     },
     "lineGap": {

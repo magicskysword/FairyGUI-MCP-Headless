@@ -83,7 +83,8 @@ function values(document: Document, request: NativeQueryRequest): unknown[] {
   if (request.kind === "object") return resolveAuthoringTarget(document, request.target).map(owner => projectObject(document, owner, request.target, full));
   if (request.kind === "xml") {
     const owner = component(document, { packageId: request.target.packageId!, componentId: request.target.componentId! });
-    return [{ target: request.target, xml: readComponentXmlFragment(String(owner.getExtras()._sourceComponentXml ?? ""), request.target) }];
+    const targets = request.target.kind === 'node' ? resolveAuthoringTarget(document, request.target).map(value => projectTarget(value, request.target)) : [request.target];
+    return targets.map(target => ({ target, xml: readComponentXmlFragment(String(owner.getExtras()._sourceComponentXml ?? ""), target) }));
   }
   if (request.kind === "references") return buildProjectReferenceGraph(document).edges.filter(edge => referenceMatches(edge, request.target, request.direction));
   if (request.kind === "audit") {

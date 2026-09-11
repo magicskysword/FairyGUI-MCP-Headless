@@ -6,7 +6,12 @@ export {
 export * from "./contracts/result.js";
 export * from "./contracts/dom.js";
 export * from "./contracts/capabilities.js";
-export * from "./contracts/tools.js";
+export * from "./contracts/v2-tools.js";
+export * from "./contracts/native-query.js";
+export * from "./contracts/preview.js";
+export * from "./edit/edit-service.js";
+export * from "./preview/preview-service.js";
+export * from "./query/native-query-service.js";
 export * from "./contracts/render.js";
 export * from "./contracts/validation.js";
 export * from "./dom/selector.js";

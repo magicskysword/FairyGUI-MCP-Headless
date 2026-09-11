@@ -1,17 +1,6 @@
 import { z } from "zod";
 import { FairyDomNewNodeSchema } from "./dom.js";
 
-export const FAIRYGUI_TOOL_NAMES = [
-  "fairygui.project",
-  "fairygui.query",
-  "fairygui.apply_dom_patch",
-  "fairygui.apply_resource_operations",
-  "fairygui.render_component",
-  "fairygui.publish",
-  "fairygui.validate"
-] as const;
-export type FairyGuiToolName = typeof FAIRYGUI_TOOL_NAMES[number];
-
 const nonEmptyId = z.string().min(1);
 const expectedMatches = z.number().int().min(1).max(10_000);
 const singleExpectedMatch = z.literal(1);
@@ -596,13 +585,3 @@ export const ValidateInputSchema = z.object({
   componentIds: z.array(nonEmptyId).min(1).optional()
 }).strict();
 export type ValidateInput = z.infer<typeof ValidateInputSchema>;
-
-export const TOOL_INPUT_SCHEMAS = {
-  "fairygui.project": ProjectInputSchema,
-  "fairygui.query": QueryInputSchema,
-  "fairygui.apply_dom_patch": ApplyDomPatchInputSchema,
-  "fairygui.apply_resource_operations": ApplyResourceOperationsInputSchema,
-  "fairygui.render_component": RenderComponentInputSchema,
-  "fairygui.publish": PublishInputSchema,
-  "fairygui.validate": ValidateInputSchema
-} as const;

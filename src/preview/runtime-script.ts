@@ -126,7 +126,7 @@ export const RUNTIME_PREVIEW_SCRIPT = String.raw`
         const url = "/assets/" + encodeURIComponent(descriptor.fileName);
         const response = await fetch(url);
         if (!response.ok) throw new Error("Runtime package fetch failed: " + url);
-        const pkg = fgui.UIPackage.loadPackageFromBuffer(await response.arrayBuffer(), { source: location.origin + url, resourceBaseURL: location.origin + "/assets/", resourceURLResolver: fgui.createUnityPackageResourceURLResolver() });
+        const pkg = fgui.UIPackage.loadPackageFromBuffer(await response.arrayBuffer(), { source: location.origin + url, resourceBaseURL: location.origin + "/assets/" + encodeURIComponent(descriptor.packageId) + "/", resourceURLResolver: fgui.createUnityPackageResourceURLResolver() });
         await pkg.waitForResources();
       }
       const readyRoot = fgui.GRoot.inst;

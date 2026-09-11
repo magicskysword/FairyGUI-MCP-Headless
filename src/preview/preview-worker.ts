@@ -47,7 +47,9 @@ async function initialize(input: ExecutorInput & { executablePath: string }): Pr
     }
     if (url.pathname === "/runtime.js") { await route.fulfill({ contentType: "text/javascript", body: runtime }); return; }
     if (url.pathname === "/preview.js") { await route.fulfill({ contentType: "text/javascript", body: RUNTIME_PREVIEW_SCRIPT }); return; }
-    const file = assets.get(url.pathname) ?? resources.get(url.pathname);
+    const packagePath = /^\/assets\/([^/]+)\/(.+)$/.exec(url.pathname);
+    const packageAsset = packagePath && input.runtime.packages.some(pkg => encodeURIComponent(pkg.packageId) === packagePath[1]) ? assets.get(`/assets/${packagePath[2]}`) : undefined;
+    const file = assets.get(url.pathname) ?? packageAsset ?? resources.get(url.pathname);
     if (file) await route.fulfill({ contentType: file.mediaType, body: Buffer.from(file.data) });
     else { diagnostics.push({ level: "error", message: `Missing snapshot resource: ${url.pathname}`, time: 0 }); await route.fulfill({ status: 404, body: "Missing snapshot resource" }); }
   });

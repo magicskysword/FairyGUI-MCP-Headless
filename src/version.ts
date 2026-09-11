@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FAIRY_DOM_SCHEMA_VERSION } from "./contracts/dom.js";
 
+export const SKILL_PATH = fileURLToPath(new URL("../skills/fairygui-headless/SKILL.md", import.meta.url));
+
 export const PACKAGE_NAME = "@magicskysword/fairygui-mcp-headless";
 export const PACKAGE_VERSION = "0.1.5";
 export const SERVER_NAME = "fairygui-mcp-headless";
@@ -45,6 +47,7 @@ export interface ProjectServiceInfo {
   packageName: typeof PACKAGE_NAME;
   version: typeof PACKAGE_VERSION;
   domSchemaVersion: typeof FAIRY_DOM_SCHEMA_VERSION;
+  skillPath: string;
   runtimeVersions: Record<typeof RUNTIME_PACKAGES[number], string>;
 }
 
@@ -52,6 +55,7 @@ export const PROJECT_SERVICE_INFO: ProjectServiceInfo = Object.freeze({
   packageName: PACKAGE_NAME,
   version: PACKAGE_VERSION,
   domSchemaVersion: FAIRY_DOM_SCHEMA_VERSION,
+  skillPath: SKILL_PATH,
   runtimeVersions: Object.freeze(Object.fromEntries(
     RUNTIME_PACKAGES.map((packageName) => [
       packageName,

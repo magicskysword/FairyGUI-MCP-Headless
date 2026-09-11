@@ -1,612 +1,151 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  type CallToolResult,
-  type Tool
-} from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import {
-  ApplyDomPatchInputSchema,
-  ApplyResourceOperationsInputSchema,
-  ProjectInputSchema,
-  PublishInputSchema,
-  QueryInputSchema,
-  RenderComponentInputSchema,
-  TOOL_INPUT_SCHEMAS,
-  ValidateInputSchema,
-  type ApplyDomPatchInput,
-  type ApplyResourceOperationsInput,
-  type FairyGuiToolName,
-  type ProjectInput,
-  type PublishInput
-} from "../contracts/tools.js";
-import {
-  fail,
-  type ResultEnvelope
-} from "../contracts/result.js";
-import { DomPatchService } from "../dom/dom-patch-service.js";
+import { TOOL_INPUT_SCHEMAS, type FairyGuiToolName, type PreviewToolInput } from "../contracts/v2-tools.js";
+import type { ProjectInput, PublishInput } from "../contracts/tools.js";
+import { fail, ok, type ResultEnvelope } from "../contracts/result.js";
+import { EditService } from "../edit/edit-service.js";
+import { PreviewService } from "../preview/preview-service.js";
 import { ProjectRegistry } from "../project/project-registry.js";
 import { PublishService } from "../publish/publish-service.js";
-import { QueryService } from "../query/query-service.js";
-import { RenderService } from "../render/render-service.js";
-import { ResourceOperationsService } from "../resources/resource-operations-service.js";
+import { NativeQueryService } from "../query/native-query-service.js";
 import { ValidationService } from "../validation/validation-service.js";
 import { ProjectCommitCoordinator } from "../write/commit-coordinator.js";
 import { FileTransactionManager } from "../write/file-transaction.js";
-import {
-  PACKAGE_VERSION,
-  PROJECT_SERVICE_INFO,
-  SERVER_NAME
-} from "../version.js";
+import { PACKAGE_VERSION, PROJECT_SERVICE_INFO, SERVER_NAME, SKILL_PATH } from "../version.js";
 
 export const SERVER_INSTRUCTIONS = [
-  "FairyGUI 无头创作工作流：先用 fairygui.project 打开工程，再用一次 fairygui.query 批量查询包、组件、DOM、引用与能力；大结果默认 detail:\"summary\"，insert/update/replace 前先用 detail:\"full\" 取得完整目标字段。",
-  "需要视觉反馈时调用 fairygui.render_component 的 renders 对象进行命名批量渲染，调整后再渲染；提交前调用 fairygui.validate 完成校验。",
-  "磁盘始终是唯一事实来源；每次调用前会刷新外部变更，写操作会原子落盘且不提供草稿、Undo/Redo、revision 或 Git。",
-  "DOM 使用受限的 HTML/CSS 风格知识：仅支持已声明的节点、样式名和选择器，不等同于浏览器 DOM/CSS。",
-  "尽量把同一意图合并到 query、apply_dom_patch 或 apply_resource_operations 的一个批次中；DOM 补丁只使用 insert/update/move/remove/replace，写目标必须提供 expectedMatches，资源高风险操作可先 dryRun。",
-  "render_component 会在内存中临时导出所有组件并使用 fairygui-dom runtime-preview，不改变工程导出设置；imageResult 控制 inline/file/both，stateDetail 控制状态摘要，scale=2/3/4 选择对应高分辨率资源。",
-  "render_component 的 state.controllers/state.lists/state.trees/state.scrolls 仅设置当前截图状态；结果用 availableState、appliedState 和 Gear 隐藏摘要解释默认页与临时状态，它不是 Unity 像素真值。",
-  "fairygui.publish 直接使用工程发布设置，可按包执行全量发布或跳过图集的仅定义发布；outputPath 只临时覆盖运行时产物路径。"
+  `FairyGUI 原生创作入口：先按需读取 Skill ${SKILL_PATH} 及其 definitions 文件。`,
+  "用 fairygui.project 打开工程，fairygui.query 命名批量查询原生对象和引用；摘要默认分页 50 项，完整属性显式请求 detail:full。",
+  "fairygui.edit 的 plan 生成不可变修改结果，可通过 fairygui.preview 在 JavaScript 中预览并采样；apply 或 commit 使用 requestId 幂等原子写入。",
+  "编辑使用 x、y、alpha 等原生属性；有 Gear 控制的字段须指定 scope。静态定义通过文件读取，运行时实际状态通过 preview.inspect 获取。",
+  "preview 的 run 可临时执行，open 创建持续会话；reset 重放同一快照，reload 接纳最新工程，close 释放会话。预览脚本只修改隔离环境。",
+  "多帧默认返回带时间标签的总览图片和逐帧文件索引；文本不包含图片编码。命名 queries/previews 的各项结果独立，编辑批次全有或全无。",
+  "使用 fairygui.validate 完成结构、引用、往返与发布校验；fairygui.publish 按工程配置生成正式产物。"
 ].join("\n");
 
-interface DomPatchHandler {
-  apply(input: ApplyDomPatchInput): Promise<ResultEnvelope<unknown>>;
-}
-
-interface ResourceOperationsHandler {
-  apply(input: ApplyResourceOperationsInput): Promise<ResultEnvelope<unknown>>;
-}
-
-interface PublishHandler {
-  publish(input: PublishInput): Promise<ResultEnvelope<unknown>>;
-}
-
+interface PublishHandler { publish(input: PublishInput): Promise<ResultEnvelope<unknown>>; }
 export interface FairyGuiMcpServerOptions {
-  projects?: ProjectRegistry;
-  query?: QueryService;
-  renderer?: RenderService;
-  validator?: ValidationService;
-  domPatch?: DomPatchHandler;
-  resources?: ResourceOperationsHandler;
-  publisher?: PublishHandler;
-  transactions?: FileTransactionManager;
-  coordinator?: ProjectCommitCoordinator;
+  projects?: ProjectRegistry; query?: NativeQueryService; edits?: EditService; preview?: PreviewService;
+  validator?: ValidationService; publisher?: PublishHandler; transactions?: FileTransactionManager; coordinator?: ProjectCommitCoordinator;
 }
-
-const TOOL_DATA_OUTPUT_SCHEMAS: Record<
-  FairyGuiToolName,
-  Record<string, unknown>
-> = {
-  "fairygui.project": {
-    type: "object",
-    properties: {
-      projectId: { type: "string" },
-      projects: { type: "array", items: { type: "object" } },
-      service: { type: "object" }
-    },
-    required: ["service"],
-    additionalProperties: true
-  },
-  "fairygui.query": {
-    type: "object",
-    properties: {
-      results: {
-        type: "object",
-        additionalProperties: { type: "object" }
-      }
-    },
-    required: ["results"],
-    additionalProperties: true
-  },
-  "fairygui.apply_dom_patch": {
-    type: "object",
-    properties: {
-      projectId: { type: "string" },
-      packageId: { type: "string" },
-      componentId: { type: "string" },
-      transactionId: { type: "string" },
-      appliedOperations: { type: "integer" },
-      clientRefs: { type: "object" },
-      affectedFiles: { type: "array", items: { type: "string" } },
-      operationResults: { type: "array", items: { type: "object" } },
-      affectedNodeIds: { type: "array", items: { type: "string" } }
-    },
-    required: [
-      "projectId",
-      "packageId",
-      "componentId",
-      "transactionId",
-      "appliedOperations",
-      "operationResults",
-      "affectedNodeIds",
-      "clientRefs",
-      "affectedFiles"
-    ],
-    additionalProperties: true
-  },
-  "fairygui.apply_resource_operations": {
-    type: "object",
-    properties: {
-      projectId: { type: "string" },
-      dryRun: { type: "boolean" },
-      transactionId: { type: "string" },
-      appliedOperations: { type: "integer" },
-      operationResults: { type: "array", items: { type: "object" } },
-      affectedReferences: { type: "array", items: { type: "object" } },
-      fileChanges: { type: "object" },
-      affectedFiles: { type: "array", items: { type: "string" } }
-    },
-    required: [
-      "projectId",
-      "dryRun",
-      "appliedOperations",
-      "operationResults",
-      "affectedReferences",
-      "fileChanges",
-      "affectedFiles"
-    ],
-    additionalProperties: true
-  },
-  "fairygui.render_component": {
-    type: "object",
-    properties: {
-      backend: { const: "fairygui-dom" },
-      fidelity: { type: "string" },
-      rendererVersion: { type: "string" },
-      requested: { type: "integer" },
-      succeeded: { type: "integer" },
-      failed: { type: "integer" },
-      results: {
-        type: "object",
-        additionalProperties: { type: "object" }
-      }
-    },
-    required: [
-      "backend",
-      "fidelity",
-      "rendererVersion",
-      "requested",
-      "succeeded",
-      "failed",
-      "results"
-    ],
-    additionalProperties: true
-  },
-  "fairygui.publish": {
-    type: "object",
-    properties: {
-      projectId: { type: "string" },
-      publishType: { enum: ["full", "definitions"] },
-      outputPath: { type: "string" },
-      outputPathSource: { type: "string" },
-      packages: { type: "array", items: { type: "object" } },
-      writtenFiles: { type: "array", items: { type: "object" } },
-      durationMs: { type: "number" }
-    },
-    required: [
-      "projectId",
-      "publishType",
-      "outputPath",
-      "outputPathSource",
-      "packages",
-      "writtenFiles",
-      "durationMs"
-    ],
-    additionalProperties: true
-  },
-  "fairygui.validate": {
-    type: "object",
-    properties: {
-      mode: { type: "string" },
-      detail: { enum: ["summary", "full"] },
-      valid: { type: "boolean" },
-      checked: { type: "object" },
-      phases: { type: "array", items: { type: "object" } },
-      diagnostics: { type: "array", items: { type: "object" } }
-    },
-    required: [
-      "mode",
-      "detail",
-      "valid",
-      "checked",
-      "phases",
-      "diagnostics"
-    ],
-    additionalProperties: true
-  }
+const OUTPUT_FIELDS: Record<FairyGuiToolName, Record<string, unknown>> = {
+  "fairygui.project": { projectId: { type: "string" }, projects: { type: "array" }, service: { type: "object" } },
+  "fairygui.query": { results: { type: "object" } },
+  "fairygui.edit": { planId: { type: "string" }, state: { enum: ["planned", "committed"] }, files: { type: "array" }, operationResults: { type: "array" }, clientRefs: { type: "object" } },
+  "fairygui.preview": { previewId: { type: "string" }, results: { type: "object" }, status: { type: "string" }, complete: { type: "boolean" }, frames: { type: "array" }, state: { type: "object" } },
+  "fairygui.validate": { valid: { type: "boolean" }, mode: { type: "string" }, diagnostics: { type: "array" } },
+  "fairygui.publish": { projectId: { type: "string" }, outputPath: { type: "string" }, writtenFiles: { type: "array" } }
 };
-
-function outputSchemaFor(name: FairyGuiToolName): Tool["outputSchema"] {
-  return {
-    type: "object",
-    oneOf: [
-      {
-        type: "object",
-        properties: {
-          ok: { const: true },
-          data: TOOL_DATA_OUTPUT_SCHEMAS[name],
-          warnings: {
-            type: "array",
-            items: { type: "object" }
-          }
-        },
-        required: ["ok", "data"],
-        additionalProperties: false
-      },
-      {
-        type: "object",
-        properties: {
-          ok: { const: false },
-          error: {
-            type: "object",
-            properties: {
-              code: { type: "string" },
-              message: { type: "string" }
-            },
-            required: ["code", "message"],
-            additionalProperties: true
-          }
-        },
-        required: ["ok", "error"],
-        additionalProperties: false
-      }
-    ]
-  } as Tool["outputSchema"];
+function outputSchema(name: FairyGuiToolName): Tool["outputSchema"] {
+  return { type: "object", oneOf: [
+    { type: "object", properties: { ok: { const: true }, data: { type: "object", properties: OUTPUT_FIELDS[name], additionalProperties: true }, warnings: { type: "array", items: { type: "object" } } }, required: ["ok", "data"], additionalProperties: false },
+    { type: "object", properties: { ok: { const: false }, error: { type: "object", properties: { code: { type: "string" }, message: { type: "string" } }, required: ["code", "message"], additionalProperties: true } }, required: ["ok", "error"], additionalProperties: false }
+  ] } as Tool["outputSchema"];
 }
-
-const TOOL_DESCRIPTIONS: Record<FairyGuiToolName, string> = {
-  "fairygui.project":
-    "打开、列出、查看或关闭本地 FairyGUI 工程会话。路径会规范化，同一路径重复打开会复用会话。",
-  "fairygui.query":
-    "在一次调用中批量查询包、资源、组件、DOM、引用、能力矩阵和审计信息；单项失败不丢失其他结果。",
-  "fairygui.apply_dom_patch":
-    "对一个现有组件原子执行最多 200 个 insert、update、move、remove 或 replace DOM 操作；node 与 changes 会在工具内部按目标节点类型严格校验，批次绝不部分成功。",
-  "fairygui.apply_resource_operations":
-    "原子执行包与资源创建、收件箱导入、替换、重命名、包内移动和删除；批次绝不部分成功。",
-  "fairygui.render_component":
-    "在内存中编译未发布工程，用隔离 FairyGUI-dom runtime 渲染并返回 PNG；scale 会同时控制截图像素密度和 @2x/@3x/@4x 资源选择，可按受限选择器临时设置当前截图的控制器页、List/Tree 状态和滚动位置且不写盘。",
-  "fairygui.publish":
-    "使用 FairyGUI 工程发布设置发布全部或指定包；支持全量发布和跳过图集的仅定义发布，outputPath 可临时覆盖运行时产物目录。",
-  "fairygui.validate":
-    "执行 quick、roundtrip、publish 或 full 校验。工程问题仍是成功调用，并在 data.valid 中返回 false。"
+const DESCRIPTIONS: Record<FairyGuiToolName, string> = {
+  "fairygui.project": "打开、列出、查看或关闭本地工程会话，返回运行版本和实际 Skill 入口。",
+  "fairygui.query": "命名批量查询包、资源、组件、节点、Controller、Gear、Transition、引用、XML 片段与审计；单项失败不丢失其他结果。",
+  "fairygui.edit": "以原生属性执行最多 200 项结构化或 XML 编辑。plan 预演，apply 直接原子提交，commit 提交计划；写请求必须提供 requestId。完整操作定义位于 Skill 文件。",
+  "fairygui.preview": "在隔离 JavaScript 运行时初始化、执行时间线和采集多帧，支持持续会话及实际状态查询。可用 previews 命名批量执行；完整配方及 API 位于 Skill 文件。",
+  "fairygui.validate": "执行 quick、roundtrip、publish 或 full 校验。工程问题在成功结果的 valid:false 和 diagnostics 中报告。",
+  "fairygui.publish": "按工程发布配置生成全部或指定包产物，支持全量或仅定义发布，以及临时输出路径。"
 };
-
-const TOOL_ANNOTATIONS: Record<
-  FairyGuiToolName,
-  NonNullable<Tool["annotations"]>
-> = {
-  "fairygui.project": {
-    readOnlyHint: false,
-    destructiveHint: false,
-    idempotentHint: true,
-    openWorldHint: true
-  },
-  "fairygui.query": {
-    readOnlyHint: true,
-    destructiveHint: false,
-    idempotentHint: true,
-    openWorldHint: false
-  },
-  "fairygui.apply_dom_patch": {
-    readOnlyHint: false,
-    destructiveHint: false,
-    idempotentHint: false,
-    openWorldHint: false
-  },
-  "fairygui.apply_resource_operations": {
-    readOnlyHint: false,
-    destructiveHint: true,
-    idempotentHint: false,
-    openWorldHint: false
-  },
-  "fairygui.render_component": {
-    readOnlyHint: true,
-    destructiveHint: false,
-    idempotentHint: true,
-    openWorldHint: false
-  },
-  "fairygui.publish": {
-    readOnlyHint: false,
-    destructiveHint: true,
-    idempotentHint: true,
-    openWorldHint: true
-  },
-  "fairygui.validate": {
-    readOnlyHint: true,
-    destructiveHint: false,
-    idempotentHint: true,
-    openWorldHint: false
-  }
-};
-
-function toInputSchema(schema: z.ZodType): Tool["inputSchema"] {
-  const converted = z.toJSONSchema(schema, {
-    target: "draft-7",
-    unrepresentable: "any",
-    reused: "ref"
-  }) as Record<string, unknown>;
+const TOOLS: Tool[] = Object.entries(TOOL_INPUT_SCHEMAS).map(([name, schema]) => {
+  const toolName = name as FairyGuiToolName;
+  const converted = z.toJSONSchema(schema, { target: "draft-7", io: "input", unrepresentable: "any", reused: "ref" }) as Record<string, unknown>;
   delete converted.$schema;
-  return {
-    ...converted,
-    type: "object"
-  } as Tool["inputSchema"];
-}
+  return { name, description: DESCRIPTIONS[toolName], inputSchema: { ...converted, type: "object" } as Tool["inputSchema"], outputSchema: outputSchema(toolName),
+    annotations: { readOnlyHint: name === "fairygui.query" || name === "fairygui.validate", destructiveHint: name === "fairygui.edit" || name === "fairygui.publish", idempotentHint: name !== "fairygui.preview", openWorldHint: name === "fairygui.project" || name === "fairygui.publish" }, execution: { taskSupport: "forbidden" } };
+});
 
-const TOOLS: Tool[] = Object.entries(TOOL_INPUT_SCHEMAS).map(
-  ([name, schema]) => {
-    const toolName = name as FairyGuiToolName;
-    return {
-      name: toolName,
-      description: TOOL_DESCRIPTIONS[toolName],
-      inputSchema: toInputSchema(schema),
-      outputSchema: outputSchemaFor(toolName),
-      annotations: TOOL_ANNOTATIONS[toolName],
-      execution: { taskSupport: "forbidden" }
-    };
-  }
-);
-
-function invalidArguments(
-  toolName: string,
-  error: z.ZodError
-): ResultEnvelope<never> {
-  const firstIssue = error.issues[0];
-  const issuePath = firstIssue?.path.length
-    ? firstIssue.path.map(String).join(".")
-    : "arguments";
-  return fail("INVALID_ARGUMENT", `工具 ${toolName} 的参数不合法`, {
-    path: issuePath,
-    actual: error.issues.map((issue) => ({
-      path: issue.path.map(String).join("."),
-      message: issue.message,
-      code: issue.code
-    })),
-    suggestedFix: "按照 tools/list 返回的 inputSchema 修正参数后重试"
-  });
-}
-
-interface InlineImageContent {
-  mimeType: "image/png";
-  data: string;
-}
-
-function prepareMcpPayload(
-  value: unknown,
-  images: InlineImageContent[]
-): unknown {
-  if (Array.isArray(value)) {
-    return value.map((entry) => prepareMcpPayload(entry, images));
-  }
+function prepareMcpPayload(value: unknown, images: Array<{ mimeType: "image/png"; data: string }>): unknown {
+  if (Array.isArray(value)) return value.map(entry => prepareMcpPayload(entry, images));
   if (typeof value !== "object" || value === null) return value;
-
   const source = value as Record<string, unknown>;
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(source)) {
-    if (
-      key === "data"
-      && source.mediaType === "image/png"
-      && typeof entry === "string"
-    ) {
-      images.push({ mimeType: "image/png", data: entry });
-      result.contentIndex = images.length;
-      continue;
-    }
-    result[key] = prepareMcpPayload(entry, images);
+    if (key === "data" && (source.mimeType === "image/png" || source.mediaType === "image/png") && typeof entry === "string") {
+      images.push({ mimeType: "image/png", data: entry }); result.contentIndex = images.length;
+    } else result[key] = prepareMcpPayload(entry, images);
   }
   return result;
 }
-
-function toCallToolResult(
-  result: ResultEnvelope<unknown>
-): CallToolResult {
-  const images: InlineImageContent[] = [];
-  const structured = prepareMcpPayload(result, images) as Record<
-    string,
-    unknown
-  >;
-  const content: CallToolResult["content"] = [{
-    type: "text",
-    text: JSON.stringify(structured)
-  }];
-  for (const image of images) {
-    content.push({
-      type: "image",
-      mimeType: image.mimeType,
-      data: image.data
-    });
-  }
-  return {
-    content,
-    structuredContent: structured,
-    isError: !result.ok
-  };
+function toCallToolResult(result: ResultEnvelope<unknown>): CallToolResult {
+  const images: Array<{ mimeType: "image/png"; data: string }> = [];
+  const structured = prepareMcpPayload(result, images) as Record<string, unknown>;
+  return { content: [{ type: "text", text: JSON.stringify(structured) }, ...images.map(image => ({ type: "image" as const, ...image }))], structuredContent: structured, isError: !result.ok };
 }
 
 export class FairyGuiMcpServer {
   public readonly server: Server;
   public readonly projects: ProjectRegistry;
-  public readonly query: QueryService;
-  public readonly renderer: RenderService;
+  public readonly query: NativeQueryService;
+  public readonly edits: EditService;
+  public readonly preview: PreviewService;
   public readonly validator: ValidationService;
   public readonly transactions: FileTransactionManager;
   public readonly coordinator: ProjectCommitCoordinator;
-  private readonly domPatch: DomPatchHandler;
-  private readonly resources: ResourceOperationsHandler;
   private readonly publisher: PublishHandler;
   private closed = false;
-
-  public constructor(options: FairyGuiMcpServerOptions = {}) {
+  constructor(options: FairyGuiMcpServerOptions = {}) {
     this.transactions = options.transactions ?? new FileTransactionManager();
     this.coordinator = options.coordinator ?? new ProjectCommitCoordinator();
-    this.projects = options.projects ?? new ProjectRegistry({
-      recovery: this.transactions
-    });
-    this.query = options.query ?? new QueryService(this.projects);
-    this.renderer = options.renderer ?? new RenderService(this.projects);
+    this.projects = options.projects ?? new ProjectRegistry({ recovery: this.transactions });
+    this.query = options.query ?? new NativeQueryService(this.projects);
+    this.edits = options.edits ?? new EditService(this.projects, { transactions: this.transactions, coordinator: this.coordinator });
+    this.preview = options.preview ?? new PreviewService(this.projects, { edits: this.edits });
     this.validator = options.validator ?? new ValidationService(this.projects);
-    this.domPatch = options.domPatch ?? new DomPatchService(this.projects, {
-      transactions: this.transactions,
-      coordinator: this.coordinator
-    });
-    this.resources = options.resources ?? new ResourceOperationsService(
-      this.projects,
-      {
-        transactions: this.transactions,
-        coordinator: this.coordinator
-      }
-    );
-    this.publisher = options.publisher ?? new PublishService(this.projects, {
-      coordinator: this.coordinator
-    });
-    this.server = new Server(
-      { name: SERVER_NAME, version: PACKAGE_VERSION },
-      {
-        capabilities: { tools: {} },
-        instructions: SERVER_INSTRUCTIONS
-      }
-    );
-    this.server.setRequestHandler(ListToolsRequestSchema, () => ({
-      tools: TOOLS
-    }));
-    this.server.setRequestHandler(CallToolRequestSchema, (request) =>
-      this.callTool(
-        request.params.name,
-        request.params.arguments
-      )
-    );
+    this.publisher = options.publisher ?? new PublishService(this.projects, { coordinator: this.coordinator });
+    this.server = new Server({ name: SERVER_NAME, version: PACKAGE_VERSION }, { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS });
+    this.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: TOOLS }));
+    this.server.setRequestHandler(CallToolRequestSchema, request => this.callTool(request.params.name, request.params.arguments));
   }
-
-  public connect(transport: Transport): Promise<void> {
-    return this.server.connect(transport);
-  }
-
-  public async close(): Promise<void> {
+  connect(transport: Transport): Promise<void> { return this.server.connect(transport); }
+  async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    await this.renderer.close();
-    await this.projects.closeAll();
+    await this.preview.closeAll(); await this.projects.closeAll();
     await this.server.close().catch(() => undefined);
   }
-
-  private async callTool(
-    name: string,
-    rawArguments: Record<string, unknown> | undefined
-  ): Promise<CallToolResult> {
-    switch (name) {
-      case "fairygui.project":
-        return this.parseAndRun(
-          name,
-          ProjectInputSchema,
-          rawArguments,
-          (input) => this.project(input)
-        );
-      case "fairygui.query":
-        return this.parseAndRun(
-          name,
-          QueryInputSchema,
-          rawArguments,
-          (input) => this.query.execute(input)
-        );
-      case "fairygui.apply_dom_patch":
-        return this.parseAndRun(
-          name,
-          ApplyDomPatchInputSchema,
-          rawArguments,
-          (input) => this.domPatch.apply(input)
-        );
-      case "fairygui.apply_resource_operations":
-        return this.parseAndRun(
-          name,
-          ApplyResourceOperationsInputSchema,
-          rawArguments,
-          (input) => this.resources.apply(input)
-        );
-      case "fairygui.render_component":
-        return this.parseAndRun(
-          name,
-          RenderComponentInputSchema,
-          rawArguments,
-          (input) => this.renderer.render(input)
-        );
-      case "fairygui.publish":
-        return this.parseAndRun(
-          name,
-          PublishInputSchema,
-          rawArguments,
-          (input) => this.publisher.publish(input)
-        );
-      case "fairygui.validate":
-        return this.parseAndRun(
-          name,
-          ValidateInputSchema,
-          rawArguments,
-          (input) => this.validator.validate(input)
-        );
-      default:
-        return toCallToolResult(fail(
-          "INVALID_ARGUMENT",
-          `未知 MCP 工具：${name}`,
-          {
-            path: "name",
-            actual: name,
-            allowed: TOOLS.map((tool) => tool.name)
-          }
-        ));
-    }
-  }
-
-  private async parseAndRun<T>(
-    name: string,
-    schema: z.ZodType<T>,
-    rawArguments: Record<string, unknown> | undefined,
-    handler: (input: T) => Promise<ResultEnvelope<unknown>>
-  ): Promise<CallToolResult> {
-    const parsed = schema.safeParse(rawArguments);
-    if (!parsed.success) {
-      return toCallToolResult(invalidArguments(name, parsed.error));
-    }
+  private async callTool(name: string, raw: Record<string, unknown> | undefined): Promise<CallToolResult> {
+    const schema = TOOL_INPUT_SCHEMAS[name as FairyGuiToolName];
+    if (!schema) return toCallToolResult(fail("INVALID_ARGUMENT", `未知 MCP 工具：${name}`, { path: "name", actual: name, allowed: Object.keys(TOOL_INPUT_SCHEMAS) }));
+    const parsed = schema.safeParse(raw);
+    if (!parsed.success) return toCallToolResult(fail("INVALID_ARGUMENT", `工具 ${name} 的参数不合法`, {
+      path: parsed.error.issues[0]?.path.map(String).join(".") || "arguments", actual: parsed.error.issues,
+      suggestedFix: `按 tools/list 和 ${SKILL_PATH} 的定义文件修正参数`
+    }));
     try {
-      return toCallToolResult(await handler(parsed.data));
-    }
-    catch (error) {
-      return toCallToolResult(fail(
-        "INTERNAL_ERROR",
-        `工具 ${name} 执行时发生未处理错误`,
-        {
-          actual: error instanceof Error ? error.message : String(error)
-        }
-      ));
-    }
+      switch (name) {
+        case "fairygui.project": return toCallToolResult(await this.project(TOOL_INPUT_SCHEMAS[name].parse(raw)));
+        case "fairygui.query": return toCallToolResult(await this.query.execute(TOOL_INPUT_SCHEMAS[name].parse(raw)));
+        case "fairygui.edit": return toCallToolResult(await this.edits.execute(TOOL_INPUT_SCHEMAS[name].parse(raw)));
+        case "fairygui.preview": return toCallToolResult(await this.runPreview(TOOL_INPUT_SCHEMAS[name].parse(raw)));
+        case "fairygui.validate": return toCallToolResult(await this.validator.validate(TOOL_INPUT_SCHEMAS[name].parse(raw)));
+        case "fairygui.publish": return toCallToolResult(await this.publisher.publish(TOOL_INPUT_SCHEMAS[name].parse(raw)));
+        default: return toCallToolResult(fail("INVALID_ARGUMENT", "工具名称不合法"));
+      }
+    } catch (error) { return toCallToolResult(fail("INTERNAL_ERROR", `工具 ${name} 执行失败`, { actual: error instanceof Error ? error.message : String(error) })); }
   }
-
-  private async project(
-    input: ProjectInput
-  ): Promise<ResultEnvelope<unknown>> {
+  private async runPreview(input: PreviewToolInput): Promise<ResultEnvelope<unknown>> {
+    if (!("previews" in input)) return this.preview.execute(input);
+    const results: Record<string, ResultEnvelope<unknown>> = {};
+    for (const [name, request] of Object.entries(input.previews)) results[name] = await this.preview.execute(request);
+    const succeeded = Object.values(results).filter(result => result.ok).length;
+    return ok({ results, requested: Object.keys(results).length, succeeded, failed: Object.keys(results).length - succeeded });
+  }
+  private async project(input: ProjectInput): Promise<ResultEnvelope<unknown>> {
     let result: ResultEnvelope<unknown>;
     switch (input.action) {
-      case "open":
-        result = await this.projects.open(input.path);
-        break;
-      case "list":
-        result = this.projects.list();
-        break;
-      case "status":
-        result = this.projects.status(input.projectId);
-        break;
+      case "open": result = await this.projects.open(input.path); break;
+      case "list": result = this.projects.list(); break;
+      case "status": result = this.projects.status(input.projectId); break;
       case "close":
-        result = await this.projects.close(input.projectId);
-        break;
+        await this.preview.closeProject(input.projectId); this.edits.closeProject(input.projectId);
+        result = await this.projects.close(input.projectId); break;
     }
-    if (!result.ok) return result;
-    return {
-      ...result,
-      data: {
-        ...(result.data as Record<string, unknown>),
-        service: PROJECT_SERVICE_INFO
-      }
-    };
+    return result.ok ? { ...result, data: { ...(result.data as Record<string, unknown>), service: PROJECT_SERVICE_INFO } } : result;
   }
 }

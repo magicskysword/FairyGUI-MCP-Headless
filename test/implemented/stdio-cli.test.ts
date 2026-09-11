@@ -214,16 +214,15 @@ test(
       assert.equal(opened.ok, true);
       const projectId = (opened.data as { projectId: string }).projectId;
 
-      const rendered = await client.callTool("fairygui.render_component", {
-        projectId,
+      const rendered = await client.callTool("fairygui.preview", {
+        action: "run",
         imageResult: "file",
-        stateDetail: "summary",
-        renders: {
-          default: {
+        source: {
+            projectId,
             packageId: "pkg00001",
             componentId: "cmp01"
-          }
-        }
+        },
+        run: { times: [0, 100] }
       });
       assert.equal(rendered.ok, true);
 

@@ -1,753 +1,153 @@
 import assert from "node:assert/strict";
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  rm,
-  writeFile
-} from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { FAIRYGUI_TOOL_NAMES } from "../../src/contracts/tools.js";
+import { FAIRYGUI_TOOL_NAMES } from "../../src/contracts/v2-tools.js";
+import { PROJECT_SERVICE_INFO, SKILL_PATH } from "../../src/version.js";
 import { FairyGuiMcpServer } from "../../src/server/fairygui-server.js";
 
-const temporaryDirectories: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true })
-    )
-  );
-});
-
-async function createProject(): Promise<string> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-server-"));
-  temporaryDirectories.push(directory);
-  const packageDirectory = path.join(directory, "assets", "Demo");
-  await mkdir(packageDirectory, { recursive: true });
-  await writeFile(
-    path.join(directory, "Demo.fairy"),
-    `<?xml version="1.0" encoding="utf-8"?>
-<projectDescription id="server-project" type="Unity" version="5.0"/>`,
-    "utf8"
-  );
-  await writeFile(
-    path.join(packageDirectory, "package.xml"),
-    `<?xml version="1.0" encoding="utf-8"?>
-<packageDescription id="pkg00001">
-  <resources>
-    <component id="cmp01" name="Main.xml" path="/" exported="true"/>
-  </resources>
-</packageDescription>`,
-    "utf8"
-  );
-  await writeFile(
-    path.join(packageDirectory, "Main.xml"),
-    `<?xml version="1.0" encoding="utf-8"?>
-<component size="200,100">
-  <displayList>
-    <text id="n0" name="title" xy="10,10" size="180,40"
-      text="MCP Preview" fontSize="20"/>
-    <image id="n1" name="broken" src="missing" xy="10,55" size="40,40"/>
-  </displayList>
-</component>`,
-    "utf8"
-  );
-  return directory;
-}
-
-async function connectServer(): Promise<{
-  app: FairyGuiMcpServer;
-  client: Client;
-}> {
+const cleanups: Array<() => Promise<unknown>> = [];
+afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
+async function fixture() {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "fgui-v2-mcp-"));
+  cleanups.push(() => rm(directory, { recursive: true, force: true }));
+  const assets = path.join(directory, "assets", "Demo");
+  await mkdir(assets, { recursive: true });
+  await writeFile(path.join(directory, "Demo.fairy"), '<projectDescription id="server-project" type="DOM" version="5.0"/>');
+  await writeFile(path.join(assets, "package.xml"), '<packageDescription id="pkg00001"><resources><component id="cmp01" name="Main.xml" path="/" exported="true"/></resources></packageDescription>');
+  const file = path.join(assets, "Main.xml");
+  await writeFile(file, '<component size="200,100"><displayList><text id="n0" name="title" xy="10,10" size="180,40" text="Before" fontSize="20"/></displayList></component>');
   const app = new FairyGuiMcpServer();
-  const client = new Client(
-    { name: "fairygui-test-client", version: "1.0.0" },
-    { capabilities: {} }
-  );
-  const [clientTransport, serverTransport] =
-    InMemoryTransport.createLinkedPair();
-  await app.connect(serverTransport);
-  await client.connect(clientTransport);
-  return { app, client };
-}
-
-function structured(result: Awaited<ReturnType<Client["callTool"]>>): {
-  ok: boolean;
-  data?: Record<string, unknown>;
-  warnings?: Array<{ code: string }>;
-  error?: {
-    code: string;
-    message: string;
-    path?: string;
-    actual?: unknown;
-    allowed?: unknown;
-    suggestedFix?: string;
+  const client = new Client({ name: "fairygui-v2-test", version: "1.0.0" }, { capabilities: {} });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await app.connect(serverTransport); await client.connect(clientTransport);
+  cleanups.push(async () => { await client.close(); await app.close(); });
+  const call = async (name: string, args: Record<string, unknown>) => {
+    const raw = await client.callTool({ name, arguments: args });
+    assert.ok("structuredContent" in raw);
+    return { raw, value: raw.structuredContent as any };
   };
-} {
-  assert.ok("structuredContent" in result);
-  return result.structuredContent as {
-    ok: boolean;
-    data?: Record<string, unknown>;
-    warnings?: Array<{ code: string }>;
-    error?: {
-      code: string;
-      message: string;
-      path?: string;
-      actual?: unknown;
-      allowed?: unknown;
-      suggestedFix?: string;
-    };
-  };
+  const opened = await call("fairygui.project", { action: "open", path: directory });
+  assert.equal(opened.value.ok, true, JSON.stringify(opened.value));
+  const projectId: string = opened.value.data.projectId;
+  const source = { projectId, packageId: "pkg00001", componentId: "cmp01" };
+  const target = { kind: "node", packageId: "pkg00001", componentId: "cmp01", nodeId: "n0" };
+  return { directory, file, app, client, call, opened, projectId, source, target };
+}
+function depth(value: unknown, level = 0): number {
+  if (!value || typeof value !== "object") return level;
+  return Math.max(level, ...Object.values(value).map(child => depth(child, level + 1)));
+}
+function images(raw: Awaited<ReturnType<Client["callTool"]>>) {
+  return (raw.content as Array<{ type: string; data?: string }>).filter(item => item.type === "image");
 }
 
-function schemaDepth(value: unknown, depth = 0): number {
-  if (value === null || typeof value !== "object") return depth;
-  const children = Object.values(value as Record<string, unknown>);
-  return children.length === 0
-    ? depth
-    : Math.max(...children.map((child) => schemaDepth(child, depth + 1)));
-}
-
-function inlineToolImage(
-  result: Awaited<ReturnType<Client["callTool"]>>
-): string {
-  assert.ok("content" in result);
-  const content = result.content as Array<{
-    type: string;
-    data?: string;
-  }>;
-  const image = content.find((entry) => entry.type === "image");
-  assert.ok(image?.data);
-  return image.data;
-}
-
-test("MCP initialization advertises instructions and exactly seven strict tools", async () => {
-  const { app, client } = await connectServer();
-  try {
-    assert.match(client.getInstructions() ?? "", /打开.*批量查询.*渲染.*校验/s);
-    assert.match(client.getInstructions() ?? "", /磁盘.*唯一事实来源/s);
-
-    const listed = await client.listTools();
-    assert.deepEqual(
-      listed.tools.map((tool) => tool.name),
-      [...FAIRYGUI_TOOL_NAMES]
-    );
-    for (const tool of listed.tools) {
-      assert.equal(tool.inputSchema.type, "object");
-      assert.equal(tool.outputSchema?.type, "object");
-      assert.ok(tool.description);
-      const outputAlternatives = (
-        tool.outputSchema as unknown as {
-          oneOf: Array<{
-            properties?: {
-              data?: {
-                type?: string;
-                properties?: Record<string, unknown>;
-              };
-            };
-          }>;
-        }
-      ).oneOf;
-      const successData = outputAlternatives[0]?.properties?.data;
-      assert.equal(successData?.type, "object");
-      assert.ok(Object.keys(successData?.properties ?? {}).length > 0);
-      const bytes = Buffer.byteLength(JSON.stringify(tool.inputSchema));
-      assert.ok(
-        bytes <= (tool.name === "fairygui.apply_dom_patch" ? 8_192 : 16_384),
-        `${tool.name} exposed schema is ${bytes} bytes`
-      );
-      assert.ok(
-        schemaDepth(tool.inputSchema) <= 10,
-        `${tool.name} exposed schema depth is ${schemaDepth(tool.inputSchema)}`
-      );
-    }
+test("MCP initialization exposes six compact tools and the installed Skill path", async () => {
+  const f = await fixture();
+  assert.ok(f.client.getInstructions()?.includes(SKILL_PATH));
+  const listed = await f.client.listTools();
+  assert.deepEqual(listed.tools.map(tool => tool.name), FAIRYGUI_TOOL_NAMES);
+  for (const tool of listed.tools) {
+    assert.equal(tool.inputSchema.type, "object"); assert.equal(tool.outputSchema?.type, "object");
+    assert.ok(tool.description); assert.ok(Buffer.byteLength(JSON.stringify(tool.inputSchema)) <= 16384);
+    assert.ok(depth(tool.inputSchema) <= 10, `${tool.name}: ${depth(tool.inputSchema)}`);
+    assert.ok(tool.annotations); assert.equal(tool.execution?.taskSupport, "forbidden");
   }
-  finally {
-    await client.close();
-    await app.close();
+  assert.equal(f.opened.value.data.service.skillPath, SKILL_PATH);
+  await readFile(SKILL_PATH);
+  for (const action of ["list", "status", "close"]) {
+    const result = await f.call("fairygui.project", action === "list" ? { action } : { action, projectId: f.projectId });
+    assert.equal(result.value.ok, true); assert.deepEqual(result.value.data.service, PROJECT_SERVICE_INFO);
   }
 });
 
-test("stdio DOM patch accepts a shallow payload then reports internal errors", async () => {
-  const projectDirectory = await createProject();
-  const { app, client } = await connectServer();
-  try {
-    const opened = structured(await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "open", path: projectDirectory }
-    }));
-    const projectId = String(opened.data?.projectId);
-    const result = await client.callTool({
-      name: "fairygui.apply_dom_patch",
-      arguments: {
-        projectId,
-        packageId: "pkg00001",
-        componentId: "cmp01",
-        operations: [{
-          op: "update",
-          selector: "#n0",
-          expectedMatches: 1,
-          changes: { style: { left: "10px" } }
-        }]
-      }
-    });
-
-    assert.equal("isError" in result && result.isError, true);
-    const envelope = structured(result);
-    assert.equal(envelope.error?.code, "INVALID_PATCH");
-    assert.equal(envelope.error?.path, "operations[0].changes.style.left");
-    assert.notEqual(envelope.error?.actual, undefined);
-    assert.notEqual(envelope.error?.allowed, undefined);
-    assert.ok(envelope.error?.suggestedFix);
-  }
-  finally {
-    await client.close();
-    await app.close();
-  }
+test("invalid transport and native properties retain stable errors and atomicity", async () => {
+  const f = await fixture(); const before = await readFile(f.file, "utf8");
+  const invalid = await f.call("fairygui.edit", { action: "apply", projectId: f.projectId, operations: [] });
+  assert.equal(invalid.raw.isError, true); assert.equal(invalid.value.error.code, "INVALID_ARGUMENT");
+  assert.ok(invalid.value.error.path); assert.ok(invalid.value.error.actual); assert.ok(invalid.value.error.suggestedFix);
+  const property = await f.call("fairygui.edit", { action: "apply", projectId: f.projectId, requestId: "invalid-property", operations: [
+    { op: "update", target: f.target, props: { text: "Should roll back" } },
+    { op: "update", target: f.target, props: { x: "10px" } }
+  ] });
+  assert.equal(property.raw.isError, true); assert.equal(property.value.error.code, "INVALID_PROPERTY");
+  assert.ok(property.value.error.path); assert.equal(await readFile(f.file, "utf8"), before);
 });
 
-test("all project actions report service, DOM schema and runtime dependency versions", async () => {
-  const projectDirectory = await createProject();
-  const { app, client } = await connectServer();
-  try {
-    const expectedService = {
-      packageName: "@magicskysword/fairygui-mcp-headless",
-      version: "0.1.5",
-      domSchemaVersion: 1,
-      runtimeVersions: {
-        "@magicskysword/openfairygui-core": "0.2.5",
-        "@magicskysword/openfairygui-functions": "0.2.5",
-        "@magicskysword/fairygui-dom": "1.1.2"
-      }
-    };
-
-    const opened = structured(await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "open", path: projectDirectory }
-    }));
-    assert.equal(opened.ok, true);
-    assert.deepEqual(opened.data?.service, expectedService);
-    const projectId = String(opened.data?.projectId);
-
-    const listed = structured(await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "list" }
-    }));
-    assert.equal(listed.ok, true);
-    assert.deepEqual(listed.data?.service, expectedService);
-
-    const status = structured(await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "status", projectId }
-    }));
-    assert.equal(status.ok, true);
-    assert.deepEqual(status.data?.service, expectedService);
-
-    const closed = structured(await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "close", projectId }
-    }));
-    assert.equal(closed.ok, true);
-    assert.deepEqual(closed.data?.service, expectedService);
-  }
-  finally {
-    await client.close();
-    await app.close();
-  }
+test("named native query keeps partial results compact and associates definition files", async () => {
+  const f = await fixture();
+  const result = await f.call("fairygui.query", { projectId: f.projectId, queries: {
+    one: { kind: "nodes", packageId: "pkg00001", componentId: "cmp01", selector: "#n0", detail: "full" },
+    missing: { kind: "object", target: { ...f.target, nodeId: "absent" } }
+  } });
+  assert.equal(result.value.ok, true); assert.equal(result.value.data.succeeded, 1); assert.equal(result.value.data.failed, 1);
+  const found = result.value.data.results.one.data;
+  assert.equal(found.total, 1); assert.equal(found.items.length, 1); assert.equal(found.items[0].props.x, 10);
+  assert.equal(found.items[0].type, "GTextField"); await readFile(found.items[0].definition.file);
 });
 
-test("stdio-facing publish handler writes selected package definitions", async () => {
-  const projectDirectory = await createProject();
-  const { app, client } = await connectServer();
-  try {
-    const opened = structured(await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "open", path: projectDirectory }
-    }));
-    assert.equal(opened.ok, true);
-    const projectId = String(opened.data?.projectId);
-
-    const published = await client.callTool({
-      name: "fairygui.publish",
-      arguments: {
-        projectId,
-        packageIds: ["pkg00001"],
-        publishType: "definitions",
-        outputPath: "release"
-      }
-    });
-
-    assert.equal("isError" in published && published.isError, false);
-    const envelope = structured(published);
-    assert.equal(envelope.ok, true, JSON.stringify(envelope));
-    assert.equal(envelope.data?.publishType, "definitions");
-    assert.equal(
-      envelope.data?.outputPath,
-      path.join(projectDirectory, "release")
-    );
-    await readFile(
-      path.join(projectDirectory, "release", "Demo_fui.bytes")
-    );
-  }
-  finally {
-    await client.close();
-    await app.close();
-  }
+test("native plan previews without writes, commits atomically and retries idempotently", async () => {
+  const f = await fixture(); const before = await readFile(f.file, "utf8");
+  const planned = await f.call("fairygui.edit", { action: "plan", projectId: f.projectId, operations: [{ op: "update", target: f.target, props: { text: "After", alpha: 0.4 } }] });
+  assert.equal(planned.value.ok, true, JSON.stringify(planned.value));
+  const planId: string = planned.value.data.planId;
+  const preview = await f.call("fairygui.preview", { action: "run", source: { ...f.source, planId }, run: { times: [0, 100], selector: "#n0", properties: ["text", "alpha"] } });
+  assert.equal(preview.value.ok, true, JSON.stringify(preview.value));
+  assert.equal(preview.value.data.sourceStatus, "plan"); assert.equal(preview.value.data.frames.length, 2);
+  assert.equal(preview.value.data.frames[0].nodes[0].props.text, "After");
+  assert.equal(images(preview.raw).length, 1); assert.equal(preview.value.data.images[0].contentIndex, 1);
+  assert.equal("data" in preview.value.data.images[0], false); assert.equal(await readFile(f.file, "utf8"), before);
+  const args = { action: "commit", projectId: f.projectId, planId, requestId: "plan-commit" };
+  const committed = await f.call("fairygui.edit", args); assert.equal(committed.value.ok, true, JSON.stringify(committed.value));
+  assert.deepEqual((await f.call("fairygui.edit", args)).value, committed.value);
+  assert.match(await readFile(f.file, "utf8"), /text="After"/);
+  const query = await f.call("fairygui.query", { projectId: f.projectId, queries: { one: { kind: "object", target: f.target, detail: "full" } } });
+  assert.equal(query.value.data.results.one.data.items[0].props.alpha, 0.4);
 });
 
-test("invalid arguments return the common envelope with MCP isError:true", async () => {
-  const { app, client } = await connectServer();
-  try {
-    const result = await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "open" }
-    });
-    assert.equal("isError" in result && result.isError, true);
-    const envelope = structured(result);
-    assert.equal(envelope.ok, false);
-    assert.equal(envelope.error?.code, "INVALID_ARGUMENT");
-    assert.match(envelope.error?.message ?? "", /参数/);
-  }
-  finally {
-    await client.close();
-    await app.close();
-  }
+test("named preview images detach from JSON, file-only results and source hashes remain stable", async () => {
+  const f = await fixture(); const before = await readFile(f.file, "utf8");
+  const result = await f.call("fairygui.preview", { previews: {
+    first: { action: "run", source: f.source }, second: { action: "run", source: f.source, imageResult: "file" },
+    missing: { action: "inspect", previewId: "absent" }
+  } });
+  assert.equal(result.value.data.succeeded, 2); assert.equal(result.value.data.failed, 1);
+  const first = result.value.data.results.first.data; const second = result.value.data.results.second.data;
+  assert.equal(first.images[0].contentIndex, 1); assert.equal("data" in first.images[0], false);
+  assert.equal(images(result.raw).length, 1); assert.deepEqual(second.images, []);
+  assert.equal((await readFile(second.frames[0].path)).subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+  assert.equal(await readFile(f.file, "utf8"), before);
 });
 
-test("stdio-facing handlers complete the M1 open-query-render-validate loop", async () => {
-  const projectDirectory = await createProject();
-  const { app, client } = await connectServer();
-  try {
-    const opened = await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "open", path: projectDirectory }
-    });
-    assert.equal("isError" in opened && opened.isError, false);
-    const openedEnvelope = structured(opened);
-    assert.equal(openedEnvelope.ok, true);
-    const projectId = String(openedEnvelope.data?.projectId);
-
-    const queried = await client.callTool({
-      name: "fairygui.query",
-      arguments: {
-        projectId,
-        queries: {
-          components: { kind: "components" },
-          dom: {
-            kind: "dom",
-            packageId: "pkg00001",
-            componentId: "cmp01"
-          }
-        }
-      }
-    });
-    assert.equal(structured(queried).ok, true);
-
-    const partiallyQueried = await client.callTool({
-      name: "fairygui.query",
-      arguments: {
-        projectId,
-        queries: {
-          packages: { kind: "packages" },
-          missing: {
-            kind: "dom",
-            packageId: "pkg00001",
-            componentId: "missing"
-          }
-        }
-      }
-    });
-    assert.equal(
-      "isError" in partiallyQueried && partiallyQueried.isError,
-      false
-    );
-    const partialEnvelope = structured(partiallyQueried);
-    assert.equal(partialEnvelope.ok, true);
-    assert.deepEqual(
-      (partialEnvelope.warnings as Array<{ code: string }> | undefined)
-        ?.map((warning) => warning.code),
-      ["PARTIAL_QUERY_FAILURE"]
-    );
-    const partialResults = partialEnvelope.data?.results as Record<
-      string,
-      { ok: boolean; error?: { code: string } }
-    >;
-    assert.equal(partialResults.packages?.ok, true);
-    assert.equal(partialResults.missing?.error?.code, "COMPONENT_NOT_FOUND");
-
-    const rendered = await client.callTool({
-      name: "fairygui.render_component",
-      arguments: {
-        projectId,
-        renders: {
-          main: {
-            packageId: "pkg00001",
-            componentId: "cmp01"
-          }
-        }
-      }
-    });
-    const renderedEnvelope = structured(rendered);
-    assert.equal(renderedEnvelope.ok, true);
-    const renderedResults = renderedEnvelope.data?.results as Record<
-      string,
-      { ok: boolean; data: { image: unknown } }
-    >;
-    const renderedImage = renderedResults.main?.data.image as {
-      mediaType: string;
-      contentIndex: number;
-      data?: string;
-    };
-    assert.deepEqual(renderedImage, {
-      mediaType: "image/png",
-      width: 200,
-      height: 100,
-      contentIndex: 1
-    });
-    assert.equal(JSON.stringify(renderedEnvelope).includes("data:image"), false);
-    assert.equal("data" in renderedImage, false);
-    const renderedContent = "content" in rendered
-      ? rendered.content as Array<{ type: string }>
-      : [];
-    assert.ok(
-      renderedContent.some((item) => item.type === "image")
-    );
-
-    const validated = await client.callTool({
-      name: "fairygui.validate",
-      arguments: { projectId, mode: "quick" }
-    });
-    assert.equal("isError" in validated && validated.isError, false);
-    const validationEnvelope = structured(validated);
-    assert.equal(validationEnvelope.ok, true);
-    assert.equal(validationEnvelope.data?.valid, false);
-  }
-  finally {
-    await client.close();
-    await app.close();
-  }
+test("create package/component through batch refs and close associated persistent previews", async () => {
+  const f = await fixture();
+  const created = await f.call("fairygui.edit", { action: "apply", projectId: f.projectId, requestId: "create-widgets", operations: [
+    { op: "create", target: { kind: "package" }, props: { name: "Widgets" }, clientRef: "widgets" },
+    { op: "create", target: { kind: "component", packageId: "@widgets" }, props: { name: "Dialog", width: 640, height: 360 }, clientRef: "dialog" }
+  ] });
+  assert.equal(created.value.ok, true, JSON.stringify(created.value));
+  assert.equal(created.value.data.files.length, 2);
+  assert.match(await readFile(path.join(f.directory, "assets", "Widgets", "Dialog.xml"), "utf8"), /size="640,360"/);
+  const opened = await f.call("fairygui.preview", { action: "open", source: f.source });
+  assert.equal(opened.value.ok, true, JSON.stringify(opened.value));
+  await f.call("fairygui.project", { action: "close", projectId: f.projectId });
+  const inspected = await f.call("fairygui.preview", { action: "inspect", previewId: opened.value.data.previewId });
+  assert.equal(inspected.value.error.code, "PREVIEW_NOT_FOUND");
 });
 
-test("stdio batch render maps named inline images and keeps file-only results detached", async () => {
-  const projectDirectory = await createProject();
-  const { app, client } = await connectServer();
-  try {
-    const opened = structured(await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "open", path: projectDirectory }
-    }));
-    assert.equal(opened.ok, true);
-    const projectId = String(opened.data?.projectId);
-
-    const both = await client.callTool({
-      name: "fairygui.render_component",
-      arguments: {
-        projectId,
-        imageResult: "both",
-        renders: {
-          first: {
-            packageId: "pkg00001",
-            componentId: "cmp01"
-          },
-          second: {
-            packageId: "pkg00001",
-            componentId: "cmp01",
-            width: 100,
-            height: 50
-          }
-        }
-      }
-    });
-    const bothEnvelope = structured(both);
-    assert.equal(bothEnvelope.ok, true);
-    const results = bothEnvelope.data?.results as Record<string, {
-      ok: boolean;
-      data: {
-        image: {
-          contentIndex?: number;
-          filePath?: string;
-          data?: string;
-        };
-      };
-    }>;
-    assert.equal(results.first?.data.image.contentIndex, 1);
-    assert.equal(results.second?.data.image.contentIndex, 2);
-    assert.equal("data" in results.first!.data.image, false);
-    assert.equal("data" in results.second!.data.image, false);
-    assert.ok(results.first?.data.image.filePath);
-    assert.ok(results.second?.data.image.filePath);
-    assert.equal(
-      (("content" in both ? both.content : []) as Array<{ type: string }>)
-        .filter((item) => item.type === "image").length,
-      2
-    );
-    assert.equal(
-      (await readFile(results.first!.data.image.filePath!))
-        .subarray(0, 8)
-        .toString("hex"),
-      "89504e470d0a1a0a"
-    );
-
-    const fileOnly = await client.callTool({
-      name: "fairygui.render_component",
-      arguments: {
-        projectId,
-        imageResult: "file",
-        renders: {
-          file: {
-            packageId: "pkg00001",
-            componentId: "cmp01"
-          }
-        }
-      }
-    });
-    const fileEnvelope = structured(fileOnly);
-    assert.equal(fileEnvelope.ok, true);
-    const fileResults = fileEnvelope.data?.results as Record<string, {
-      ok: boolean;
-      data: { image: Record<string, unknown> };
-    }>;
-    assert.equal("filePath" in fileResults.file!.data.image, true);
-    assert.equal("contentIndex" in fileResults.file!.data.image, false);
-    assert.equal(
-      (("content" in fileOnly
-        ? fileOnly.content
-        : []) as Array<{ type: string }>)
-        .some((item) => item.type === "image"),
-      false
-    );
-  }
-  finally {
-    await client.close();
-    await app.close();
-  }
-});
-
-test("stdio-facing DOM patch handler atomically writes and immediately re-queries", async () => {
-  const projectDirectory = await createProject();
-  const { app, client } = await connectServer();
-  try {
-    const opened = structured(await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "open", path: projectDirectory }
-    }));
-    assert.equal(opened.ok, true);
-    const projectId = String(opened.data?.projectId);
-
-    const beforeRenderResult = await client.callTool({
-      name: "fairygui.render_component",
-      arguments: {
-        projectId,
-        renders: {
-          main: {
-            packageId: "pkg00001",
-            componentId: "cmp01"
-          }
-        }
-      }
-    });
-    const beforeRender = structured(beforeRenderResult);
-    assert.equal(beforeRender.ok, true);
-    const beforeImage = inlineToolImage(beforeRenderResult);
-
-    const result = await client.callTool({
-      name: "fairygui.apply_dom_patch",
-      arguments: {
-        projectId,
-        packageId: "pkg00001",
-        componentId: "cmp01",
-        operations: [
-          {
-            op: "update",
-            selector: "#n0",
-            expectedMatches: 1,
-            changes: { content: { text: "Written through MCP" } }
-          },
-          {
-            op: "update",
-            selector: "#n0",
-            expectedMatches: 1,
-            changes: { style: { opacity: 0.4 } }
-          }
-        ]
-      }
-    });
-    assert.equal("isError" in result && result.isError, false);
-    const patched = structured(result);
-    assert.equal(patched.ok, true);
-    assert.deepEqual(patched.data?.affectedFiles, ["assets/Demo/Main.xml"]);
-    assert.equal(patched.data?.appliedOperations, 2);
-
-    const componentXml = await readFile(
-      path.join(projectDirectory, "assets", "Demo", "Main.xml"),
-      "utf8"
-    );
-    assert.match(componentXml, /text="Written through MCP"/);
-    assert.match(componentXml, /\balpha="0\.4"/);
-
-    const queried = structured(await client.callTool({
-      name: "fairygui.query",
-      arguments: {
-        projectId,
-        queries: {
-          dom: {
-            kind: "dom",
-            packageId: "pkg00001",
-            componentId: "cmp01",
-            selector: "#n0",
-            detail: "full"
-          }
-        }
-      }
-    }));
-    assert.equal(queried.ok, true);
-    const queries = queried.data?.results as Record<string, {
-      ok: boolean;
-      data: { matches: Array<{
-        style: { opacity?: number };
-        content: { text?: string };
-      }> };
-    }>;
-    assert.ok(queries.dom);
-    assert.equal(
-      queries.dom?.data.matches[0]?.content.text,
-      "Written through MCP"
-    );
-    assert.equal(queries.dom?.data.matches[0]?.style.opacity, 0.4);
-
-    const rendered = await client.callTool({
-      name: "fairygui.render_component",
-      arguments: {
-        projectId,
-        renders: {
-          main: {
-            packageId: "pkg00001",
-            componentId: "cmp01"
-          }
-        }
-      }
-    });
-    assert.equal("isError" in rendered && rendered.isError, false);
-    const renderedEnvelope = structured(rendered);
-    assert.equal(renderedEnvelope.ok, true);
-    assert.equal(renderedEnvelope.data?.backend, "fairygui-dom");
-    const renderedResults = renderedEnvelope.data?.results as Record<
-      string,
-      { ok: boolean; data: { image: unknown } }
-    >;
-    const renderedImage = renderedResults.main?.data.image as {
-      mediaType: string;
-      contentIndex: number;
-    };
-    assert.equal(renderedImage.mediaType, "image/png");
-    assert.equal(renderedImage.contentIndex, 1);
-    assert.notEqual(inlineToolImage(rendered), beforeImage);
-    const renderedContent = "content" in rendered
-      ? rendered.content as Array<{ type: string }>
-      : [];
-    assert.ok(renderedContent.some((item) => item.type === "image"));
-  }
-  finally {
-    await client.close();
-    await app.close();
-  }
-});
-
-test("stdio-facing resource operations create a package and component atomically", async () => {
-  const projectDirectory = await createProject();
-  const { app, client } = await connectServer();
-  try {
-    const opened = structured(await client.callTool({
-      name: "fairygui.project",
-      arguments: { action: "open", path: projectDirectory }
-    }));
-    assert.equal(opened.ok, true);
-    const projectId = String(opened.data?.projectId);
-
-    const result = await client.callTool({
-      name: "fairygui.apply_resource_operations",
-      arguments: {
-        projectId,
-        operations: [
-          {
-            op: "create-package",
-            clientRef: "widgets",
-            name: "Widgets"
-          },
-          {
-            op: "create-component",
-            packageRef: "widgets",
-            clientRef: "dialog",
-            name: "Dialog",
-            width: 640,
-            height: 360
-          }
-        ]
-      }
-    });
-    assert.equal("isError" in result && result.isError, false);
-    const applied = structured(result);
-    assert.equal(applied.ok, true);
-    assert.equal(applied.data?.appliedOperations, 2);
-    const clientRefs = applied.data?.clientRefs as Record<string, {
-      packageId: string;
-      resourceId?: string;
-    }>;
-    const packageId = clientRefs.widgets!.packageId;
-    const componentId = clientRefs.dialog!.resourceId!;
-    assert.deepEqual(applied.data?.affectedFiles, [
-      "assets/Widgets/Dialog.xml",
-      "assets/Widgets/package.xml"
-    ]);
-
-    const queried = structured(await client.callTool({
-      name: "fairygui.query",
-      arguments: {
-        projectId,
-        queries: {
-          components: {
-            kind: "components",
-            packageId,
-            detail: "full"
-          }
-        }
-      }
-    }));
-    assert.equal(queried.ok, true);
-    const results = queried.data?.results as Record<string, {
-      ok: boolean;
-      data: { items: Array<{ componentId: string; name: string }> };
-    }>;
-    assert.equal(results.components?.ok, true);
-    assert.deepEqual(results.components?.data.items, [{
-      packageId,
-      componentId,
-      name: "Dialog",
-      path: "/",
-      width: 640,
-      height: 360,
-      exported: false
-    }]);
-    assert.match(
-      await readFile(
-        path.join(
-          projectDirectory,
-          "assets",
-          "Widgets",
-          "Dialog.xml"
-        ),
-        "utf8"
-      ),
-      /size="640,360"/
-    );
-  }
-  finally {
-    await client.close();
-    await app.close();
-  }
+test("publish and validation remain callable after dynamic preview", async () => {
+  const f = await fixture();
+  const preview = await f.call("fairygui.preview", { action: "run", source: f.source, recipe: { setup: [{ op: "script", code: 'ctx.one("#n0").text = "Temporary"' }] } });
+  assert.equal(preview.value.ok, true);
+  const published = await f.call("fairygui.publish", { projectId: f.projectId, packageIds: ["pkg00001"], publishType: "definitions", outputPath: "release" });
+  assert.equal(published.value.ok, true, JSON.stringify(published.value));
+  assert.ok(published.value.data.writtenFiles.length);
+  const validated = await f.call("fairygui.validate", { projectId: f.projectId, mode: "quick" });
+  assert.equal(validated.value.ok, true); assert.equal(validated.value.data.valid, true);
+  await writeFile(f.file, '<component size="200,100"><displayList><image id="n1" src="missing"/></displayList></component>');
+  const broken = await f.call("fairygui.validate", { projectId: f.projectId, mode: "quick" });
+  assert.equal(broken.raw.isError, false); assert.equal(broken.value.data.valid, false);
 });

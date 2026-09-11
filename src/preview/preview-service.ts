@@ -16,10 +16,10 @@ import { PROJECT_SERVICE_INFO } from "../version.js";
 import { CompilationCache } from "./compilation-cache.js";
 import { PreviewExecutor, PreviewExecutorError } from "./preview-executor.js";
 
-export interface PreviewSource { projectId: string; packageId: string; componentId: string; planId?: string; }
+export interface PreviewSource { projectId: string; packageId: string; componentId: string; planId?: string | undefined; }
 export type PreviewInput =
-  | { action: "open" | "run"; source: PreviewSource; recipe?: PreviewRecipeInput; run?: PreviewRunInput; imageResult?: "inline" | "file" | "both"; includeFrames?: boolean }
-  | { action: "run" | "inspect" | "capture" | "reset" | "reload" | "close"; previewId: string; run?: PreviewRunInput; properties?: string[]; selector?: string; imageResult?: "inline" | "file" | "both"; includeFrames?: boolean };
+  | { action: "open" | "run"; source: PreviewSource; recipe?: PreviewRecipeInput | undefined; run?: PreviewRunInput | undefined; imageResult?: "inline" | "file" | "both" | undefined; includeFrames?: boolean | undefined }
+  | { action: "run" | "inspect" | "capture" | "reset" | "reload" | "close"; previewId: string; run?: PreviewRunInput | undefined; properties?: string[] | undefined; selector?: string | undefined; imageResult?: "inline" | "file" | "both" | undefined; includeFrames?: boolean | undefined };
 export interface PreviewData {
   previewId: string;
   status: "ready" | "failed" | "closed";

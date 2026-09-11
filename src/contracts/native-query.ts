@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AUTHORING_TARGET_SCHEMA, type AuthoringTarget } from "@magicskysword/openfairygui-core";
 
-export const AuthoringTargetSchema = z.fromJSONSchema(AUTHORING_TARGET_SCHEMA as Record<string, unknown>) as z.ZodType<AuthoringTarget>;
+export const AuthoringTargetSchema = z.fromJSONSchema(AUTHORING_TARGET_SCHEMA as Record<string, unknown>).meta({ id: "AuthoringTarget" }) as z.ZodType<AuthoringTarget>;
 const pagination = { limit: z.number().int().min(1).max(500).default(50), cursor: z.string().optional() };
 const detail = z.enum(["summary", "full"]).default("summary");
 const scope = { packageId: z.string().min(1), componentId: z.string().min(1) };

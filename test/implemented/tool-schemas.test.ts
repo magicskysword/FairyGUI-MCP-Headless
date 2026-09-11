@@ -4,15 +4,14 @@ import { z } from "zod";
 import {
   ApplyDomPatchInputSchema,
   ApplyResourceOperationsInputSchema,
-  FAIRYGUI_TOOL_NAMES,
   InternalApplyDomPatchInputSchema,
   ProjectInputSchema,
   PublishInputSchema,
   QueryInputSchema,
   RenderComponentInputSchema,
-  TOOL_INPUT_SCHEMAS,
   ValidateInputSchema
 } from "../../src/contracts/tools.js";
+import { FAIRYGUI_TOOL_NAMES, TOOL_INPUT_SCHEMAS } from "../../src/contracts/v2-tools.js";
 
 function jsonSchemaDepth(value: unknown, depth = 0): number {
   if (value === null || typeof value !== "object") return depth;
@@ -51,15 +50,14 @@ function safeParseSingleRenderSchema(input: Record<string, unknown>) {
   );
 }
 
-test("public contract exposes exactly the seven MCP tools", () => {
+test("public contract exposes exactly the six MCP tools", () => {
   assert.deepEqual(FAIRYGUI_TOOL_NAMES, [
     "fairygui.project",
     "fairygui.query",
-    "fairygui.apply_dom_patch",
-    "fairygui.apply_resource_operations",
-    "fairygui.render_component",
-    "fairygui.publish",
-    "fairygui.validate"
+    "fairygui.edit",
+    "fairygui.preview",
+    "fairygui.validate",
+    "fairygui.publish"
   ]);
   assert.deepEqual(Object.keys(TOOL_INPUT_SCHEMAS), FAIRYGUI_TOOL_NAMES);
 });
@@ -68,12 +66,13 @@ test("public tool schemas stay inside discovery size and depth budgets", () => {
   for (const [name, schema] of Object.entries(TOOL_INPUT_SCHEMAS)) {
     const json = z.toJSONSchema(schema, {
       target: "draft-7",
+      io: "input",
       unrepresentable: "any",
       reused: "ref"
     });
     const bytes = Buffer.byteLength(JSON.stringify(json));
     assert.ok(
-      bytes <= (name === "fairygui.apply_dom_patch" ? 8_192 : 16_384),
+      bytes <= 16_384,
       `${name} public schema is ${bytes} bytes`
     );
     assert.ok(

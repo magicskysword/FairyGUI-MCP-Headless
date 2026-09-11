@@ -1,0 +1,5 @@
+{
+  "recipe": { "setup": [{ "op": "tree", "target": "[name=\"tree\"]", "items": [{ "props": { "text": "Inventory" }, "expanded": true, "children": [{ "props": { "text": "Sword" } }, { "props": { "text": "Shield" } }] }] }] },
+  "run": { "times": [0], "properties": ["text"] },
+  "expect": { "containsText": ["Inventory", "Sword", "Shield"] }
+}

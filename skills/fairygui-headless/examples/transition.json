@@ -1,0 +1,5 @@
+{
+  "recipe": { "setup": [{ "op": "transition", "name": "move", "action": "play", "times": 2 }] },
+  "run": { "times": [0, 250, 500, 750, 1000], "properties": ["x", "y"] },
+  "expect": { "node": "title", "property": "x", "value": 144 }
+}

@@ -1,0 +1,5 @@
+{
+  "recipe": { "setup": [{ "op": "set", "target": "[name=\"progress\"]", "props": { "value": 72 } }] },
+  "run": { "times": [0], "properties": ["value", "text"] },
+  "expect": { "node": "progress", "property": "value", "value": 72 }
+}

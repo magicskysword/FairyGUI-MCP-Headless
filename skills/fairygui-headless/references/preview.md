@@ -1,6 +1,7 @@
 # JavaScript 动态预览
 
 配方见 [recipe](../definitions/preview/recipe.schema.json)，单次执行见 [run](../definitions/preview/run.schema.json)，声明式操作见 [operation](../definitions/preview/operation.schema.json)。
+脚本上下文见 [preview-context.d.ts](../definitions/preview/preview-context.d.ts)，逐帧结果与 MCP 结果见 [preview-state.d.ts](../definitions/preview/preview-state.d.ts) 中的 `PreviewFrame` 和 `PreviewToolData`。
 
 来源为 `{ projectId, packageId, componentId, planId? }`。配方包含 `environment/data/resources/preconstruct/setup/timeline`。
 画布默认取组件尺寸，`scale` 默认 1、`seed` 默认 0、时钟默认 `manual`。
@@ -9,6 +10,7 @@
 `preconstruct` 在组件构造前注册扩展；此时 `ctx.root` 尚未创建。
 `setup` 在构造后按序执行一次；会话后续操作放入 `run.operations` 或时间线。
 脚本参数为 `ctx` 和 `fgui`，后者即 FairyGUI-dom 公共 API，类型入口为 [runtime/FairyGUI.d.ts](../definitions/runtime/FairyGUI.d.ts)。
+脚本可使用顶层 `await`；同一时刻按输入顺序等待操作完成，再更新动画、刷新布局并采样。手动时钟只在采样推进时前进，未来模拟时刻的工作使用定时回调或时间线安排。
 
 `ctx` 提供：
 

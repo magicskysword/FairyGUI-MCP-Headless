@@ -1,0 +1,16 @@
+<component size="480,320">
+  <controller name="state" pages="0,Rest,1,Active"/>
+  <displayList>
+    <text id="n0" name="title" xy="24,16" size="300,32" text="Gallery" fontSize="24">
+      <gearXY controller="state" pages="0,1" values="24,16|144,16" tween="true" duration="0.5" ease="Linear"/>
+    </text>
+    <list id="list" name="list" xy="24,64" size="180,120" defaultItem="ui://example1row"/>
+    <list id="tree" name="tree" treeView="true" xy="244,64" size="180,120" defaultItem="ui://example1row"/>
+    <component id="progress" name="progress" src="progress" xy="24,208" size="180,24">
+      <ProgressBar value="30" max="100"/>
+    </component>
+  </displayList>
+  <transition name="move" fps="24">
+    <item type="XY" target="n0" time="0" duration="12" tween="true" ease="Linear" startValue="24,16" endValue="144,16"/>
+  </transition>
+</component>

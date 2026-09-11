@@ -1,0 +1,5 @@
+{
+  "recipe": { "setup": [{ "op": "script", "code": "const box = new fgui.GGraph(); box.name = 'dynamicBox'; box.setSize(40, 40); box.setPosition(24, 250); box.element.drawRect(0, new fgui.Color(), new fgui.Color(0.22, 0.74, 0.97, 1)); ctx.root.addChild(box); box.on('click', () => box.alpha = 0.5); box.emit('click');" }] },
+  "run": { "times": [0], "properties": ["x", "y", "alpha"] },
+  "expect": { "node": "dynamicBox", "property": "alpha", "value": 0.5 }
+}

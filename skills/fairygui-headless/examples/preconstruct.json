@@ -1,0 +1,8 @@
+{
+  "recipe": {
+    "preconstruct": "class Row extends fgui.GLabel { onConstruct() { this.data = { registered: true }; } } fgui.UIObjectFactory.setExtension('ui://example1row', Row);",
+    "setup": [{ "op": "script", "code": "const list = ctx.root.getChild('list'); list.itemRenderer = (index, cell) => cell.text = cell.data.registered ? 'Extended row' : 'Plain row'; list.numItems = 1;" }]
+  },
+  "run": { "times": [0], "properties": ["text"] },
+  "expect": { "containsText": ["Extended row"] }
+}

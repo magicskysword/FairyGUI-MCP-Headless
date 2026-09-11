@@ -1,0 +1,8 @@
+{
+  "recipe": {
+    "data": ["Apple", "Pear", "Peach"],
+    "setup": [{ "op": "script", "code": "const list = ctx.root.getChild('list'); list.itemRenderer = (index, cell) => cell.text = ctx.data[index]; list.numItems = ctx.data.length;" }]
+  },
+  "run": { "times": [0], "properties": ["text", "x", "y"] },
+  "expect": { "containsText": ["Apple", "Pear", "Peach"] }
+}

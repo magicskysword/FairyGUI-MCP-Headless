@@ -13,6 +13,7 @@ description: 使用 FairyGUI-MCP-Headless 原生模型查询和编辑本地 Fair
 - 类型或 API 定位：读取 [definitions/index.json](definitions/index.json)，选择需要的 authoring、preview 或 runtime 文件。
 - 工程编辑：先读 [references/authoring.md](references/authoring.md) 和 [操作 Schema](definitions/authoring/operations.schema.json)，再读查询结果 `definition.file` 指向的类型。
 - 动态试验：读 [references/preview.md](references/preview.md)、[配方 Schema](definitions/preview/recipe.schema.json)、[执行 Schema](definitions/preview/run.schema.json)；具体 API 按需读取 runtime 类声明。
+- 组合示例：按 [examples 导航](references/examples.md) 选择列表、树、控制器、实例、动态创建或逐帧动效示例。
 
 ## 创作闭环
 

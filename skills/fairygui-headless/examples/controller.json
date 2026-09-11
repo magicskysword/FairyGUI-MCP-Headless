@@ -1,0 +1,5 @@
+{
+  "recipe": { "setup": [{ "op": "controller", "name": "state", "pageName": "Active" }] },
+  "run": { "times": [0, 250, 500], "properties": ["x", "y", "alpha"] },
+  "expect": { "node": "title", "property": "x", "value": 144 }
+}

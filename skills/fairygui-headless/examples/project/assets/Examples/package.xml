@@ -1,0 +1,7 @@
+<packageDescription id="example1">
+  <resources>
+    <component id="gallery" name="Gallery.xml" path="/" exported="true"/>
+    <component id="row" name="Row.xml" path="/" exported="true"/>
+    <component id="progress" name="Progress.xml" path="/"/>
+  </resources>
+</packageDescription>

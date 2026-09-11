@@ -56,6 +56,7 @@ test('multiframe preview writes frame indexes and contact sheet while reusing im
   assert.equal(first.ok, true, JSON.stringify(first)); if (!first.ok) return;
   assert.equal(first.data.frames.length, 3);
   assert.ok(first.data.contactSheet?.path);
+  assert.ok(first.data.contactSheet!.width >= 3 * 220);
   assert.equal(first.data.images.length, 1);
   for (const frame of first.data.frames) assert.ok((await readFile(frame.path)).length > 100);
   const second = await f.preview.execute(input);

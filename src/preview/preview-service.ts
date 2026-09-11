@@ -152,13 +152,14 @@ export class PreviewService {
     };
     if (frames.length > 1) {
       const columns = Math.min(4, frames.length);
-      const cellWidth = Math.min(480, Math.ceil(session.recipe.environment.width * session.recipe.environment.scale));
-      const cellHeight = Math.max(1, Math.round(cellWidth * session.recipe.environment.height / session.recipe.environment.width));
+      const imageWidth = Math.min(480, Math.ceil(session.recipe.environment.width * session.recipe.environment.scale));
+      const cellWidth = Math.max(220, imageWidth);
+      const cellHeight = Math.max(1, Math.round(imageWidth * session.recipe.environment.height / session.recipe.environment.width));
       const width = columns * cellWidth; const height = Math.ceil(frames.length / columns) * (cellHeight + 28);
       const layers: sharp.OverlayOptions[] = [];
       for (let index = 0; index < frames.length; index++) {
         const frame = frames[index]!; const left = index % columns * cellWidth; const top = Math.floor(index / columns) * (cellHeight + 28);
-        layers.push({ input: await sharp(frame.png).resize(cellWidth, cellHeight).png().toBuffer(), left, top });
+        layers.push({ input: await sharp(frame.png).resize(imageWidth, cellHeight).png().toBuffer(), left: left + Math.floor((cellWidth - imageWidth) / 2), top });
         const label = `<svg width="${cellWidth}" height="28"><rect width="100%" height="100%" fill="#202534"/><text x="8" y="19" fill="white" font-family="Arial" font-size="13">${frame.time.toFixed(2)} ms · frame ${frame.frame}</text></svg>`;
         layers.push({ input: Buffer.from(label), left, top: top + cellHeight });
       }

@@ -38,6 +38,7 @@
     "test:all": "pnpm test:implemented && pnpm test:future",
     "test:corpus": "node --import tsx test/corpus/fairygui-unity.smoke.ts",
     "benchmark:corpus": "node --import tsx scripts/performance-baseline.ts",
+    "benchmark:native": "node --import tsx scripts/native-acceptance.ts",
     "test:pack": "node --import tsx scripts/pack-smoke.ts"
   },
   "dependencies": {

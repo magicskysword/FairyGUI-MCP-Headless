@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildProjectReferenceGraph, DocumentEditError, inspectOpaqueProjectXml, parseURL, readAuthoringProperties, readComponentXmlFragment, resolveAuthoringTarget, type AuthoringTarget, type Component, type Document, type GObject, type Property, type ProjectReferenceEdge } from "@magicskysword/openfairygui-core";
+import { AUTHORING_GEAR_FIELDS, buildProjectReferenceGraph, DocumentEditError, inspectOpaqueProjectXml, parseURL, readAuthoringProperties, readComponentXmlFragment, resolveAuthoringTarget, type AuthoringTarget, type Component, type Document, type GObject, type Property, type ProjectReferenceEdge } from "@magicskysword/openfairygui-core";
 import { NativeQueryInputSchema, type NativeQueryInput, type NativeQueryRequest } from "../contracts/native-query.js";
 import { ERROR_CODES, fail, ok, type ErrorCode, type ResultEnvelope } from "../contracts/result.js";
 import type { ProjectRegistry } from "../project/project-registry.js";
 
 export const SKILL_DIRECTORY = fileURLToPath(new URL("../../skills/fairygui-headless/", import.meta.url));
 export const SKILL_ENTRY = path.join(SKILL_DIRECTORY, "SKILL.md");
-const gearFields = [["visible"], ["x", "y"], ["width", "height", "scaleX", "scaleY"], ["alpha", "rotation", "grayed", "touchable"], ["color", "strokeColor"], ["playing", "frame"], ["text"], ["icon"], ["visible"], ["fontSize"]];
+const gearFields = AUTHORING_GEAR_FIELDS;
 interface PageData { items: unknown[]; total: number; nextCursor?: string; }
 export interface NativeQueryData { requested: number; succeeded: number; failed: number; results: Record<string, ResultEnvelope<PageData>>; }
 function projectTarget(owner: Property, target: AuthoringTarget): AuthoringTarget {

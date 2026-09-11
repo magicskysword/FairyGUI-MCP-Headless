@@ -158,6 +158,22 @@ test("quick validation returns valid:false as a successful project finding", asy
   }
 });
 
+test("quick validation reports component-local transition, page and mask references", async () => {
+  const fixture = await createProject();
+  const xml = await readFile(fixture.componentFile, "utf8");
+  await writeFile(fixture.componentFile, xml.replace('<component size=', '<component mask="missingMask" size=').replace('</component>', '<controller name="state" pages="0,Up"/><transition name="move"><item type="XY" target="missingNode" time="0" value="0,0"/></transition></component>').replace('</displayList>', '<text id="gearNode" name="gear"><gearXY controller="state" pages="missingPage" values="0,0"/></text></displayList>'));
+  const registry = new ProjectRegistry();
+  try {
+    const opened = await registry.open(fixture.directory); assert.ok(opened.ok); if (!opened.ok) return;
+    const result = await new ValidationService(registry).validate(ValidateInputSchema.parse({ projectId: opened.data.projectId, mode: 'quick', detail: 'full' }));
+    assert.ok(result.ok); if (!result.ok) return;
+    assert.equal(result.data.valid, false);
+    assert.ok(result.data.diagnostics.some(d => d.code === 'BROKEN_NODE_REFERENCE' && d.path?.endsWith('/mask')));
+    assert.ok(result.data.diagnostics.some(d => d.code === 'BROKEN_NODE_REFERENCE' && d.path?.endsWith('/targetId')));
+    assert.ok(result.data.diagnostics.some(d => d.code === 'BROKEN_PAGE_REFERENCE'));
+  } finally { await registry.closeAll(); }
+});
+
 test("quick validation reports every producer of a duplicate source output", async () => {
   const { registry, validator, projectId } = await openValidator({
     duplicateSourceOutput: true

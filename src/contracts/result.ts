@@ -103,6 +103,8 @@ export const ErrorDetailSchema = z.object({
   actual: z.unknown().optional(),
   allowed: z.unknown().optional(),
   suggestedFix: z.string().min(1).optional(),
+  relatedObjects: z.array(z.unknown()).optional(),
+  definition: z.object({ file: z.string().min(1), symbol: z.string().optional() }).strict().optional(),
   transactionId: z.string().min(1).optional(),
   logPath: z.string().min(1).optional()
 }).strict();

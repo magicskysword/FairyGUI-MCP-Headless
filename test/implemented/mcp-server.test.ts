@@ -74,6 +74,10 @@ test("invalid transport and native properties retain stable errors and atomicity
     { op: "update", target: f.target, props: { x: "10px" } }
   ] });
   assert.equal(property.raw.isError, true); assert.equal(property.value.error.code, "INVALID_PROPERTY");
+  assert.equal(property.value.error.actual, '10px');
+  assert.ok(property.value.error.suggestedFix);
+  assert.deepEqual(property.value.error.relatedObjects, [f.target]);
+  await readFile(property.value.error.definition.file);
   assert.ok(property.value.error.path); assert.equal(await readFile(f.file, "utf8"), before);
 });
 

@@ -6,6 +6,7 @@ import { ERROR_CODES, fail, ok, type ErrorCode, type ResultEnvelope } from "../c
 import type { ProjectRegistry } from "../project/project-registry.js";
 import { projectSourceFileSystem, snapshotProject } from "../project/source-snapshot.js";
 import { readImportInboxFile } from "../resources/import-inbox.js";
+import { SKILL_PATH } from '../version.js';
 import { ProjectCommitCoordinator } from "../write/commit-coordinator.js";
 import { FileTransactionManager } from "../write/file-transaction.js";
 
@@ -135,9 +136,17 @@ export class EditService {
         this.plans.delete(plan.data.planId);
         return ok({ ...data, transactionId: transaction.data.transactionId });
       } catch (error) {
-        if (error instanceof DocumentEditError) return fail(ERROR_CODES.includes(error.code as ErrorCode) ? error.code as ErrorCode : "INVALID_EDIT", error.message, {
-          ...(error.path ? { path: error.path } : {}), actual: error.details ?? error.code
-        });
+        if (error instanceof DocumentEditError) {
+          const position = /^operations\[(\d+)\](?:\.props\.([^.]+))?/.exec(error.path ?? '');
+          const operation = input.action !== 'commit' && position ? input.operations[Number(position[1])] : undefined;
+          const value = operation && operation.op !== 'xml' && position?.[2] ? operation.props?.[position[2]] : undefined;
+          return fail(ERROR_CODES.includes(error.code as ErrorCode) ? error.code as ErrorCode : "INVALID_EDIT", error.message, {
+            ...(error.path ? { path: error.path } : {}), actual: error.details ?? value ?? error.code,
+            ...(operation ? { relatedObjects: [operation.target] } : {}),
+            definition: { file: path.join(path.dirname(SKILL_PATH), 'definitions/authoring/operations.schema.json'), symbol: 'operations' },
+            suggestedFix: '按关联定义检查目标、属性和引用后重新生成编辑计划'
+          });
+        }
         return fail("INTERNAL_ERROR", "编辑请求处理失败", { actual: error instanceof Error ? error.message : String(error) });
       }
     });

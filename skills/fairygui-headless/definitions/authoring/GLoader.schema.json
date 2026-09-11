@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GLoader",
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string"
+    },
+    "filter": {
+      "type": "string"
+    },
+    "filterData": {
+      "type": "string"
+    },
+    "x": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "y": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "pivotX": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotY": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotAsAnchor": {
+      "type": "boolean"
+    },
+    "scaleX": {
+      "type": "number"
+    },
+    "scaleY": {
+      "type": "number"
+    },
+    "alpha": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rotation": {
+      "type": "number"
+    },
+    "visible": {
+      "type": "boolean"
+    },
+    "touchable": {
+      "type": "boolean"
+    },
+    "grayed": {
+      "type": "boolean"
+    },
+    "fill": {
+      "type": "number"
+    },
+    "shrinkOnly": {
+      "type": "boolean"
+    },
+    "autoSize": {
+      "type": "boolean"
+    },
+    "useResize": {
+      "type": "boolean"
+    },
+    "align": {
+      "type": "number"
+    },
+    "vAlign": {
+      "type": "number"
+    },
+    "frame": {
+      "type": "number"
+    },
+    "playing": {
+      "type": "boolean"
+    },
+    "color": {
+      "type": "string"
+    },
+    "fillMethod": {
+      "type": "number"
+    },
+    "fillOrigin": {
+      "type": "number"
+    },
+    "fillClockwise": {
+      "type": "boolean"
+    },
+    "fillAmount": {
+      "type": "number"
+    },
+    "clearOnPublish": {
+      "type": "boolean"
+    },
+    "customData": {
+      "type": "string"
+    },
+    "relations": {
+      "type": "array"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

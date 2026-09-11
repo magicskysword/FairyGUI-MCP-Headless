@@ -29,6 +29,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "generate:definitions": "node --import tsx scripts/generate-definitions.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "pnpm test:implemented",

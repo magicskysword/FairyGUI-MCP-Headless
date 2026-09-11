@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GScrollBar",
+  "type": "object",
+  "properties": {
+    "src": {
+      "type": "string"
+    },
+    "fixedGripSize": {
+      "type": "boolean"
+    },
+    "x": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "y": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "locked": {
+      "type": "boolean"
+    },
+    "minWidth": {
+      "type": "number"
+    },
+    "maxWidth": {
+      "type": "number"
+    },
+    "minHeight": {
+      "type": "number"
+    },
+    "maxHeight": {
+      "type": "number"
+    },
+    "aspect": {
+      "type": "boolean"
+    },
+    "pivotX": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotY": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotAsAnchor": {
+      "type": "boolean"
+    },
+    "scaleX": {
+      "type": "number"
+    },
+    "scaleY": {
+      "type": "number"
+    },
+    "group": {
+      "type": "string"
+    },
+    "alpha": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rotation": {
+      "type": "number"
+    },
+    "visible": {
+      "type": "boolean"
+    },
+    "touchable": {
+      "type": "boolean"
+    },
+    "grayed": {
+      "type": "boolean"
+    },
+    "tooltips": {
+      "type": "string"
+    },
+    "customData": {
+      "type": "string"
+    },
+    "fileName": {
+      "type": "string"
+    },
+    "packageId": {
+      "type": "string"
+    },
+    "filter": {
+      "type": "string"
+    },
+    "filterData": {
+      "type": "string"
+    },
+    "overflow": {
+      "type": "number"
+    },
+    "scrollType": {
+      "type": "number"
+    },
+    "scrollBarDisplay": {
+      "type": "number"
+    },
+    "pageController": {
+      "type": "string"
+    },
+    "controllerOverrides": {
+      "type": "string"
+    },
+    "instanceExtType": {
+      "type": "string"
+    },
+    "instanceTitle": {
+      "type": "string"
+    },
+    "instanceSelectedTitle": {
+      "type": "string"
+    },
+    "instanceIcon": {
+      "type": "string"
+    },
+    "instanceSelectedIcon": {
+      "type": "string"
+    },
+    "instanceTitleColor": {
+      "type": "string"
+    },
+    "instanceTitleFontSize": {
+      "type": "number"
+    },
+    "instanceController": {
+      "type": "string"
+    },
+    "instancePage": {
+      "type": "string"
+    },
+    "instanceChecked": {
+      "type": "boolean"
+    },
+    "instanceSound": {
+      "type": "string"
+    },
+    "instanceSoundVolumeScale": {
+      "type": "number"
+    },
+    "instancePromptText": {
+      "type": "string"
+    },
+    "instanceSelectionController": {
+      "type": "string"
+    },
+    "instanceVisibleItemCount": {
+      "type": "number"
+    },
+    "instanceValue": {
+      "type": "number"
+    },
+    "instanceMax": {
+      "type": "number"
+    },
+    "instanceMin": {
+      "type": "number"
+    },
+    "instanceComboItems": {
+      "type": "array"
+    },
+    "margin": {
+      "type": "array"
+    },
+    "relations": {
+      "type": "array"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

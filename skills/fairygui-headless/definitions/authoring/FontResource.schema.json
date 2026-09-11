@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FontResource",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "branchItemIds": {
+      "type": "array"
+    },
+    "fileName": {
+      "type": "string"
+    },
+    "textureId": {
+      "type": "string"
+    },
+    "exported": {
+      "type": "boolean"
+    },
+    "renderMode": {
+      "type": "string"
+    },
+    "samplePointSize": {
+      "type": "number"
+    },
+    "ttf": {
+      "type": "boolean"
+    },
+    "tint": {
+      "type": "boolean"
+    },
+    "autoScale": {
+      "type": "boolean"
+    },
+    "hasChannel": {
+      "type": "boolean"
+    },
+    "fontSize": {
+      "type": "number"
+    },
+    "xAdvance": {
+      "type": "number"
+    },
+    "lineHeight": {
+      "type": "number"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

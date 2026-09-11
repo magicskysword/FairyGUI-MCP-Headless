@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SpineResource",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "branchItemIds": {
+      "type": "array"
+    },
+    "file": {
+      "type": "string"
+    },
+    "exported": {
+      "type": "boolean"
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "requireIds": {
+      "type": "array"
+    },
+    "atlasNames": {
+      "type": "array"
+    },
+    "anchorX": {
+      "type": "number"
+    },
+    "anchorY": {
+      "type": "number"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

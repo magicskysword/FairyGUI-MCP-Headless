@@ -1,0 +1,33 @@
+import { UIElement } from "./UIElement";
+import { TextFormat } from "./TextFormat";
+type InputElement = HTMLTextAreaElement | HTMLInputElement;
+export declare var isAnyEditing: boolean;
+export declare class InputTextField extends UIElement {
+    protected _promptText: string;
+    protected _textFormat: TextFormat;
+    protected _text: string;
+    protected _singleLine: boolean;
+    protected _password: boolean;
+    private _input;
+    constructor();
+    init(): void;
+    get htmlInput(): InputElement;
+    get textFormat(): TextFormat;
+    applyFormat(): void;
+    get text(): string;
+    set text(value: string);
+    get singleLine(): boolean;
+    set singleLine(value: boolean);
+    private createElement;
+    protected updateTouchableFlag(): void;
+    setPromptText(value: string): void;
+    setMaxLength(value: number): void;
+    setKeyboardType(keyboardType: string): void;
+    setRestrict(value: string): void;
+    get editable(): boolean;
+    set editable(value: boolean);
+    get password(): boolean;
+    set password(value: boolean);
+    setSelection(start: number, end: number): void;
+}
+export {};

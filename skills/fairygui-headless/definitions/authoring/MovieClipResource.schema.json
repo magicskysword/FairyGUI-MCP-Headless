@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MovieClipResource",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "branchItemIds": {
+      "type": "array"
+    },
+    "highResolutionItemIds": {
+      "type": "array"
+    },
+    "fileName": {
+      "type": "string"
+    },
+    "exported": {
+      "type": "boolean"
+    },
+    "textureSetMode": {
+      "type": "string"
+    },
+    "folderTextureSetMode": {
+      "type": "string"
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "interval": {
+      "type": "number"
+    },
+    "swing": {
+      "type": "boolean"
+    },
+    "repeatDelay": {
+      "type": "number"
+    },
+    "smoothing": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

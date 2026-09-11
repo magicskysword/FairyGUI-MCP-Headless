@@ -1,0 +1,36 @@
+import { AutoSizeType } from "../ui/FieldTypes";
+import { UIElement } from "./UIElement";
+import { TextFormat } from "./TextFormat";
+import { Vec2 } from "../math/Vec2";
+export declare class TextField extends UIElement {
+    protected _textFormat: TextFormat;
+    protected _text: string;
+    protected _autoSize: AutoSizeType;
+    protected _singleLine: boolean;
+    protected _html: boolean;
+    protected _maxWidth: number;
+    protected _updatingSize: boolean;
+    protected _span: HTMLSpanElement;
+    protected _textSize: Vec2;
+    protected _selectable: boolean;
+    constructor();
+    init(): void;
+    get textFormat(): TextFormat;
+    applyFormat(): void;
+    get text(): string;
+    set text(value: string);
+    get htmlText(): string;
+    set htmlText(value: string);
+    private applyText;
+    get autoSize(): AutoSizeType;
+    set autoSize(value: AutoSizeType);
+    get singleLine(): boolean;
+    set singleLine(value: boolean);
+    get maxWidth(): number;
+    set maxWidth(value: number);
+    get selectable(): boolean;
+    set selectable(value: boolean);
+    get textWidth(): number;
+    protected onSizeChanged(): void;
+    private updateWrapping;
+}

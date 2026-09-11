@@ -1,0 +1,550 @@
+{
+  "versions": {
+    "@magicskysword/openfairygui-core": "0.2.5",
+    "@magicskysword/openfairygui-functions": "0.2.5",
+    "@magicskysword/fairygui-dom": "1.1.2",
+    "@magicskysword/fairygui-mcp-headless": "0.1.5"
+  },
+  "authoring": [
+    {
+      "symbol": "Root",
+      "file": "authoring/Root.schema.json"
+    },
+    {
+      "symbol": "Package",
+      "file": "authoring/Package.schema.json"
+    },
+    {
+      "symbol": "ImageResource",
+      "file": "authoring/ImageResource.schema.json"
+    },
+    {
+      "symbol": "SoundResource",
+      "file": "authoring/SoundResource.schema.json"
+    },
+    {
+      "symbol": "MiscResource",
+      "file": "authoring/MiscResource.schema.json"
+    },
+    {
+      "symbol": "FontResource",
+      "file": "authoring/FontResource.schema.json"
+    },
+    {
+      "symbol": "MovieClipResource",
+      "file": "authoring/MovieClipResource.schema.json"
+    },
+    {
+      "symbol": "SpineResource",
+      "file": "authoring/SpineResource.schema.json"
+    },
+    {
+      "symbol": "DragonBonesResource",
+      "file": "authoring/DragonBonesResource.schema.json"
+    },
+    {
+      "symbol": "Component",
+      "file": "authoring/Component.schema.json"
+    },
+    {
+      "symbol": "GImage",
+      "file": "authoring/GImage.schema.json"
+    },
+    {
+      "symbol": "GTextField",
+      "file": "authoring/GTextField.schema.json"
+    },
+    {
+      "symbol": "GRichTextField",
+      "file": "authoring/GRichTextField.schema.json"
+    },
+    {
+      "symbol": "GTextInput",
+      "file": "authoring/GTextInput.schema.json"
+    },
+    {
+      "symbol": "GGraph",
+      "file": "authoring/GGraph.schema.json"
+    },
+    {
+      "symbol": "GGroup",
+      "file": "authoring/GGroup.schema.json"
+    },
+    {
+      "symbol": "GLoader",
+      "file": "authoring/GLoader.schema.json"
+    },
+    {
+      "symbol": "GLoader3D",
+      "file": "authoring/GLoader3D.schema.json"
+    },
+    {
+      "symbol": "GMovieClip",
+      "file": "authoring/GMovieClip.schema.json"
+    },
+    {
+      "symbol": "GComponent",
+      "file": "authoring/GComponent.schema.json"
+    },
+    {
+      "symbol": "GList",
+      "file": "authoring/GList.schema.json"
+    },
+    {
+      "symbol": "GTree",
+      "file": "authoring/GTree.schema.json"
+    },
+    {
+      "symbol": "GButton",
+      "file": "authoring/GButton.schema.json"
+    },
+    {
+      "symbol": "GLabel",
+      "file": "authoring/GLabel.schema.json"
+    },
+    {
+      "symbol": "GComboBox",
+      "file": "authoring/GComboBox.schema.json"
+    },
+    {
+      "symbol": "GProgressBar",
+      "file": "authoring/GProgressBar.schema.json"
+    },
+    {
+      "symbol": "GSlider",
+      "file": "authoring/GSlider.schema.json"
+    },
+    {
+      "symbol": "GScrollBar",
+      "file": "authoring/GScrollBar.schema.json"
+    },
+    {
+      "symbol": "Controller",
+      "file": "authoring/Controller.schema.json"
+    },
+    {
+      "symbol": "ControllerPage",
+      "file": "authoring/ControllerPage.schema.json"
+    },
+    {
+      "symbol": "ControllerAction",
+      "file": "authoring/ControllerAction.schema.json"
+    },
+    {
+      "symbol": "Transition",
+      "file": "authoring/Transition.schema.json"
+    },
+    {
+      "symbol": "TransitionItem",
+      "file": "authoring/TransitionItem.schema.json"
+    },
+    {
+      "symbol": "Gear",
+      "file": "authoring/Gear.schema.json"
+    },
+    {
+      "symbol": "operations",
+      "file": "authoring/operations.schema.json"
+    },
+    {
+      "symbol": "target",
+      "file": "authoring/target.schema.json"
+    }
+  ],
+  "runtime": [
+    {
+      "symbol": "AuthoringCapabilities",
+      "file": "runtime/AuthoringCapabilities.d.ts"
+    },
+    {
+      "symbol": "FairyGUI",
+      "file": "runtime/FairyGUI.d.ts"
+    },
+    {
+      "symbol": "ChangePageAction",
+      "file": "runtime/action/ChangePageAction.d.ts"
+    },
+    {
+      "symbol": "ControllerAction",
+      "file": "runtime/action/ControllerAction.d.ts"
+    },
+    {
+      "symbol": "PlayTransitionAction",
+      "file": "runtime/action/PlayTransitionAction.d.ts"
+    },
+    {
+      "symbol": "FillUtils",
+      "file": "runtime/core/FillUtils.d.ts"
+    },
+    {
+      "symbol": "IStage",
+      "file": "runtime/core/IStage.d.ts"
+    },
+    {
+      "symbol": "Image",
+      "file": "runtime/core/Image.d.ts"
+    },
+    {
+      "symbol": "InputTextField",
+      "file": "runtime/core/InputTextField.d.ts"
+    },
+    {
+      "symbol": "MovieClip",
+      "file": "runtime/core/MovieClip.d.ts"
+    },
+    {
+      "symbol": "Shape",
+      "file": "runtime/core/Shape.d.ts"
+    },
+    {
+      "symbol": "Stage",
+      "file": "runtime/core/Stage.d.ts"
+    },
+    {
+      "symbol": "TextField",
+      "file": "runtime/core/TextField.d.ts"
+    },
+    {
+      "symbol": "TextFormat",
+      "file": "runtime/core/TextFormat.d.ts"
+    },
+    {
+      "symbol": "UIElement",
+      "file": "runtime/core/UIElement.d.ts"
+    },
+    {
+      "symbol": "Event",
+      "file": "runtime/event/Event.d.ts"
+    },
+    {
+      "symbol": "EventDispatcher",
+      "file": "runtime/event/EventDispatcher.d.ts"
+    },
+    {
+      "symbol": "GearAnimation",
+      "file": "runtime/gears/GearAnimation.d.ts"
+    },
+    {
+      "symbol": "GearBase",
+      "file": "runtime/gears/GearBase.d.ts"
+    },
+    {
+      "symbol": "GearColor",
+      "file": "runtime/gears/GearColor.d.ts"
+    },
+    {
+      "symbol": "GearDisplay",
+      "file": "runtime/gears/GearDisplay.d.ts"
+    },
+    {
+      "symbol": "GearDisplay2",
+      "file": "runtime/gears/GearDisplay2.d.ts"
+    },
+    {
+      "symbol": "GearFontSize",
+      "file": "runtime/gears/GearFontSize.d.ts"
+    },
+    {
+      "symbol": "GearIcon",
+      "file": "runtime/gears/GearIcon.d.ts"
+    },
+    {
+      "symbol": "GearLook",
+      "file": "runtime/gears/GearLook.d.ts"
+    },
+    {
+      "symbol": "GearSize",
+      "file": "runtime/gears/GearSize.d.ts"
+    },
+    {
+      "symbol": "GearText",
+      "file": "runtime/gears/GearText.d.ts"
+    },
+    {
+      "symbol": "GearXY",
+      "file": "runtime/gears/GearXY.d.ts"
+    },
+    {
+      "symbol": "Color",
+      "file": "runtime/math/Color.d.ts"
+    },
+    {
+      "symbol": "Margin",
+      "file": "runtime/math/Margin.d.ts"
+    },
+    {
+      "symbol": "Rect",
+      "file": "runtime/math/Rect.d.ts"
+    },
+    {
+      "symbol": "Vec2",
+      "file": "runtime/math/Vec2.d.ts"
+    },
+    {
+      "symbol": "Vec3",
+      "file": "runtime/math/Vec3.d.ts"
+    },
+    {
+      "symbol": "EaseManager",
+      "file": "runtime/tween/EaseManager.d.ts"
+    },
+    {
+      "symbol": "EaseType",
+      "file": "runtime/tween/EaseType.d.ts"
+    },
+    {
+      "symbol": "GPath",
+      "file": "runtime/tween/GPath.d.ts"
+    },
+    {
+      "symbol": "GPathPoint",
+      "file": "runtime/tween/GPathPoint.d.ts"
+    },
+    {
+      "symbol": "GTween",
+      "file": "runtime/tween/GTween.d.ts"
+    },
+    {
+      "symbol": "GTweener",
+      "file": "runtime/tween/GTweener.d.ts"
+    },
+    {
+      "symbol": "TweenManager",
+      "file": "runtime/tween/TweenManager.d.ts"
+    },
+    {
+      "symbol": "TweenValue",
+      "file": "runtime/tween/TweenValue.d.ts"
+    },
+    {
+      "symbol": "AsyncOperation",
+      "file": "runtime/ui/AsyncOperation.d.ts"
+    },
+    {
+      "symbol": "BrowserPackageResourceResolver",
+      "file": "runtime/ui/BrowserPackageResourceResolver.d.ts"
+    },
+    {
+      "symbol": "Controller",
+      "file": "runtime/ui/Controller.d.ts"
+    },
+    {
+      "symbol": "DragDropManager",
+      "file": "runtime/ui/DragDropManager.d.ts"
+    },
+    {
+      "symbol": "FieldTypes",
+      "file": "runtime/ui/FieldTypes.d.ts"
+    },
+    {
+      "symbol": "GButton",
+      "file": "runtime/ui/GButton.d.ts"
+    },
+    {
+      "symbol": "GComboBox",
+      "file": "runtime/ui/GComboBox.d.ts"
+    },
+    {
+      "symbol": "GComponent",
+      "file": "runtime/ui/GComponent.d.ts"
+    },
+    {
+      "symbol": "GGraph",
+      "file": "runtime/ui/GGraph.d.ts"
+    },
+    {
+      "symbol": "GGroup",
+      "file": "runtime/ui/GGroup.d.ts"
+    },
+    {
+      "symbol": "GImage",
+      "file": "runtime/ui/GImage.d.ts"
+    },
+    {
+      "symbol": "GLabel",
+      "file": "runtime/ui/GLabel.d.ts"
+    },
+    {
+      "symbol": "GList",
+      "file": "runtime/ui/GList.d.ts"
+    },
+    {
+      "symbol": "GLoader",
+      "file": "runtime/ui/GLoader.d.ts"
+    },
+    {
+      "symbol": "GLoader3D",
+      "file": "runtime/ui/GLoader3D.d.ts"
+    },
+    {
+      "symbol": "GMovieClip",
+      "file": "runtime/ui/GMovieClip.d.ts"
+    },
+    {
+      "symbol": "GObject",
+      "file": "runtime/ui/GObject.d.ts"
+    },
+    {
+      "symbol": "GObjectPool",
+      "file": "runtime/ui/GObjectPool.d.ts"
+    },
+    {
+      "symbol": "GProgressBar",
+      "file": "runtime/ui/GProgressBar.d.ts"
+    },
+    {
+      "symbol": "GRichTextField",
+      "file": "runtime/ui/GRichTextField.d.ts"
+    },
+    {
+      "symbol": "GRoot",
+      "file": "runtime/ui/GRoot.d.ts"
+    },
+    {
+      "symbol": "GScrollBar",
+      "file": "runtime/ui/GScrollBar.d.ts"
+    },
+    {
+      "symbol": "GSlider",
+      "file": "runtime/ui/GSlider.d.ts"
+    },
+    {
+      "symbol": "GTextField",
+      "file": "runtime/ui/GTextField.d.ts"
+    },
+    {
+      "symbol": "GTextInput",
+      "file": "runtime/ui/GTextInput.d.ts"
+    },
+    {
+      "symbol": "GTree",
+      "file": "runtime/ui/GTree.d.ts"
+    },
+    {
+      "symbol": "GTreeNode",
+      "file": "runtime/ui/GTreeNode.d.ts"
+    },
+    {
+      "symbol": "GWindow",
+      "file": "runtime/ui/GWindow.d.ts"
+    },
+    {
+      "symbol": "IGRootStatic",
+      "file": "runtime/ui/IGRootStatic.d.ts"
+    },
+    {
+      "symbol": "IObjectFactoryStatic",
+      "file": "runtime/ui/IObjectFactoryStatic.d.ts"
+    },
+    {
+      "symbol": "PackageDecoder",
+      "file": "runtime/ui/PackageDecoder.d.ts"
+    },
+    {
+      "symbol": "PackageItem",
+      "file": "runtime/ui/PackageItem.d.ts"
+    },
+    {
+      "symbol": "PackageResource",
+      "file": "runtime/ui/PackageResource.d.ts"
+    },
+    {
+      "symbol": "PopupMenu",
+      "file": "runtime/ui/PopupMenu.d.ts"
+    },
+    {
+      "symbol": "RelationItem",
+      "file": "runtime/ui/RelationItem.d.ts"
+    },
+    {
+      "symbol": "Relations",
+      "file": "runtime/ui/Relations.d.ts"
+    },
+    {
+      "symbol": "ScrollPane",
+      "file": "runtime/ui/ScrollPane.d.ts"
+    },
+    {
+      "symbol": "Transition",
+      "file": "runtime/ui/Transition.d.ts"
+    },
+    {
+      "symbol": "TranslationHelper",
+      "file": "runtime/ui/TranslationHelper.d.ts"
+    },
+    {
+      "symbol": "UIConfig",
+      "file": "runtime/ui/UIConfig.d.ts"
+    },
+    {
+      "symbol": "UIObjectFactory",
+      "file": "runtime/ui/UIObjectFactory.d.ts"
+    },
+    {
+      "symbol": "UIPackage",
+      "file": "runtime/ui/UIPackage.d.ts"
+    },
+    {
+      "symbol": "ByteBuffer",
+      "file": "runtime/utils/ByteBuffer.d.ts"
+    },
+    {
+      "symbol": "ColorMatrix",
+      "file": "runtime/utils/ColorMatrix.d.ts"
+    },
+    {
+      "symbol": "HttpRequest",
+      "file": "runtime/utils/HttpRequest.d.ts"
+    },
+    {
+      "symbol": "Pool",
+      "file": "runtime/utils/Pool.d.ts"
+    },
+    {
+      "symbol": "RuntimeClock",
+      "file": "runtime/utils/RuntimeClock.d.ts"
+    },
+    {
+      "symbol": "RuntimeInspector",
+      "file": "runtime/utils/RuntimeInspector.d.ts"
+    },
+    {
+      "symbol": "Timers",
+      "file": "runtime/utils/Timers.d.ts"
+    },
+    {
+      "symbol": "ToolSet",
+      "file": "runtime/utils/ToolSet.d.ts"
+    },
+    {
+      "symbol": "UBBParser",
+      "file": "runtime/utils/UBBParser.d.ts"
+    },
+    {
+      "symbol": "XML",
+      "file": "runtime/utils/xml/XML.d.ts"
+    },
+    {
+      "symbol": "XMLIterator",
+      "file": "runtime/utils/xml/XMLIterator.d.ts"
+    },
+    {
+      "symbol": "XMLUtils",
+      "file": "runtime/utils/xml/XMLUtils.d.ts"
+    }
+  ],
+  "preview": [
+    {
+      "symbol": "recipe",
+      "file": "preview/recipe.schema.json"
+    },
+    {
+      "symbol": "run",
+      "file": "preview/run.schema.json"
+    },
+    {
+      "symbol": "operation",
+      "file": "preview/operation.schema.json"
+    }
+  ]
+}

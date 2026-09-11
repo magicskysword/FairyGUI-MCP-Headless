@@ -1,0 +1,44 @@
+import { TextField } from "../core/TextField";
+import { TextFormat } from "../core/TextFormat";
+import { GObject } from "./GObject";
+import { ByteBuffer } from "../utils/ByteBuffer";
+export type TextTemplate = {
+    [index: string]: string;
+};
+export declare class GTextField extends GObject {
+    protected _element: TextField;
+    protected _text: string;
+    protected _ubbEnabled: boolean;
+    protected _updatingSize: boolean;
+    protected _template: TextTemplate;
+    constructor();
+    protected createElement(): void;
+    get element(): TextField;
+    get text(): string;
+    set text(value: string);
+    protected setText(): void;
+    get textTemplate(): TextTemplate;
+    set textTemplate(value: TextTemplate);
+    setVar(name: string, value: string): GTextField;
+    flushVars(): void;
+    get textFormat(): TextFormat;
+    applyFormat(): void;
+    get singleLine(): boolean;
+    set singleLine(value: boolean);
+    set ubbEnabled(value: boolean);
+    get ubbEnabled(): boolean;
+    get autoSize(): number;
+    set autoSize(value: number);
+    get color(): number;
+    set color(value: number);
+    get textWidth(): number;
+    get selectable(): boolean;
+    set selectable(value: boolean);
+    getProp(index: number): any;
+    setProp(index: number, value: any): void;
+    private updateSize;
+    protected handleSizeChanged(): void;
+    setup_beforeAdd(buffer: ByteBuffer, beginPos: number): void;
+    setup_afterAdd(buffer: ByteBuffer, beginPos: number): void;
+    protected parseTemplate(template: string): string;
+}

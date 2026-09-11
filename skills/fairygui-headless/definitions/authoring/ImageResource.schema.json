@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ImageResource",
+  "type": "object",
+  "properties": {
+    "fileName": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "branchItemIds": {
+      "type": "array"
+    },
+    "highResolutionItemIds": {
+      "type": "array"
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "exported": {
+      "type": "boolean"
+    },
+    "textureSetMode": {
+      "type": "string"
+    },
+    "folderTextureSetMode": {
+      "type": "string"
+    },
+    "qualityOption": {
+      "type": "string"
+    },
+    "smoothing": {
+      "type": "boolean"
+    },
+    "duplicatePadding": {
+      "type": "boolean"
+    },
+    "scaleOption": {
+      "type": "number"
+    },
+    "scale9Grid": {
+      "type": [
+        "null",
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "array"
+      ]
+    },
+    "tileGridIndice": {
+      "type": "number"
+    },
+    "imageData": {
+      "type": [
+        "null",
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "array"
+      ]
+    },
+    "pixelHitTestData": {
+      "type": [
+        "null",
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "array"
+      ]
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

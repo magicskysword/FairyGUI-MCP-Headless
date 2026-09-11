@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SoundResource",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "branchItemIds": {
+      "type": "array"
+    },
+    "file": {
+      "type": "string"
+    },
+    "exported": {
+      "type": "boolean"
+    },
+    "soundData": {
+      "type": [
+        "null",
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "array"
+      ]
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

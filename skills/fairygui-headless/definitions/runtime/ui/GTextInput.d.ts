@@ -1,0 +1,31 @@
+import { ByteBuffer } from "../utils/ByteBuffer";
+import { InputTextField } from "../core/InputTextField";
+import { GObject } from "./GObject";
+import { TextFormat } from "../core/TextFormat";
+export declare class GTextInput extends GObject {
+    protected _element: InputTextField;
+    constructor();
+    protected createElement(): void;
+    get element(): InputTextField;
+    get text(): string;
+    set text(value: string);
+    get textFormat(): TextFormat;
+    applyFormat(): void;
+    get singleLine(): boolean;
+    set singleLine(value: boolean);
+    get color(): number;
+    set color(value: number);
+    get password(): boolean;
+    set password(value: boolean);
+    set editable(value: boolean);
+    get editable(): boolean;
+    setMaxLength(value: number): void;
+    setPromptText(value: string): void;
+    setRestrict(value: string): void;
+    setKeyboardType(value: string): void;
+    setSelection(start: number, end: number): void;
+    getProp(index: number): any;
+    setProp(index: number, value: any): void;
+    setup_beforeAdd(buffer: ByteBuffer, beginPos: number): void;
+    setup_afterAdd(buffer: ByteBuffer, beginPos: number): void;
+}

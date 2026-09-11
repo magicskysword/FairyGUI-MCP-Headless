@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Gear",
+  "type": "object",
+  "properties": {
+    "gearType": {
+      "type": "number"
+    },
+    "pages": {
+      "type": "string"
+    },
+    "values": {
+      "type": "string"
+    },
+    "condition": {
+      "type": "string"
+    },
+    "defaultValue": {
+      "type": [
+        "null",
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "array"
+      ]
+    },
+    "pageValues": {
+      "type": "object"
+    },
+    "positionsInPercent": {
+      "type": "boolean"
+    },
+    "tween": {
+      "type": "boolean"
+    },
+    "tweenDuration": {
+      "type": "number"
+    },
+    "tweenDelay": {
+      "type": "number"
+    },
+    "easeType": {
+      "type": "number"
+    },
+    "customEasePath": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

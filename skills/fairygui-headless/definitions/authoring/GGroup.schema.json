@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GGroup",
+  "type": "object",
+  "properties": {
+    "layout": {
+      "type": "number"
+    },
+    "x": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "y": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "locked": {
+      "type": "boolean"
+    },
+    "alpha": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rotation": {
+      "type": "number"
+    },
+    "visible": {
+      "type": "boolean"
+    },
+    "group": {
+      "type": "string"
+    },
+    "touchable": {
+      "type": "boolean"
+    },
+    "grayed": {
+      "type": "boolean"
+    },
+    "lineGap": {
+      "type": "number"
+    },
+    "columnGap": {
+      "type": "number"
+    },
+    "advanced": {
+      "type": "boolean"
+    },
+    "excludeInvisibles": {
+      "type": "boolean"
+    },
+    "autoSizeDisabled": {
+      "type": "boolean"
+    },
+    "mainGridIndex": {
+      "type": "number"
+    },
+    "customData": {
+      "type": "string"
+    },
+    "relations": {
+      "type": "array"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

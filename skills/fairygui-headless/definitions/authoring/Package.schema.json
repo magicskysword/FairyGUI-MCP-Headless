@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Package",
+  "type": "object",
+  "properties": {
+    "compressPNG": {
+      "type": [
+        "null",
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "array"
+      ]
+    },
+    "jpegQuality": {
+      "type": [
+        "null",
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "array"
+      ]
+    },
+    "publishName": {
+      "type": "string"
+    },
+    "publishPath": {
+      "type": "string"
+    },
+    "publishBranchPath": {
+      "type": "string"
+    },
+    "publishPackageCount": {
+      "type": "number"
+    },
+    "genCode": {
+      "type": "boolean"
+    },
+    "codePath": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

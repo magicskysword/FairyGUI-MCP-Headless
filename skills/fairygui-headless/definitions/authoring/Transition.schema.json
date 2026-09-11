@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Transition",
+  "type": "object",
+  "properties": {
+    "autoPlay": {
+      "type": "boolean"
+    },
+    "autoPlayTimes": {
+      "type": "number"
+    },
+    "autoPlayDelay": {
+      "type": "number"
+    },
+    "options": {
+      "type": "number"
+    },
+    "fps": {
+      "type": "number"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

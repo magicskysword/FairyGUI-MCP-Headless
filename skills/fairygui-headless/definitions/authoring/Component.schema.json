@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "branchItemIds": {
+      "type": "array"
+    },
+    "exported": {
+      "type": "boolean"
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "minWidth": {
+      "type": "number"
+    },
+    "maxWidth": {
+      "type": "number"
+    },
+    "minHeight": {
+      "type": "number"
+    },
+    "maxHeight": {
+      "type": "number"
+    },
+    "pivotX": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotY": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotAsAnchor": {
+      "type": "boolean"
+    },
+    "extType": {
+      "type": "number"
+    },
+    "overflow": {
+      "type": "number"
+    },
+    "margin": {
+      "type": "object"
+    },
+    "clipSoftness": {
+      "type": "object"
+    },
+    "hitTest": {
+      "type": "string"
+    },
+    "customData": {
+      "type": "string"
+    },
+    "mask": {
+      "type": "string"
+    },
+    "reversedMask": {
+      "type": "boolean"
+    },
+    "scrollType": {
+      "type": "number"
+    },
+    "scrollBarDisplay": {
+      "type": "number"
+    },
+    "scrollBarFlags": {
+      "type": "number"
+    },
+    "scrollBarMargin": {
+      "type": "object"
+    },
+    "vtScrollBarRes": {
+      "type": "string"
+    },
+    "hzScrollBarRes": {
+      "type": "string"
+    },
+    "headerRes": {
+      "type": "string"
+    },
+    "footerRes": {
+      "type": "string"
+    },
+    "bgColor": {
+      "type": "string"
+    },
+    "bgColorEnabled": {
+      "type": "boolean"
+    },
+    "designImageAlpha": {
+      "type": "number"
+    },
+    "designImageLayer": {
+      "type": "number"
+    },
+    "designImageOffsetX": {
+      "type": "number"
+    },
+    "designImageOffsetY": {
+      "type": "number"
+    },
+    "idNum": {
+      "type": "number"
+    },
+    "initName": {
+      "type": "string"
+    },
+    "remark": {
+      "type": "string"
+    },
+    "extensionType": {
+      "type": "string"
+    },
+    "buttonMode": {
+      "type": "number"
+    },
+    "sound": {
+      "type": "string"
+    },
+    "soundVolumeScale": {
+      "type": "number"
+    },
+    "addedToStageSound": {
+      "type": "string"
+    },
+    "removedFromStageSound": {
+      "type": "string"
+    },
+    "downEffect": {
+      "type": "number"
+    },
+    "downEffectValue": {
+      "type": "number"
+    },
+    "dropdown": {
+      "type": "string"
+    },
+    "promptText": {
+      "type": "string"
+    },
+    "selectionController": {
+      "type": "string"
+    },
+    "titleType": {
+      "type": "number"
+    },
+    "reverse": {
+      "type": "boolean"
+    },
+    "wholeNumbers": {
+      "type": "boolean"
+    },
+    "changeOnClick": {
+      "type": "boolean"
+    },
+    "fixedGripSize": {
+      "type": "boolean"
+    },
+    "opaque": {
+      "type": "boolean"
+    },
+    "childrenRenderOrder": {
+      "type": "number"
+    },
+    "relations": {
+      "type": "array"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

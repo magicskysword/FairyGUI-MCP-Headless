@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GImage",
+  "type": "object",
+  "properties": {
+    "src": {
+      "type": "string"
+    },
+    "x": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "y": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "locked": {
+      "type": "boolean"
+    },
+    "aspect": {
+      "type": "boolean"
+    },
+    "pivotX": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotY": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotAsAnchor": {
+      "type": "boolean"
+    },
+    "scaleX": {
+      "type": "number"
+    },
+    "scaleY": {
+      "type": "number"
+    },
+    "group": {
+      "type": "string"
+    },
+    "alpha": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rotation": {
+      "type": "number"
+    },
+    "visible": {
+      "type": "boolean"
+    },
+    "touchable": {
+      "type": "boolean"
+    },
+    "grayed": {
+      "type": "boolean"
+    },
+    "skewX": {
+      "type": "number"
+    },
+    "skewY": {
+      "type": "number"
+    },
+    "tooltips": {
+      "type": "string"
+    },
+    "customData": {
+      "type": "string"
+    },
+    "fileName": {
+      "type": "string"
+    },
+    "packageId": {
+      "type": "string"
+    },
+    "filter": {
+      "type": "string"
+    },
+    "filterData": {
+      "type": "string"
+    },
+    "flip": {
+      "type": "number"
+    },
+    "color": {
+      "type": "string"
+    },
+    "fillMethod": {
+      "type": "number"
+    },
+    "fillOrigin": {
+      "type": "number"
+    },
+    "fillClockwise": {
+      "type": "boolean"
+    },
+    "fillAmount": {
+      "type": "number"
+    },
+    "relations": {
+      "type": "array"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

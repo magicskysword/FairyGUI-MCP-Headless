@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GMovieClip",
+  "type": "object",
+  "properties": {
+    "src": {
+      "type": "string"
+    },
+    "x": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "y": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "pivotX": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotY": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "group": {
+      "type": "string"
+    },
+    "alpha": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rotation": {
+      "type": "number"
+    },
+    "visible": {
+      "type": "boolean"
+    },
+    "touchable": {
+      "type": "boolean"
+    },
+    "grayed": {
+      "type": "boolean"
+    },
+    "fileName": {
+      "type": "string"
+    },
+    "packageId": {
+      "type": "string"
+    },
+    "filter": {
+      "type": "string"
+    },
+    "filterData": {
+      "type": "string"
+    },
+    "playing": {
+      "type": "boolean"
+    },
+    "frame": {
+      "type": "number"
+    },
+    "color": {
+      "type": "string"
+    },
+    "customData": {
+      "type": "string"
+    },
+    "relations": {
+      "type": "array"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

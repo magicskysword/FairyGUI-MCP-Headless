@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ControllerAction",
+  "type": "object",
+  "properties": {
+    "actionType": {
+      "type": "number"
+    },
+    "fromPage": {
+      "type": "array"
+    },
+    "toPage": {
+      "type": "array"
+    },
+    "transitionName": {
+      "type": "string"
+    },
+    "playTimes": {
+      "type": "number"
+    },
+    "delay": {
+      "type": "number"
+    },
+    "stopOnExit": {
+      "type": "boolean"
+    },
+    "objectId": {
+      "type": "string"
+    },
+    "controllerName": {
+      "type": "string"
+    },
+    "targetPage": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

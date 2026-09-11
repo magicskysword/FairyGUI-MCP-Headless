@@ -1,0 +1,799 @@
+{
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "op": {
+          "const": "create"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "project",
+                "package",
+                "resource",
+                "component",
+                "node",
+                "controller",
+                "page",
+                "gear",
+                "transition",
+                "transition-item",
+                "controller-action"
+              ]
+            },
+            "packageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "componentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controllerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Native property patch; omitted fields retain values, null clears optional fields, arrays replace."
+        },
+        "clientRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toIndex": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "op": {
+          "const": "update"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "project",
+                "package",
+                "resource",
+                "component",
+                "node",
+                "controller",
+                "page",
+                "gear",
+                "transition",
+                "transition-item",
+                "controller-action"
+              ]
+            },
+            "packageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "componentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controllerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Native property patch; omitted fields retain values, null clears optional fields, arrays replace."
+        },
+        "scope": {
+          "oneOf": [
+            {
+              "const": "base"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "controller": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "pageId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "controller",
+                "pageId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "controller": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "allPages": {
+                  "const": true
+                }
+              },
+              "required": [
+                "controller",
+                "allPages"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "target",
+        "props"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "op": {
+          "const": "remove"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "project",
+                "package",
+                "resource",
+                "component",
+                "node",
+                "controller",
+                "page",
+                "gear",
+                "transition",
+                "transition-item",
+                "controller-action"
+              ]
+            },
+            "packageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "componentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controllerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "cascade": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "op": {
+          "const": "move"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "project",
+                "package",
+                "resource",
+                "component",
+                "node",
+                "controller",
+                "page",
+                "gear",
+                "transition",
+                "transition-item",
+                "controller-action"
+              ]
+            },
+            "packageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "componentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controllerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "destination": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "project",
+                "package",
+                "resource",
+                "component",
+                "node",
+                "controller",
+                "page",
+                "gear",
+                "transition",
+                "transition-item",
+                "controller-action"
+              ]
+            },
+            "packageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "componentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controllerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "toIndex": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "op": {
+          "const": "replace"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "project",
+                "package",
+                "resource",
+                "component",
+                "node",
+                "controller",
+                "page",
+                "gear",
+                "transition",
+                "transition-item",
+                "controller-action"
+              ]
+            },
+            "packageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "componentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controllerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Native property patch; omitted fields retain values, null clears optional fields, arrays replace."
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "op": {
+          "const": "clone"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "project",
+                "package",
+                "resource",
+                "component",
+                "node",
+                "controller",
+                "page",
+                "gear",
+                "transition",
+                "transition-item",
+                "controller-action"
+              ]
+            },
+            "packageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "componentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controllerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "destination": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "project",
+                "package",
+                "resource",
+                "component",
+                "node",
+                "controller",
+                "page",
+                "gear",
+                "transition",
+                "transition-item",
+                "controller-action"
+              ]
+            },
+            "packageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "componentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controllerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Native property patch; omitted fields retain values, null clears optional fields, arrays replace."
+        },
+        "clientRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toIndex": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "op",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "op": {
+          "const": "xml"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "project",
+                "package",
+                "resource",
+                "component",
+                "node",
+                "controller",
+                "page",
+                "gear",
+                "transition",
+                "transition-item",
+                "controller-action"
+              ]
+            },
+            "packageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "componentId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nodeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controllerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transitionName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1
+            },
+            "expectedMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "action": {
+          "enum": [
+            "insert",
+            "attributes",
+            "replace"
+          ]
+        },
+        "xml": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "op",
+        "target",
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

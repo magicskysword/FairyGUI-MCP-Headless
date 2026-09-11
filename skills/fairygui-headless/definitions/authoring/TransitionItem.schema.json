@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TransitionItem",
+  "type": "object",
+  "properties": {
+    "time": {
+      "type": "number"
+    },
+    "targetId": {
+      "type": "string"
+    },
+    "actionType": {
+      "type": "number"
+    },
+    "tween": {
+      "type": "boolean"
+    },
+    "duration": {
+      "type": "number"
+    },
+    "startValue": {
+      "type": "array"
+    },
+    "endValue": {
+      "type": "array"
+    },
+    "easeType": {
+      "type": "number"
+    },
+    "repeat": {
+      "type": "number"
+    },
+    "yoyo": {
+      "type": "boolean"
+    },
+    "label": {
+      "type": "string"
+    },
+    "endLabel": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "customEasePath": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

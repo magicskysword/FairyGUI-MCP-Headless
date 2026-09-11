@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GList",
+  "type": "object",
+  "properties": {
+    "layout": {
+      "type": "number"
+    },
+    "x": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "y": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "pivotX": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotY": {
+      "type": "number",
+      "description": "Normalized pivot coordinate."
+    },
+    "pivotAsAnchor": {
+      "type": "boolean"
+    },
+    "alpha": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rotation": {
+      "type": "number"
+    },
+    "visible": {
+      "type": "boolean"
+    },
+    "group": {
+      "type": "string"
+    },
+    "touchable": {
+      "type": "boolean"
+    },
+    "grayed": {
+      "type": "boolean"
+    },
+    "align": {
+      "type": "number"
+    },
+    "vAlign": {
+      "type": "number"
+    },
+    "lineGap": {
+      "type": "number"
+    },
+    "columnGap": {
+      "type": "number"
+    },
+    "lineCount": {
+      "type": "number"
+    },
+    "columnCount": {
+      "type": "number"
+    },
+    "selectionMode": {
+      "type": "number"
+    },
+    "defaultItem": {
+      "type": "string"
+    },
+    "autoResizeItem": {
+      "type": "boolean"
+    },
+    "childrenRenderOrder": {
+      "type": "number"
+    },
+    "apexIndex": {
+      "type": "number"
+    },
+    "src": {
+      "type": "string"
+    },
+    "overflow": {
+      "type": "number"
+    },
+    "scrollType": {
+      "type": "number"
+    },
+    "scrollBarFlags": {
+      "type": "number"
+    },
+    "scrollBarMargin": {
+      "type": "object"
+    },
+    "vtScrollBarRes": {
+      "type": "string"
+    },
+    "hzScrollBarRes": {
+      "type": "string"
+    },
+    "headerRes": {
+      "type": "string"
+    },
+    "footerRes": {
+      "type": "string"
+    },
+    "pageController": {
+      "type": "string"
+    },
+    "controllerOverrides": {
+      "type": "string"
+    },
+    "margin": {
+      "type": "object"
+    },
+    "clipSoftness": {
+      "type": "object"
+    },
+    "scrollItemToViewOnClick": {
+      "type": "boolean"
+    },
+    "foldInvisibleItems": {
+      "type": "boolean"
+    },
+    "listItems": {
+      "type": "array"
+    },
+    "selectionController": {
+      "type": "string"
+    },
+    "customData": {
+      "type": "string"
+    },
+    "relations": {
+      "type": "array"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

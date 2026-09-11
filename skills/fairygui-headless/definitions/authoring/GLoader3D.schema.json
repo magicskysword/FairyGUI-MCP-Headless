@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GLoader3D",
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string"
+    },
+    "x": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "y": {
+      "type": "number",
+      "description": "Logical pixels."
+    },
+    "width": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "height": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Logical pixels."
+    },
+    "alpha": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rotation": {
+      "type": "number"
+    },
+    "visible": {
+      "type": "boolean"
+    },
+    "touchable": {
+      "type": "boolean"
+    },
+    "grayed": {
+      "type": "boolean"
+    },
+    "fill": {
+      "type": "number"
+    },
+    "shrinkOnly": {
+      "type": "boolean"
+    },
+    "autoSize": {
+      "type": "boolean"
+    },
+    "align": {
+      "type": "number"
+    },
+    "vAlign": {
+      "type": "number"
+    },
+    "animationName": {
+      "type": "string"
+    },
+    "skinName": {
+      "type": "string"
+    },
+    "playing": {
+      "type": "boolean"
+    },
+    "frame": {
+      "type": "number"
+    },
+    "loop": {
+      "type": "boolean"
+    },
+    "color": {
+      "type": "string"
+    },
+    "customData": {
+      "type": "string"
+    },
+    "relations": {
+      "type": "array"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

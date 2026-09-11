@@ -8,6 +8,7 @@
 
 `create` 创建目标种类，节点另给 `type:"GTextField"` 等原生类型。
 `clientRef` 对应服务器分配的目标；后续目标 ID 字段可用 `@clientRef` 引用，局部引用属性也可引用同一批次中稍后创建的节点或 XML 标签。
+`defaultItem`、`icon` 等资源地址字段可使用资源或组件的 `@clientRef`，由服务生成完整 `ui://` 地址；`src` 引用会写入资源 ID 和所属包 ID。
 资源或组件定义的身份与实例节点的身份分开处理。
 
 二进制文件先放入工程 `.fairygui-mcp/import-inbox/`。`import` 使用资源目标、`inboxPath` 及可选 `props.name/path`，按文件类型创建资源；`replace` 对既有资源提供 `inboxPath` 时保留 ID 并验证类型兼容。
@@ -46,4 +47,4 @@ TransitionItem 的 `time/duration` 是所属 Transition 的帧数，除以 `fps`
 }
 ```
 
-计划返回 `files`、`clientRefs`、`operationResults`、诊断和来源/结果指纹。提交将来源字节再次与磁盘比较，文件事务完成后才返回成功。
+计划返回 `files`、`clientRefs`、`operationResults`、`affectedReferences`、`xmlFindings`、诊断和来源/结果指纹。提交将来源字节再次与磁盘比较，文件事务完成后才返回成功。

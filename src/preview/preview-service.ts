@@ -113,7 +113,7 @@ export class PreviewService {
   private async create(source: PreviewSource, recipeInput: PreviewRecipeInput, fixed?: ProjectSnapshot, id = `preview_${randomUUID()}`): Promise<Session> {
     const status = this.registry.status(source.projectId);
     if (!status.ok) throw new PreviewExecutorError(status.error.code, status.error.message);
-    const snapshot = fixed ?? (source.planId ? this.options.edits.getPlanSnapshot(source.projectId, source.planId) : await snapshotProject(status.data.projectFile));
+    let snapshot = fixed ?? (source.planId ? this.options.edits.getPlanSnapshot(source.projectId, source.planId) : await snapshotProject(status.data.projectFile));
     if (!snapshot) throw new PreviewExecutorError("PLAN_NOT_FOUND", "编辑计划不存在或已过期");
     const document = await snapshot.readDocument();
     const pkg = document.getRoot().getPackageById(source.packageId);
@@ -121,15 +121,26 @@ export class PreviewService {
     const component = pkg.listComponents().find(item => item.getId() === source.componentId);
     if (!component) throw new PreviewExecutorError("COMPONENT_NOT_FOUND", "组件不存在");
     const recipe = PreviewRecipeSchema.parse({ ...recipeInput, environment: { width: Math.max(1, Math.ceil(component.getWidth())), height: Math.max(1, Math.ceil(component.getHeight())), ...recipeInput.environment } });
-    const { runtime, cacheHit } = await this.cache.get(snapshot);
     const files = snapshot.fileSystem();
+    const additionalFiles: Array<{ relativePath: string; content: Uint8Array }> = [];
+    const sourceFiles = projectSourceFileSystem(status.data.projectDirectory);
     const resources = await Promise.all(Object.entries(recipe.resources).map(async ([name, relativePath]) => {
       if (path.isAbsolute(relativePath) || relativePath.replace(/\\/g, "/").split("/").some(segment => !segment || segment === "." || segment === ".." || segment.includes(":"))) throw new PreviewExecutorError("INVALID_SOURCE_PATH", "资源映射需要工程相对路径");
       const resourcePath = files.join(status.data.projectDirectory, relativePath);
       const extension = path.extname(relativePath).toLowerCase();
       const mediaType = ({ ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".json": "application/json" } as Record<string, string>)[extension] ?? "application/octet-stream";
-      return { name, data: await files.readFileRaw(resourcePath), mediaType };
+      let data: Uint8Array;
+      try { data = await files.readFileRaw(resourcePath); }
+      catch (error) {
+        if (fixed) throw error;
+        data = await sourceFiles.readFileRaw(resourcePath);
+        additionalFiles.push({ relativePath: relativePath.replace(/\\/g, '/'), content: data });
+      }
+      return { name, data, mediaType };
     }));
+    sourceFiles.assertSafe();
+    if (additionalFiles.length) snapshot = await snapshot.withChanges(additionalFiles);
+    const { runtime, cacheHit } = await this.cache.get(snapshot);
     const executor = new PreviewExecutor(this.options.runtimeTimeoutMs ? { timeoutMs: this.options.runtimeTimeoutMs } : {});
     const state = await executor.initialize({ previewId: id, runtime, packageId: source.packageId, componentId: source.componentId, recipe, resources });
     return { id, source, snapshot, recipe, executor, state, lastUsed: this.now(), failed: false, cacheHit };

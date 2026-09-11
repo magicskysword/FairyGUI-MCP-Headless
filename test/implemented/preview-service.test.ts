@@ -25,6 +25,22 @@ async function fixture(t: { after(fn: () => Promise<unknown>): void }, now?: () 
   return { directory, componentFile, preview, edits, projectId: opened.data.projectId, source: { projectId: opened.data.projectId, packageId: "package1", componentId: "panel" } };
 }
 
+test('explicit resource mappings capture additional project files and reset reuses their bytes', async t => {
+  const f = await fixture(t);
+  const dataFile = path.join(f.directory, 'preview-data.json'); await writeFile(dataFile, '{"value":12}');
+  const opened = await f.preview.execute({ action: 'open', source: f.source, recipe: { resources: { data: 'preview-data.json' }, setup: [{ op: 'script', code: 'const data = await (await fetch(ctx.resources.url("data"))).json(); ctx.root.x = data.value;' }] } });
+  assert.ok(opened.ok, JSON.stringify(opened)); if (!opened.ok) return;
+  assert.equal(opened.data.state.nodes[0]!.props.x, 12);
+  await writeFile(dataFile, '{"value":42}');
+  const reset = await f.preview.execute({ action: 'reset', previewId: opened.data.previewId });
+  assert.ok(reset.ok, JSON.stringify(reset)); if (!reset.ok) return;
+  assert.equal(reset.data.state.nodes[0]!.props.x, 12);
+  assert.equal(reset.data.sourceStatus, 'changed');
+  const reloaded = await f.preview.execute({ action: 'reload', previewId: opened.data.previewId });
+  assert.ok(reloaded.ok, JSON.stringify(reloaded)); if (!reloaded.ok) return;
+  assert.equal(reloaded.data.state.nodes[0]!.props.x, 42);
+});
+
 test('persistent preview snapshots reset deterministically and reload explicitly', async t => {
   const f = await fixture(t);
   const before = await readFile(f.componentFile, 'utf8');

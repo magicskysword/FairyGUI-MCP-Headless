@@ -27,6 +27,7 @@ export interface EditData {
   clientRefs: Prepared["clientRefs"];
   operationResults: Prepared["operationResults"];
   diagnostics: Prepared["diagnostics"];
+  affectedReferences: Prepared["affectedReferences"];
   transactionId?: string;
 }
 interface Plan {
@@ -112,7 +113,7 @@ export class EditService {
               return { relativePath: change.relativePath, action: change.content === undefined ? "remove" : before === undefined ? "create" : "update",
                 beforeHash: before === undefined ? null : hash(before), afterHash: change.content === undefined ? null : hash(change.content), beforeBytes: before?.length ?? 0, afterBytes: change.content?.length ?? 0 };
             }),
-            clientRefs: prepared.clientRefs, operationResults: prepared.operationResults, diagnostics: prepared.diagnostics
+            clientRefs: prepared.clientRefs, operationResults: prepared.operationResults, diagnostics: prepared.diagnostics, affectedReferences: prepared.affectedReferences
           };
           plan = { projectId: input.projectId, source, prepared, expiresAt, data };
           if (input.action === "plan") {

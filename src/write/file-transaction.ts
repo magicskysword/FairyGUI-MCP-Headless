@@ -57,6 +57,13 @@ interface TransactionJournal {
   completedAt?: string;
   failure?: string;
   files: TransactionJournalFile[];
+  request?: TransactionRequestReceipt;
+}
+
+export interface TransactionRequestReceipt {
+  requestId: string;
+  digest: string;
+  result: Record<string, unknown>;
 }
 
 type TransactionDiagnosticOutcome =
@@ -502,7 +509,8 @@ export class FileTransactionManager {
 
   public async commit(
     projectDirectory: string,
-    changes: readonly TransactionFileChange[]
+    changes: readonly TransactionFileChange[],
+    request?: TransactionRequestReceipt
   ): Promise<ResultEnvelope<FileTransactionData>> {
     let canonicalProjectDirectory = path.resolve(projectDirectory);
     try {
@@ -533,7 +541,8 @@ export class FileTransactionManager {
         canonicalProjectDirectory,
         transactionId,
         logPath,
-        changes
+        changes,
+        request
       );
       await this.inject("after-prepare", journal, logPath);
       await this.commitPrepared(journal, logPath);
@@ -639,6 +648,18 @@ export class FileTransactionManager {
         }
       );
     }
+  }
+
+  public async findReceipt(projectDirectory: string, requestId: string): Promise<(FileTransactionData & { request: TransactionRequestReceipt }) | undefined> {
+    const canonical = await realpath(path.resolve(projectDirectory));
+    const logRoot = path.join(this.#baseDirectory, this.projectHash(canonical));
+    for (const journalPath of await collectJournalFiles(logRoot)) {
+      const journal = parseJournal(await readFile(journalPath, "utf8"), journalPath);
+      if (journal.state === "committed" && journal.request?.requestId === requestId && path.resolve(journal.projectDirectory) === canonical) {
+        return { transactionId: journal.transactionId, logPath: path.dirname(journalPath), affectedFiles: journal.files.map(file => file.relativePath), request: journal.request };
+      }
+    }
+    return undefined;
   }
 
   public async recover(projectDirectory: string): Promise<void> {
@@ -761,7 +782,8 @@ export class FileTransactionManager {
     projectDirectory: string,
     transactionId: string,
     logPath: string,
-    changes: readonly TransactionFileChange[]
+    changes: readonly TransactionFileChange[],
+    request?: TransactionRequestReceipt
   ): Promise<TransactionJournal> {
     if (changes.length === 0) {
       throw new TransactionInputError("事务至少需要一个受影响文件");
@@ -867,7 +889,8 @@ export class FileTransactionManager {
       state: "preparing",
       createdAt: timestamp,
       updatedAt: timestamp,
-      files: preparedFiles
+      files: preparedFiles,
+      ...(request ? { request: structuredClone(request) } : {})
     };
 
     await mkdir(path.join(logPath, "before"), { recursive: true });

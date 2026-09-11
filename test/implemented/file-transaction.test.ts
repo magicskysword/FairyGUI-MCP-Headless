@@ -63,6 +63,19 @@ async function directoryByteSize(directory: string): Promise<number> {
   return total;
 }
 
+test("committed request receipts survive manager recreation", async () => {
+  const fixture = await createFilesFixture();
+  const manager = new FileTransactionManager({ baseDirectory: fixture.logDirectory });
+  const receipt = { requestId: "request-one", digest: "digest-one", result: { clientRefs: { title: "n3" } } };
+  const committed = await manager.commit(fixture.projectDirectory, [{ relativePath: "assets/first.xml", content: "updated" }], receipt);
+  assert.equal(committed.ok, true);
+  const fresh = new FileTransactionManager({ baseDirectory: fixture.logDirectory });
+  const found = await fresh.findReceipt(fixture.projectDirectory, "request-one");
+  assert.deepEqual(found?.request, receipt);
+  assert.equal(found?.transactionId, committed.ok ? committed.data.transactionId : undefined);
+  assert.equal(await fresh.findReceipt(fixture.projectDirectory, "other-request"), undefined);
+});
+
 test("a file transaction commits all affected files and a terminal journal", async () => {
   const fixture = await createFilesFixture();
   const manager = new FileTransactionManager({

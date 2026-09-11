@@ -4,41 +4,74 @@
   "type": "object",
   "properties": {
     "path": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branch": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branchItemIds": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "file": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "exported": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "requireIds": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "atlasNames": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "anchorX": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "anchorY": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "name": {
       "type": "string"

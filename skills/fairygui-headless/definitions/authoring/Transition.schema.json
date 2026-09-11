@@ -4,19 +4,39 @@
   "type": "object",
   "properties": {
     "autoPlay": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "autoPlayTimes": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "autoPlayDelay": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Seconds."
     },
     "options": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "fps": {
-      "type": "number"
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 240,
+      "description": "Transition frames per second."
     },
     "name": {
       "type": "string"

@@ -4,146 +4,325 @@
   "type": "object",
   "properties": {
     "layout": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "x": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "y": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "pivotX": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotY": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotAsAnchor": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "alpha": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 1
     },
     "rotation": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "visible": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "group": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "touchable": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "grayed": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "align": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        "left",
+        "center",
+        "right",
+        null
+      ]
     },
     "vAlign": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "lineGap": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "columnGap": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "lineCount": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "columnCount": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "selectionMode": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "defaultItem": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "autoResizeItem": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "childrenRenderOrder": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        null
+      ]
     },
     "apexIndex": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "src": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "overflow": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        null
+      ]
     },
     "scrollType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        null
+      ]
     },
     "scrollBarFlags": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "scrollBarMargin": {
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "vtScrollBarRes": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "hzScrollBarRes": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "headerRes": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "footerRes": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "pageController": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "controllerOverrides": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "margin": {
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "clipSoftness": {
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "scrollItemToViewOnClick": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "foldInvisibleItems": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "listItems": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "selectionController": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "customData": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "relations": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "type": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "usePercent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "type",
+          "usePercent"
+        ],
+        "additionalProperties": false
+      }
     },
     "name": {
       "type": "string"

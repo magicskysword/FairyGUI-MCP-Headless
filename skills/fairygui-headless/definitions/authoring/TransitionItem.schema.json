@@ -4,46 +4,146 @@
   "type": "object",
   "properties": {
     "time": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Authoring frames, converted to seconds using the owning Transition fps."
     },
     "targetId": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "actionType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        null
+      ]
     },
     "tween": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "duration": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Authoring frames, converted to seconds using the owning Transition fps."
     },
     "startValue": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "endValue": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "easeType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        null
+      ]
     },
     "repeat": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "yoyo": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "label": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "endLabel": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "path": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "customEasePath": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "name": {
       "type": "string"

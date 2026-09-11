@@ -545,6 +545,14 @@
     {
       "symbol": "operation",
       "file": "preview/operation.schema.json"
+    },
+    {
+      "symbol": "preview-context",
+      "file": "preview/preview-context.d.ts"
+    },
+    {
+      "symbol": "preview-state",
+      "file": "preview/preview-state.d.ts"
     }
   ]
 }

@@ -4,50 +4,92 @@
   "type": "object",
   "properties": {
     "path": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branch": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branchItemIds": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "highResolutionItemIds": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "fileName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "exported": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "textureSetMode": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "folderTextureSetMode": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "interval": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "swing": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "repeatDelay": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "smoothing": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "name": {
       "type": "string"

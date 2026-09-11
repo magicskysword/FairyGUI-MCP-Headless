@@ -4,50 +4,92 @@
   "type": "object",
   "properties": {
     "fileName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "path": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branch": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branchItemIds": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "highResolutionItemIds": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "exported": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "textureSetMode": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "folderTextureSetMode": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "qualityOption": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "smoothing": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "duplicatePadding": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "scaleOption": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "scale9Grid": {
       "type": [
@@ -60,7 +102,10 @@
       ]
     },
     "tileGridIndice": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "pixelHitTestData": {
       "type": [

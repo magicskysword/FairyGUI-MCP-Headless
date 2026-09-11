@@ -31,6 +31,12 @@ export declare class RuntimeClock {
      * Advances to the first simulation frame at or after the requested time.
      */
     static advanceTo(timeMs: number, beforeFrame?: (time: number, frame: number) => void): void;
+    /**
+     * Advances fixed frames with an asynchronous pre-frame hook and microtask checkpoint.
+     */
+    static advanceToAsync(timeMs: number, beforeFrame?: (time: number, frame: number) => void | Promise<void>): Promise<void>;
+    private static targetFrame;
+    private static flushFrame;
     static setTimeout(callback: () => void, delayMs?: number): number;
     static setInterval(callback: () => void, delayMs?: number): number;
     static clearTimer(id: number): void;

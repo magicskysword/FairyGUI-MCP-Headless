@@ -4,34 +4,69 @@
   "type": "object",
   "properties": {
     "actionType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        null
+      ]
     },
     "fromPage": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "toPage": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "transitionName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "playTimes": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "delay": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "stopOnExit": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "objectId": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "controllerName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "targetPage": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "name": {
       "type": "string"

@@ -4,72 +4,155 @@
   "type": "object",
   "properties": {
     "layout": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "x": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "y": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "locked": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "alpha": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 1
     },
     "rotation": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "visible": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "group": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "touchable": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "grayed": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "lineGap": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "columnGap": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "advanced": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "excludeInvisibles": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "autoSizeDisabled": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "mainGridIndex": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "customData": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "relations": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "type": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "usePercent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "type",
+          "usePercent"
+        ],
+        "additionalProperties": false
+      }
     },
     "name": {
       "type": "string"

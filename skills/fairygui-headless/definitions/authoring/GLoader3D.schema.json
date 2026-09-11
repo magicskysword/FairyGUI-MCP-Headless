@@ -4,81 +4,179 @@
   "type": "object",
   "properties": {
     "url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "x": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "y": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "alpha": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 1
     },
     "rotation": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "visible": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "touchable": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "grayed": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "fill": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "shrinkOnly": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "autoSize": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "align": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        "left",
+        "center",
+        "right",
+        null
+      ]
     },
     "vAlign": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "animationName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "skinName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "playing": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "frame": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "loop": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "color": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "customData": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "relations": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "type": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "usePercent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "type",
+          "usePercent"
+        ],
+        "additionalProperties": false
+      }
     },
     "name": {
       "type": "string"

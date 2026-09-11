@@ -4,10 +4,16 @@
   "type": "object",
   "properties": {
     "projectType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "version": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "settings": {
       "type": "object"

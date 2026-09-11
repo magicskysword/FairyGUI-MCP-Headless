@@ -4,19 +4,34 @@
   "type": "object",
   "properties": {
     "path": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branch": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branchItemIds": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "file": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "exported": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "name": {
       "type": "string"

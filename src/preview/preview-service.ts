@@ -6,7 +6,7 @@ import sharp from "sharp";
 import { ZodError } from "zod";
 import { DocumentEditError } from "@magicskysword/openfairygui-core";
 import type { ProjectSnapshot } from "@magicskysword/openfairygui-functions";
-import { PreviewRecipeSchema, type PreviewRecipe, type PreviewRecipeInput, type PreviewRunInput, type PreviewState, type PreviewFrame, type PreviewFailure } from "../contracts/preview.js";
+import { PreviewRecipeSchema, type PreviewRecipe, type PreviewRecipeInput, type PreviewRunInput, type PreviewState, type PreviewFrame, type PreviewFailure, type PreviewSource, type PreviewData } from "../contracts/preview.js";
 import { ERROR_CODES, fail, ok, type ErrorCode, type ResultEnvelope } from "../contracts/result.js";
 import type { EditService } from "../edit/edit-service.js";
 import type { ProjectRegistry } from "../project/project-registry.js";
@@ -16,27 +16,10 @@ import { PROJECT_SERVICE_INFO } from "../version.js";
 import { CompilationCache } from "./compilation-cache.js";
 import { PreviewExecutor, PreviewExecutorError } from "./preview-executor.js";
 
-export interface PreviewSource { projectId: string; packageId: string; componentId: string; planId?: string | undefined; }
+export type { PreviewSource, PreviewData } from '../contracts/preview-state.js';
 export type PreviewInput =
   | { action: "open" | "run"; source: PreviewSource; recipe?: PreviewRecipeInput | undefined; run?: PreviewRunInput | undefined; imageResult?: "inline" | "file" | "both" | undefined; includeFrames?: boolean | undefined }
   | { action: "run" | "inspect" | "capture" | "reset" | "reload" | "close"; previewId: string; run?: PreviewRunInput | undefined; properties?: string[] | undefined; selector?: string | undefined; imageResult?: "inline" | "file" | "both" | undefined; includeFrames?: boolean | undefined };
-export interface PreviewData {
-  previewId: string;
-  status: "ready" | "failed" | "closed";
-  source: PreviewSource;
-  sourceStatus: "current" | "changed" | "plan";
-  snapshotFingerprint: string;
-  recipeHash: string;
-  seed: number;
-  runtimeVersions: typeof PROJECT_SERVICE_INFO.runtimeVersions;
-  cacheHit: boolean;
-  complete: boolean;
-  state: PreviewState;
-  frames: Array<Omit<PreviewFrame, "png"> & { path: string }>;
-  contactSheet?: { path: string; width: number; height: number };
-  images: Array<{ mimeType: "image/png"; data: string }>;
-  error?: PreviewFailure;
-}
 interface Session {
   id: string; source: PreviewSource; snapshot: ProjectSnapshot; recipe: PreviewRecipe;
   executor: PreviewExecutor; lastUsed: number; state: PreviewState; failed: boolean; cacheHit: boolean;

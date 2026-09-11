@@ -4,113 +4,260 @@
   "type": "object",
   "properties": {
     "src": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "x": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "y": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "locked": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "aspect": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "pivotX": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotY": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotAsAnchor": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "scaleX": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "scaleY": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "group": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "alpha": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 1
     },
     "rotation": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "visible": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "touchable": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "grayed": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "skewX": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "skewY": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "tooltips": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "customData": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "fileName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "packageId": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "filter": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "filterData": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "flip": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        null
+      ]
     },
     "color": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "fillMethod": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        null
+      ]
     },
     "fillOrigin": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        null
+      ]
     },
     "fillClockwise": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "fillAmount": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "relations": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "type": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "usePercent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "type",
+          "usePercent"
+        ],
+        "additionalProperties": false
+      }
     },
     "name": {
       "type": "string"

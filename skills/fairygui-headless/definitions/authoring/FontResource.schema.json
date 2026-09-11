@@ -4,49 +4,94 @@
   "type": "object",
   "properties": {
     "path": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branch": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branchItemIds": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "fileName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "textureId": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "exported": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "renderMode": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "samplePointSize": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "ttf": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "tint": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "autoScale": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "hasChannel": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "fontSize": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "xAdvance": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "lineHeight": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "name": {
       "type": "string"

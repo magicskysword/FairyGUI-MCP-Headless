@@ -41,14 +41,8 @@ export const PreviewRunSchema = z.object({
 });
 export type PreviewRun = z.infer<typeof PreviewRunSchema>;
 export type PreviewRunInput = z.input<typeof PreviewRunSchema>;
-export interface PreviewNode {
-  ref: string; id: string; name: string; type: string; parentRef?: string;
-  props: Record<string, unknown>; controllers: unknown[]; gears: unknown[]; transitions: unknown[];
-}
-export interface PreviewState { time: number; frame: number; nodes: PreviewNode[]; logs: Array<{ level: string; message: string; time: number }>; }
-export interface PreviewFrame extends PreviewState { requestedTime: number; png: Uint8Array; }
-export interface PreviewFailure { code: string; message: string; path?: string; stack?: string; time?: number; }
-export interface PreviewRunResult { complete: boolean; frames: PreviewFrame[]; state: PreviewState; error?: PreviewFailure; }
+export * from './preview-state.js';
+export * from './preview-context.js';
 export interface ExecutorInput {
   previewId: string; runtime: PreviewArtifacts; packageId: string; componentId: string; recipe: PreviewRecipeInput;
   resources?: Array<{ name: string; data: Uint8Array; mediaType: string }>;

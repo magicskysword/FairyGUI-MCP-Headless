@@ -4,146 +4,282 @@
   "type": "object",
   "properties": {
     "promptText": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "maxLength": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "restrict": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "password": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "keyboardType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "text": {
       "type": "string"
     },
     "x": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "y": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "minWidth": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "maxWidth": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "minHeight": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "maxHeight": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "pivotX": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotY": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotAsAnchor": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "group": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "alpha": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 1
     },
     "rotation": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "visible": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "touchable": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "grayed": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "tooltips": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "customData": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "font": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "fontSize": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "color": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "align": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        "left",
+        "center",
+        "right",
+        null
+      ]
     },
     "vAlign": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "leading": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "letterSpacing": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "autoSize": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "singleLine": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "autoClearText": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "demoText": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "templateVarsEnabled": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "faceDilate": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "underlaySoftness": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "ubbEnabled": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "underline": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "italic": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "bold": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "strikethrough": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "strokeColor": {
       "type": [
@@ -156,7 +292,10 @@
       ]
     },
     "strokeSize": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "shadowColor": {
       "type": [
@@ -169,16 +308,50 @@
       ]
     },
     "shadowOffsetX": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "shadowOffsetY": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "shadowOffset": {
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "relations": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "type": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "usePercent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "type",
+          "usePercent"
+        ],
+        "additionalProperties": false
+      }
     },
     "name": {
       "type": "string"

@@ -4,16 +4,41 @@
   "type": "object",
   "properties": {
     "gearType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        null
+      ]
     },
     "pages": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "values": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "condition": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "defaultValue": {
       "type": [
@@ -26,25 +51,95 @@
       ]
     },
     "pageValues": {
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean",
+          "array",
+          "null"
+        ]
+      },
+      "description": "Page ID to native tuple; arrays form comma-separated tuples. A null entry clears its override."
     },
     "positionsInPercent": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "tween": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "tweenDuration": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Seconds."
     },
     "tweenDelay": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Seconds."
     },
     "easeType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        null
+      ]
     },
     "customEasePath": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "name": {
       "type": "string"

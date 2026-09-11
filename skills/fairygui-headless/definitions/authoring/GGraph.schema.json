@@ -4,86 +4,161 @@
   "type": "object",
   "properties": {
     "graphType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "x": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "y": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "locked": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "minWidth": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "maxWidth": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "minHeight": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "maxHeight": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "pivotX": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotY": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotAsAnchor": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "group": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "skewX": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "skewY": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "alpha": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 1
     },
     "rotation": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "visible": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "touchable": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "grayed": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "lineSize": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "lineColor": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "fillColor": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "cornerRadius": {
       "type": [
@@ -106,10 +181,16 @@
       ]
     },
     "sides": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "startAngle": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "distances": {
       "type": [
@@ -122,10 +203,38 @@
       ]
     },
     "customData": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "relations": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "type": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "usePercent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "type",
+          "usePercent"
+        ],
+        "additionalProperties": false
+      }
     },
     "name": {
       "type": "string"

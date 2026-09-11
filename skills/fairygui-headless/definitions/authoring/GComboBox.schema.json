@@ -4,212 +4,445 @@
   "type": "object",
   "properties": {
     "title": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "icon": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "titleColor": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "titleFontSize": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "items": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "icons": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "values": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "visibleItemCount": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "popupDirection": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "sound": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "soundVolumeScale": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "selectedIndex": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "src": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "x": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "y": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Logical pixels."
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "locked": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "minWidth": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "maxWidth": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "minHeight": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "maxHeight": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "aspect": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "pivotX": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotY": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotAsAnchor": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "scaleX": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "scaleY": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "group": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "alpha": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 1
     },
     "rotation": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Degrees."
     },
     "visible": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "touchable": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "grayed": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "tooltips": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "customData": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "fileName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "packageId": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "filter": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "filterData": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "overflow": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        null
+      ]
     },
     "scrollType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        null
+      ]
     },
     "scrollBarDisplay": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "pageController": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "controllerOverrides": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceExtType": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceTitle": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceSelectedTitle": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceIcon": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceSelectedIcon": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceTitleColor": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceTitleFontSize": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "instanceController": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instancePage": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceChecked": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "instanceSound": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceSoundVolumeScale": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "instancePromptText": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceSelectionController": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "instanceVisibleItemCount": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "instanceValue": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "instanceMax": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "instanceMin": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "instanceComboItems": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "margin": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "relations": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "type": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "usePercent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "type",
+          "usePercent"
+        ],
+        "additionalProperties": false
+      }
     },
     "name": {
       "type": "string"

@@ -4,181 +4,392 @@
   "type": "object",
   "properties": {
     "path": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branch": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "branchItemIds": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "exported": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "width": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "height": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "description": "Logical pixels."
     },
     "minWidth": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "maxWidth": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "minHeight": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "maxHeight": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "pivotX": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotY": {
-      "type": "number",
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Normalized pivot coordinate."
     },
     "pivotAsAnchor": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "extType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "overflow": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        null
+      ]
     },
     "margin": {
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "clipSoftness": {
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "hitTest": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "customData": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "mask": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "reversedMask": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "scrollType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        null
+      ]
     },
     "scrollBarDisplay": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "scrollBarFlags": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "scrollBarMargin": {
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "vtScrollBarRes": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "hzScrollBarRes": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "headerRes": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "footerRes": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "bgColor": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "bgColorEnabled": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "designImageAlpha": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "designImageLayer": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "designImageOffsetX": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "designImageOffsetY": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "idNum": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "initName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "remark": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "extensionType": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "buttonMode": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "sound": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "soundVolumeScale": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "addedToStageSound": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "removedFromStageSound": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "downEffect": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "downEffectValue": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "dropdown": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "promptText": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "selectionController": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "titleType": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "reverse": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "wholeNumbers": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "changeOnClick": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "fixedGripSize": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "opaque": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "childrenRenderOrder": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ],
+      "enum": [
+        0,
+        1,
+        2,
+        null
+      ]
     },
     "relations": {
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "type": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "usePercent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "type",
+          "usePercent"
+        ],
+        "additionalProperties": false
+      }
     },
     "name": {
       "type": "string"

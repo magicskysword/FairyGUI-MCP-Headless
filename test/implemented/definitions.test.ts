@@ -11,6 +11,8 @@ test('generated definitions have real model types, runtime declarations and reso
   const index = await generateDefinitions(directory);
   assert.ok(index.authoring.some(entry => entry.symbol === 'GTextField'));
   assert.ok(index.runtime.some(entry => entry.file.endsWith('/ui/GComponent.d.ts')));
+  assert.ok(index.preview.some(entry => entry.symbol === 'preview-context'));
+  assert.ok(index.preview.some(entry => entry.symbol === 'preview-state'));
   for (const entry of [...index.authoring, ...index.runtime, ...index.preview]) assert.ok((await readFile(path.join(directory, entry.file))).length > 0);
   const text = JSON.parse(await readFile(path.join(directory, 'authoring/GTextField.schema.json'), 'utf8'));
   assert.ok(text.properties.x);

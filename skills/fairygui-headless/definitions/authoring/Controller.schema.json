@@ -4,10 +4,16 @@
   "type": "object",
   "properties": {
     "selectedIndex": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "autoRadioGroupDepth": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "name": {
       "type": "string"

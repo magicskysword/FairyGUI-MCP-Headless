@@ -1,6 +1,8 @@
 import { Image } from "./Image";
 export interface Frame {
     addDelay?: number;
+    spriteId?: string;
+    src?: string;
 }
 export declare class MovieClip extends Image {
     interval: number;
@@ -20,6 +22,8 @@ export declare class MovieClip extends Image {
     private _reversed;
     private _repeatedCount;
     constructor();
+    connectedCallback(): void;
+    disconnectedCallback(): void;
     get frames(): Frame[];
     set frames(value: Frame[]);
     get frameCount(): number;
@@ -34,6 +38,4 @@ export declare class MovieClip extends Image {
     private onTimer;
     private drawFrame;
     private checkTimer;
-    private __addToStage;
-    private __removeFromStage;
 }

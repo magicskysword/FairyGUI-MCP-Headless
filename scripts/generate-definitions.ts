@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { Document, AUTHORING_OPERATION_SCHEMA, AUTHORING_TARGET_SCHEMA, authoringPropertySchema, type Property } from "@magicskysword/openfairygui-core";
 import { PreviewRecipeSchema, PreviewRunSchema, PreviewOperationSchema } from "../src/contracts/preview.js";
+import ts from 'typescript';
 
 interface DefinitionEntry { symbol: string; file: string; }
 interface DefinitionIndex { versions: Record<string, string>; authoring: DefinitionEntry[]; runtime: DefinitionEntry[]; preview: DefinitionEntry[]; }
@@ -52,6 +53,19 @@ export async function generateDefinitions(output = path.join(repository, 'skills
   }
   for (const [symbol, schema] of [['recipe', PreviewRecipeSchema], ['run', PreviewRunSchema], ['operation', PreviewOperationSchema]] as const) {
     const file = `preview/${symbol}.schema.json`; await write(file, z.toJSONSchema(schema, { target: 'draft-7', unrepresentable: 'any' })); index.preview.push({ symbol, file });
+  }
+  const configFile = ts.readConfigFile(path.join(repository, 'tsconfig.build.json'), ts.sys.readFile);
+  const config = ts.parseJsonConfigFileContent(configFile.config, ts.sys, repository);
+  const program = ts.createProgram(['preview-context.ts', 'preview-state.ts'].map(file => path.join(repository, 'src/contracts', file)), { ...config.options, declaration: true, declarationMap: false, emitDeclarationOnly: true });
+  const previewDeclarations = new Map<string, string>();
+  const emitted = program.emit(undefined, (file, content) => {
+    if (/preview-(?:context|state)\.d\.ts$/.test(file)) previewDeclarations.set(path.basename(file, '.d.ts'), content);
+  });
+  if (emitted.emitSkipped) throw new Error('Preview declaration build failed');
+  for (const [symbol, declaration] of previewDeclarations) {
+    const file = `preview/${symbol}.d.ts`;
+    await write(file, declaration.replaceAll('@magicskysword/fairygui-dom', '../runtime/FairyGUI'));
+    index.preview.push({ symbol, file });
   }
   for (const name of ['@magicskysword/openfairygui-core', '@magicskysword/openfairygui-functions', '@magicskysword/fairygui-dom', '@magicskysword/fairygui-mcp-headless']) {
     const manifest = await packageManifest(name);

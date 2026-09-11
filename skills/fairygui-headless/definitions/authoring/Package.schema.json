@@ -24,22 +24,40 @@
       ]
     },
     "publishName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "publishPath": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "publishBranchPath": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "publishPackageCount": {
-      "type": "number"
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "genCode": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "codePath": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "name": {
       "type": "string"

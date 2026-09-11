@@ -28,7 +28,9 @@ export const RUNTIME_PREVIEW_SCRIPT = String.raw`
     return objects[0];
   };
   const script = (code, path) => {
-    const fn = new Function("ctx", "fgui", '"use strict";\n' + code + '\n//# sourceURL=preview/' + path.replace(/[^A-Za-z0-9_.\[\]-]/g, "_") + '.js');
+    currentPath = path;
+    const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+    const fn = new AsyncFunction("ctx", "fgui", '"use strict";\n' + code + '\n//# sourceURL=preview/' + path.replace(/[^A-Za-z0-9_.\[\]-]/g, "_") + '.js');
     return fn(context, fgui);
   };
   const operation = (item, path) => {
@@ -88,12 +90,11 @@ export const RUNTIME_PREVIEW_SCRIPT = String.raw`
     timeline = [...timeline.slice(cursor), ...addition].sort((a, b) => a.at - b.at || a.order - b.order);
     cursor = 0;
   };
-  const due = time => {
+  const due = async time => {
     while (cursor < timeline.length && timeline[cursor].at <= time + 1e-8) {
       const entry = timeline[cursor++];
       for (let i = 0; i < entry.operations.length; i++) {
-        const result = operation(entry.operations[i], entry.path + ".operations[" + i + "]");
-        if (result && typeof result.then === "function") throw new Error("Timeline callbacks must finish synchronously; schedule later work through ctx.clock");
+        await operation(entry.operations[i], entry.path + ".operations[" + i + "]");
       }
     }
   };
@@ -162,20 +163,20 @@ export const RUNTIME_PREVIEW_SCRIPT = String.raw`
         clock.useAutomatic();
       }
       appendTimeline(recipe.timeline, "timeline");
-      due(0); clock.flushLayout();
+      await due(0); clock.flushLayout();
       return state();
     },
     async runStart(input) {
       if (failed) throw new Error("Preview is failed; reset it before continuing");
       appendTimeline(input.timeline, "run.timeline");
       for (let i = 0; i < input.operations.length; i++) await operation(input.operations[i], "run.operations[" + i + "]");
-      due(now()); clock.flushLayout();
+      await due(now()); clock.flushLayout();
     },
     async advance(time, options) {
-      if (recipe.environment.clock === "manual") { due(clock.now()); clock.advanceTo(time, due); }
+      if (recipe.environment.clock === "manual") { await due(clock.now()); await clock.advanceToAsync(time, due); }
       else {
-        while (now() < time) { due(now()); await new Promise(resolve => nativeSetTimeout(resolve, Math.min(1000 / 60, time - now()))); }
-        due(now());
+        while (now() < time) { await due(now()); await new Promise(resolve => nativeSetTimeout(resolve, Math.min(1000 / 60, time - now()))); }
+        await due(now());
       }
       clock.flushLayout(); await waitImages();
       return state(options);

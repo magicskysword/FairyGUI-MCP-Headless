@@ -85,3 +85,27 @@ test('host deadline terminates an infinite script and its worker', async t => {
   await assert.rejects(() => executor.run({ operations: [{ op: 'script', code: 'while (true) {}' }], times: [0] }), { code: 'PREVIEW_TIMEOUT' });
   assert.equal(executor.alive, false);
 });
+
+test('async initialization and timeline scripts settle before fixed-frame sampling', async t => {
+  const executor = new PreviewExecutor(); t.after(() => executor.close());
+  const ready = await executor.initialize({ previewId: 'async', runtime: await runtime(), packageId: 'package1', componentId: 'panel', recipe: {
+    setup: [{ op: 'script', code: 'await Promise.resolve(); ctx.root.x = 10;' }],
+    timeline: [{ at: 100, operations: [{ op: 'script', code: 'await Promise.resolve(); ctx.root.x += 20; ctx.clock.requestFrame(() => ctx.root.y = ctx.root.x);' }] }]
+  } });
+  assert.equal(ready.nodes[0]!.props.x, 10);
+  const result = await executor.run({ times: [100, 200], properties: ['x', 'y'] });
+  assert.equal(result.complete, true, JSON.stringify(result.error));
+  assert.equal(result.frames[0]!.nodes[0]!.props.x, 30);
+  assert.equal(result.frames[0]!.nodes[0]!.props.y, 30);
+  assert.equal(result.frames[1]!.nodes[0]!.props.x, 30);
+});
+
+test('realtime sampling reports measured monotonic time with native timers', async t => {
+  const executor = new PreviewExecutor(); t.after(() => executor.close());
+  await executor.initialize({ previewId: 'realtime', runtime: await runtime(), packageId: 'package1', componentId: 'panel', recipe: { environment: { clock: 'realtime' }, setup: [{ op: 'script', code: 'ctx.root.x = 0; setTimeout(() => ctx.root.x = 42, 50);' }] } });
+  const result = await executor.run({ times: [100, 200] });
+  assert.equal(result.complete, true);
+  assert.ok(result.frames[0]!.time >= 100);
+  assert.ok(result.frames[1]!.time >= result.frames[0]!.time);
+  assert.equal(result.frames[1]!.nodes[0]!.props.x, 42);
+});

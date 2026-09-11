@@ -178,6 +178,11 @@ try {
     const target = path.join(output, path.basename(entry.tarball)); await copyFile(entry.tarball, target);
     delivered.push({ name: entry.name, version: entry.version, tarball: target, sha256: createHash('sha256').update(await readFile(target)).digest('hex') });
   }
+  const localDependencies = Object.fromEntries(delivered.map(entry => [entry.name, `file:./${path.basename(entry.tarball)}`]));
+  const runtimeManifest = JSON.parse(await readFile(path.join(mcpDirectory, 'package.json'), 'utf8'));
+  const localOverrides = Object.fromEntries(delivered.filter(entry => entry.name !== runtimeManifest.name).map(entry => [entry.name, localDependencies[entry.name]]));
+  await writeFile(path.join(output, 'package.json'), JSON.stringify({ name: 'fairygui-local-bundle', version: runtimeManifest.version, private: true, type: 'module', engines: { node: '>=24' }, scripts: { start: 'fairygui-mcp-headless' }, dependencies: { ...localDependencies, playwright: runtimeManifest.dependencies.playwright }, pnpm: { overrides: localOverrides } }, null, 2) + '\n');
+  await writeFile(path.join(output, 'README.md'), '# FairyGUI 本地安装包\n\n使用 Node.js 24 或更新版本，在此目录执行：\n\n```sh\npnpm install --ignore-workspace\npnpm exec playwright install chromium\npnpm start\n```\n\nMCP 客户端可启动 `node node_modules/@magicskysword/fairygui-mcp-headless/dist/cli.js`，通过标准输入输出连接。\n\n包版本、SHA-256 和独立安装验收结果见 [verification.json](verification.json)。\n');
   const result = { isolatedInstall: true, artifactDirectory: output, packed: delivered, ...smoke };
   await writeFile(path.join(output, 'verification.json'), JSON.stringify(result, null, 2) + '\n');
   process.stdout.write(JSON.stringify(result, null, 2) + '\n'); completed = true;

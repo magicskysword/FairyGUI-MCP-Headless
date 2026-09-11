@@ -785,7 +785,7 @@ export class FileTransactionManager {
     changes: readonly TransactionFileChange[],
     request?: TransactionRequestReceipt
   ): Promise<TransactionJournal> {
-    if (changes.length === 0) {
+    if (changes.length === 0 && !request) {
       throw new TransactionInputError("事务至少需要一个受影响文件");
     }
     const normalized = changes.map((change) => {

@@ -76,6 +76,16 @@ test("committed request receipts survive manager recreation", async () => {
   assert.equal(await fresh.findReceipt(fixture.projectDirectory, "other-request"), undefined);
 });
 
+test("receipt-only transactions persist no-op results without changing files", async () => {
+  const fixture = await createFilesFixture();
+  const manager = new FileTransactionManager({ baseDirectory: fixture.logDirectory });
+  const receipt = { requestId: "noop", digest: "noop-hash", result: { unchanged: true } };
+  const result = await manager.commit(fixture.projectDirectory, [], receipt);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual((await manager.findReceipt(fixture.projectDirectory, "noop"))?.request, receipt);
+  assert.equal(await readFile(fixture.first, "utf8"), "first-before");
+});
+
 test("a file transaction commits all affected files and a terminal journal", async () => {
   const fixture = await createFilesFixture();
   const manager = new FileTransactionManager({

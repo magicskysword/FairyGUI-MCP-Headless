@@ -182,6 +182,16 @@
         "null"
       ]
     },
+    "autoClearItems": {
+      "type": [
+        "null",
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "array"
+      ]
+    },
     "childrenRenderOrder": {
       "type": [
         "number",
@@ -275,6 +285,12 @@
     "controllerOverrides": {
       "type": [
         "string",
+        "null"
+      ]
+    },
+    "propertyOverrides": {
+      "type": [
+        "array",
         "null"
       ]
     },

@@ -3,6 +3,12 @@
   "title": "ImageResource",
   "type": "object",
   "properties": {
+    "disableTrim": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
     "fileName": {
       "type": [
         "string",

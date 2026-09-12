@@ -862,9 +862,9 @@ test("render_component compiles mixed automatic and fixed atlas pages without to
   assert.deepEqual(artifactNames, [
     "Mixed.fui",
     "Mixed_atlas0.png",
-    "Mixed_atlas1.png",
-    "Mixed_atlas2.png",
-    "Mixed_atlas3.png"
+    "Mixed_atlas0_1.png",
+    "Mixed_atlas0_2.png",
+    "Mixed_atlas1.png"
   ]);
   assert.equal(new Set(artifactNames).size, artifactNames.length);
 

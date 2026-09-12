@@ -102,7 +102,7 @@ function hardCodedBackslashPathArguments(
 
 test("package identity and executable contract remain stable", () => {
   assert.equal(manifest.name, "@magicskysword/fairygui-mcp-headless");
-  assert.equal(manifest.version, "0.2.0");
+  assert.equal(manifest.version, "0.2.1");
   assert.equal(PACKAGE_NAME, manifest.name);
   assert.equal(PACKAGE_VERSION, manifest.version);
   assert.equal(SERVER_NAME, "fairygui-mcp-headless");
@@ -123,11 +123,11 @@ test("runtime dependencies use registry semver instead of sibling paths", () => 
 test("fork package ranges match the local native authoring package contracts", () => {
   assert.equal(
     manifest.dependencies["@magicskysword/openfairygui-core"],
-    "^0.3.0"
+    "^0.3.1"
   );
   assert.equal(
     manifest.dependencies["@magicskysword/openfairygui-functions"],
-    "^0.3.0"
+    "^0.3.1"
   );
   assert.equal(
     manifest.dependencies["@magicskysword/fairygui-dom"],

@@ -254,6 +254,12 @@
         "null"
       ]
     },
+    "propertyOverrides": {
+      "type": [
+        "array",
+        "null"
+      ]
+    },
     "instanceExtType": {
       "type": [
         "string",
@@ -365,6 +371,12 @@
     "instanceComboItems": {
       "type": [
         "array",
+        "null"
+      ]
+    },
+    "instanceAutoClearItems": {
+      "type": [
+        "boolean",
         "null"
       ]
     },

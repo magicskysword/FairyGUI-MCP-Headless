@@ -4,6 +4,8 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  readdir,
+  stat,
   rm,
   writeFile
 } from "node:fs/promises";
@@ -351,5 +353,19 @@ test("publish accepts package-only paths and lets output overrides take preceden
       assert.equal(result.data.outputPathSource, outputPath ? "override" : "package-settings");
     }
     assert.equal(await readFile(file, "utf8"), xml);
+  } finally { await registry.closeAll(); }
+});
+
+test("full publish reports every binary and atlas with its actual byte length", async () => {
+  const directory = await createProject({ configuredPath: "release" });
+  const { registry, publisher, projectId } = await openPublisher(directory);
+  try {
+    const result = await publisher.publish(PublishInputSchema.parse({ projectId }));
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    const names = await readdir(result.data.outputPath);
+    assert.deepEqual(result.data.writtenFiles.map(file => path.basename(file.path)).sort(), names.sort());
+    assert.equal(names.filter(name => name.endsWith(".png")).length, 2);
+    for (const file of result.data.writtenFiles) assert.equal(file.bytes, (await stat(file.path)).size);
   } finally { await registry.closeAll(); }
 });

@@ -303,3 +303,53 @@ test("publish rejects unresolved project path variables", async () => {
     await registry.closeAll();
   }
 });
+
+test("publish resolves package paths independently and validates all targets before writing", async () => {
+  const directory = await createProject({ configuredPath: "global-release" });
+  const configure = async (name: string, output: string) => {
+    const file = path.join(directory, "assets", name, "package.xml");
+    const xml = await readFile(file, "utf8");
+    await writeFile(file, xml.replace(/<publish[^>]*\/>/, `<publish path="${output}"/>`));
+  };
+  await configure("Demo", "package-release");
+  await configure("Other", "occupied");
+  await writeFile(path.join(directory, "occupied"), "keep");
+  const { registry, publisher, projectId } = await openPublisher(directory);
+  try {
+    const invalid = await publisher.publish(PublishInputSchema.parse({ projectId, publishType: "definitions" }));
+    assert.equal(invalid.ok, false);
+    if (!invalid.ok) assert.equal(invalid.error.code, "PUBLISH_PATH_INVALID");
+    await assert.rejects(access(path.join(directory, "package-release")));
+    await configure("Other", "other-release");
+    const result = await publisher.publish(PublishInputSchema.parse({ projectId, publishType: "definitions" }));
+    assert.equal(result.ok, true, JSON.stringify(result));
+    if (!result.ok) return;
+    assert.equal(result.data.outputPath, path.join(directory, "package-release"));
+    assert.equal(result.data.outputPathSource, "package-settings");
+    assert.deepEqual(result.data.packageOutputs.map(item => [item.id, item.outputPath, item.outputPathSource]), [
+      ["pkg00001", path.join(directory, "package-release"), "package-settings"],
+      ["pkg00002", path.join(directory, "other-release"), "package-settings"]
+    ]);
+    await access(path.join(directory, "package-release", "Demo_fui.bytes"));
+    await access(path.join(directory, "other-release", "Other_fui.bytes"));
+    await assert.rejects(access(path.join(directory, "global-release")));
+  } finally { await registry.closeAll(); }
+});
+
+test("publish accepts package-only paths and lets output overrides take precedence", async () => {
+  const directory = await createProject();
+  const file = path.join(directory, "assets", "Demo", "package.xml");
+  const xml = (await readFile(file, "utf8")).replace('<publish genCode="false"/>', '<publish path="package-release"/>');
+  await writeFile(file, xml);
+  const { registry, publisher, projectId } = await openPublisher(directory);
+  try {
+    for (const outputPath of [undefined, "override-release"]) {
+      const result = await publisher.publish(PublishInputSchema.parse({ projectId, publishType: "definitions", packageIds: ["pkg00001"], outputPath }));
+      assert.equal(result.ok, true, JSON.stringify(result));
+      if (!result.ok) continue;
+      assert.equal(result.data.outputPath, path.join(directory, outputPath ?? "package-release"));
+      assert.equal(result.data.outputPathSource, outputPath ? "override" : "package-settings");
+    }
+    assert.equal(await readFile(file, "utf8"), xml);
+  } finally { await registry.closeAll(); }
+});

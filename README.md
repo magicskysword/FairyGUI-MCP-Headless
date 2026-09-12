@@ -44,6 +44,9 @@ FairyGUI-dom runtime-preview 的字体栅格化取决于浏览器和字体环境
 统一结果为 `{ok:true,data,warnings?}` 或 `{ok:false,error}`。
 命名查询/预览逐项返回结果；编辑保持全有或全无。工程校验问题以 `data.valid:false` 表达。
 `validate` 的 publish 阶段在临时目录运行；正式发布由 `fairygui.publish` 执行。
+
+正式发布按显式 `outputPath`、包级 `publish.path`、全局发布路径的顺序解析目录。
+`packageOutputs` 返回各包的实际目录及配置来源；顶层 `outputPath` 和 `outputPathSource` 对应第一个所选包。
 正式发布可选 packageIds、full/definitions 及一次性 outputPath，按同名文件覆盖产物。
 
 ## 开发

@@ -101,7 +101,8 @@ function createPublishFileSystem(
 function replacePathVariables(
   configuredPath: string,
   settings: PublishProjectSettings,
-  projectFile: string
+  projectFile: string,
+  fieldPath = "settings/Publish.json:path"
 ): ResultEnvelope<string> {
   const variables = new Map<string, string>();
   variables.set(
@@ -135,7 +136,7 @@ function replacePathVariables(
   );
   if (missingVariables.size > 0) {
     return fail("PUBLISH_PATH_INVALID", "发布路径包含无法解析的变量", {
-      path: "settings/Publish.json:path",
+      path: fieldPath,
       actual: [...missingVariables],
       suggestedFix: "在工程自定义属性中定义变量，或显式传入 outputPath"
     });
@@ -239,15 +240,27 @@ export class PublishService {
         ? allPackages.filter((pkg) => packageIds.has(pkg.getId()))
         : allPackages;
 
-      const output = this.resolveOutputPath(
-        document,
-        status.data.projectFile,
-        status.data.projectDirectory,
-        input.outputPath
-      );
-      if (!output.ok) return output;
-      const outputValidation = await validateOutputDirectory(output.data.path);
-      if (!outputValidation.ok) return outputValidation;
+      const packageOutputs: PublishData["packageOutputs"] = [];
+      for (const pkg of selectedPackages) {
+        const output = this.resolveOutputPath(
+          document,
+          status.data.projectFile,
+          status.data.projectDirectory,
+          input.outputPath,
+          pkg.getPublishPath(),
+          `assets/${pkg.getName()}/package.xml:publish.path`
+        );
+        if (!output.ok) return output;
+        const validation = await validateOutputDirectory(output.data.path);
+        if (!validation.ok) return validation;
+        packageOutputs.push({
+          id: pkg.getId(), name: pkg.getName(),
+          outputPath: output.data.path, outputPathSource: output.data.source
+        });
+        pkg.setPublishPath(output.data.path);
+      }
+      const primaryOutput = packageOutputs[0];
+      if (!primaryOutput) return fail("PACKAGE_NOT_FOUND", "没有可发布的包");
 
       const writtenFiles = new Map<string, TrackedWrite>();
       const encoder = await loadSharpRasterBackend();
@@ -255,7 +268,6 @@ export class PublishService {
         throw new Error("Sharp raster backend is unavailable.");
       }
       await document.transform(publish({
-        output: output.data.path,
         packages: selectedPackages.map((pkg) => pkg.getName()),
         mode: input.publishType,
         encoder,
@@ -266,8 +278,9 @@ export class PublishService {
       return ok({
         projectId: input.projectId,
         publishType: input.publishType,
-        outputPath: output.data.path,
-        outputPathSource: output.data.source,
+        outputPath: primaryOutput.outputPath,
+        outputPathSource: primaryOutput.outputPathSource,
+        packageOutputs,
         packages: selectedPackages.map((pkg) => ({
           id: pkg.getId(),
           name: pkg.getName()
@@ -292,10 +305,12 @@ export class PublishService {
     document: Document,
     projectFile: string,
     projectDirectory: string,
-    override: string | undefined
+    override: string | undefined,
+    packagePath: string,
+    packageFieldPath: string
   ): ResultEnvelope<{
     path: string;
-    source: "project-settings" | "override";
+    source: "project-settings" | "package-settings" | "override";
   }> {
     if (override !== undefined) {
       const resolved = resolveAbsoluteOutputPath(override, projectDirectory);
@@ -305,7 +320,8 @@ export class PublishService {
     }
 
     const settings = document.getRoot().getSettings() as PublishProjectSettings;
-    const configuredPath = settings.publish?.path?.trim();
+    const configuredPackagePath = packagePath.trim();
+    const configuredPath = configuredPackagePath || settings.publish?.path?.trim();
     if (!configuredPath) {
       return fail("PUBLISH_PATH_MISSING", "工程没有配置发布路径", {
         path: "settings/Publish.json:path",
@@ -315,7 +331,8 @@ export class PublishService {
     const expanded = replacePathVariables(
       configuredPath,
       settings,
-      projectFile
+      projectFile,
+      configuredPackagePath ? packageFieldPath : "settings/Publish.json:path"
     );
     if (!expanded.ok) return expanded;
     const resolved = resolveAbsoluteOutputPath(
@@ -323,7 +340,7 @@ export class PublishService {
       projectDirectory
     );
     return resolved.ok
-      ? ok({ path: resolved.data, source: "project-settings" })
+      ? ok({ path: resolved.data, source: configuredPackagePath ? "package-settings" : "project-settings" })
       : resolved;
   }
 }

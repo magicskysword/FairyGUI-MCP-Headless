@@ -11,33 +11,39 @@
     },
     "x": {
       "type": [
-        "number",
+        "integer",
         "null"
       ],
-      "description": "Logical pixels."
+      "minimum": -2147483648,
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "y": {
       "type": [
-        "number",
+        "integer",
         "null"
       ],
-      "description": "Logical pixels."
+      "minimum": -2147483648,
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "width": {
       "type": [
-        "number",
+        "integer",
         "null"
       ],
       "minimum": 0,
-      "description": "Logical pixels."
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "height": {
       "type": [
-        "number",
+        "integer",
         "null"
       ],
       "minimum": 0,
-      "description": "Logical pixels."
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "locked": {
       "type": [
@@ -47,27 +53,39 @@
     },
     "minWidth": {
       "type": [
-        "number",
+        "integer",
         "null"
-      ]
+      ],
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "maxWidth": {
       "type": [
-        "number",
+        "integer",
         "null"
-      ]
+      ],
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "minHeight": {
       "type": [
-        "number",
+        "integer",
         "null"
-      ]
+      ],
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "maxHeight": {
       "type": [
-        "number",
+        "integer",
         "null"
-      ]
+      ],
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "aspect": {
       "type": [

@@ -31,6 +31,45 @@ async function fixture(options: { now?: () => number; failWrite?: boolean } = {}
   return { directory, assets, transactions, registry, projectId, service, target };
 }
 
+test("native edits reject fractional geometry before committing any source", async () => {
+  const f = await fixture();
+  const before = await readFile(path.join(f.assets, "Panel.xml"));
+  const result = await f.service.execute({ action: "apply", projectId: f.projectId, requestId: "fractional-loader", operations: [
+    { op: "create", target: { kind: "node", packageId: "package1", componentId: "panel" }, type: "GLoader",
+      props: { name: "progress", x: 817.5, y: 417.5, width: 125, height: 125 } }
+  ] });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "INVALID_PROPERTY");
+    assert.equal(result.error.path, "operations[0].props.x");
+  }
+  assert.deepEqual(await readFile(path.join(f.assets, "Panel.xml")), before);
+  assert.equal(await f.transactions.findReceipt(f.directory, "fractional-loader"), undefined);
+});
+
+test("XML edits reject fractional coordinates and valid loader edits survive reopening", async () => {
+  const f = await fixture();
+  const target = { kind: "component" as const, packageId: "package1", componentId: "panel" };
+  const before = await readFile(path.join(f.assets, "Panel.xml"));
+  const invalid = await f.service.execute({ action: "apply", projectId: f.projectId, requestId: "fractional-xml", operations: [
+    { op: "xml", action: "insert", target, xml: '<loader id="progress" xy="817.5,417.5" size="125,125"/>' }
+  ] });
+  assert.equal(invalid.ok, false);
+  if (!invalid.ok) assert.equal(invalid.error.code, "INVALID_XML");
+  assert.deepEqual(await readFile(path.join(f.assets, "Panel.xml")), before);
+  const valid = await f.service.execute({ action: "apply", projectId: f.projectId, requestId: "integer-loader", operations: [
+    { op: "create", target: { ...target, kind: "node" }, type: "GLoader", props: {
+      name: "progress", x: 818, y: 418, width: 125, height: 125, pivotX: 0.5, pivotY: 0.5, alpha: 0.5
+    } }
+  ] });
+  assert.equal(valid.ok, true, JSON.stringify(valid));
+  const xml = await readFile(path.join(f.assets, "Panel.xml"), "utf8");
+  assert.match(xml, /xy="818,418"/);
+  assert.match(xml, /pivot="0.5,0.5"/);
+  const reopened = await f.registry.open(f.directory);
+  assert.equal(reopened.ok, true, JSON.stringify(reopened));
+});
+
 test("resource plans preserve inbox bytes, reject stale imports and consume only successful commits", async () => {
   const f = await fixture();
   const inbox = path.join(f.directory, ".fairygui-mcp", "import-inbox");

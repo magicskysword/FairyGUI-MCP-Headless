@@ -29,43 +29,57 @@
     },
     "width": {
       "type": [
-        "number",
+        "integer",
         "null"
       ],
       "minimum": 0,
-      "description": "Logical pixels."
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "height": {
       "type": [
-        "number",
+        "integer",
         "null"
       ],
       "minimum": 0,
-      "description": "Logical pixels."
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "minWidth": {
       "type": [
-        "number",
+        "integer",
         "null"
-      ]
+      ],
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "maxWidth": {
       "type": [
-        "number",
+        "integer",
         "null"
-      ]
+      ],
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "minHeight": {
       "type": [
-        "number",
+        "integer",
         "null"
-      ]
+      ],
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "maxHeight": {
       "type": [
-        "number",
+        "integer",
         "null"
-      ]
+      ],
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "pivotX": {
       "type": [

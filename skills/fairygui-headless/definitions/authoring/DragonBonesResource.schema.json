@@ -35,19 +35,21 @@
     },
     "width": {
       "type": [
-        "number",
+        "integer",
         "null"
       ],
       "minimum": 0,
-      "description": "Logical pixels."
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "height": {
       "type": [
-        "number",
+        "integer",
         "null"
       ],
       "minimum": 0,
-      "description": "Logical pixels."
+      "maximum": 2147483647,
+      "description": "Integer logical pixels (signed 32-bit)."
     },
     "requireIds": {
       "type": [

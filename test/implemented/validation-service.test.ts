@@ -158,6 +158,31 @@ test("quick validation returns valid:false as a successful project finding", asy
   }
 });
 
+test("quick validation reports native XML geometry that numeric parsing would accept", async () => {
+  for (const coordinate of ["817.5,417.5", "100.0,20", "1e2,20", "2147483648,20", "10,20,30"]) {
+    const fixture = await createProject();
+    const source = (await readFile(fixture.componentFile, "utf8"))
+      .replace('xy="80,20"', `xy="${coordinate}"`);
+    await writeFile(fixture.componentFile, source);
+    const registry = new ProjectRegistry();
+    try {
+      const opened = await registry.open(fixture.directory);
+      assert.ok(opened.ok); if (!opened.ok) return;
+      const result = await new ValidationService(registry).validate(ValidateInputSchema.parse({
+        projectId: opened.data.projectId, mode: "quick", detail: "full"
+      }));
+      assert.ok(result.ok); if (!result.ok) return;
+      assert.equal(result.data.valid, false, coordinate);
+      const finding = result.data.diagnostics.find(diagnostic => diagnostic.code === "INVALID_GEOMETRY");
+      assert.ok(finding, coordinate);
+      assert.equal(finding.severity, "error");
+      assert.match(finding.path!, /pkg00001\/cmp01\/.*n1.*xy/);
+      assert.equal(finding.details?.actual, coordinate);
+      assert.equal(await readFile(fixture.componentFile, "utf8"), source);
+    } finally { await registry.closeAll(); }
+  }
+});
+
 test("quick validation reports component-local transition, page and mask references", async () => {
   const fixture = await createProject();
   const xml = await readFile(fixture.componentFile, "utf8");

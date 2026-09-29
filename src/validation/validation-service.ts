@@ -10,8 +10,10 @@ import {
 import os from "node:os";
 import path from "node:path";
 import {
+  assertComponentXmlGeometry,
   buildResourceReferenceIndex,
   buildProjectReferenceGraph,
+  DocumentEditError,
   inspectProjectOutputConflicts,
   serializeProjectFiles,
   type Component,
@@ -192,6 +194,21 @@ function quickDiagnostics(
 
   for (const { pkg, component } of scope.components) {
     const componentPath = `${pkg.getId()}/${component.getId()}`;
+    const sourceXml = component.getExtras()._sourceComponentXml;
+    if (typeof sourceXml === "string") {
+      try {
+        assertComponentXmlGeometry(sourceXml);
+      } catch (error) {
+        if (!(error instanceof DocumentEditError)) throw error;
+        diagnostics.push({
+          severity: "error",
+          code: "INVALID_GEOMETRY",
+          message: error.message,
+          path: `${componentPath}/${error.path ?? "xml"}`,
+          details: { actual: error.details }
+        });
+      }
+    }
     if (component.listChildren().length === 0) {
       diagnostics.push({
         severity: "info",

@@ -15,7 +15,7 @@ importers:
         specifier: ^0.3.2
         version: link:../OpenFairyGUI/packages/core
       '@magicskysword/openfairygui-functions':
-        specifier: ^0.3.1
+        specifier: ^0.3.2
         version: link:../OpenFairyGUI/packages/functions
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0

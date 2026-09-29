@@ -44,7 +44,7 @@
   "dependencies": {
     "@magicskysword/fairygui-dom": "^1.2.0",
     "@magicskysword/openfairygui-core": "^0.3.2",
-    "@magicskysword/openfairygui-functions": "^0.3.1",
+    "@magicskysword/openfairygui-functions": "^0.3.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "chokidar": "^5.0.0",
     "playwright": "1.61.1",

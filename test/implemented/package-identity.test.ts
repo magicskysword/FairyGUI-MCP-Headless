@@ -127,7 +127,7 @@ test("fork package ranges match the local native authoring package contracts", (
   );
   assert.equal(
     manifest.dependencies["@magicskysword/openfairygui-functions"],
-    "^0.3.1"
+    "^0.3.2"
   );
   assert.equal(
     manifest.dependencies["@magicskysword/fairygui-dom"],

@@ -92,6 +92,17 @@ try {
   assert.deepEqual(definitions.versions, expectedVersions);
   for (const entry of [...definitions.authoring, ...definitions.preview, ...definitions.runtime]) await access(path.join(skillDirectory, 'definitions', entry.file));
   await readFile(path.join(skillDirectory, 'examples/list.json'));
+  const geometrySource = path.join(projectDirectory, 'assets/Demo/Main.xml');
+  const geometryBefore = await readFile(geometrySource);
+  for (const [requestId, operation, expectedCode] of [
+    ['fractional-native', { op: 'create', type: 'GLoader', target: { kind: 'node', packageId: 'pkg00001', componentId: 'cmp01' }, props: { x: 817.5, y: 417.5, width: 125, height: 125 } }, 'INVALID_PROPERTY'],
+    ['fractional-xml', { op: 'xml', action: 'insert', target: { kind: 'component', packageId: 'pkg00001', componentId: 'cmp01' }, xml: '<loader id="fractional" xy="817.5,417.5" size="125,125"/>' }, 'INVALID_XML']
+  ]) {
+    const response = await client.callTool({ name: 'fairygui.edit', arguments: { action: 'apply', projectId, requestId, operations: [operation] } });
+    assert.equal(response.structuredContent.ok, false);
+    assert.equal(response.structuredContent.error.code, expectedCode);
+    assert.deepEqual(await readFile(geometrySource), geometryBefore);
+  }
   const queried = await callTool('fairygui.query', { projectId, queries: {
     packages: { kind: 'packages', limit: 50 }, compact: { kind: 'components', packageId: 'pkg00001', detail: "summary" },
     full: { kind: 'object', target: { kind: 'node', packageId: 'pkg00001', componentId: 'cmp01', nodeId: 'n0' }, detail: "full" }

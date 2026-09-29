@@ -1,6 +1,6 @@
 {
   "name": "@magicskysword/fairygui-mcp-headless",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Headless FairyGUI authoring MCP server for AI agents",
   "type": "module",
   "license": "MIT",
@@ -43,7 +43,7 @@
   },
   "dependencies": {
     "@magicskysword/fairygui-dom": "^1.2.0",
-    "@magicskysword/openfairygui-core": "^0.3.1",
+    "@magicskysword/openfairygui-core": "^0.3.2",
     "@magicskysword/openfairygui-functions": "^0.3.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "chokidar": "^5.0.0",

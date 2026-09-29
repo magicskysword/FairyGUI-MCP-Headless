@@ -12,7 +12,7 @@ importers:
         specifier: ^1.2.0
         version: link:../FairyGUI-dom
       '@magicskysword/openfairygui-core':
-        specifier: ^0.3.1
+        specifier: ^0.3.2
         version: link:../OpenFairyGUI/packages/core
       '@magicskysword/openfairygui-functions':
         specifier: ^0.3.1

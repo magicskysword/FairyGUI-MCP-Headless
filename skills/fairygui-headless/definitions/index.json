@@ -1,9 +1,9 @@
 {
   "versions": {
-    "@magicskysword/openfairygui-core": "0.3.1",
+    "@magicskysword/openfairygui-core": "0.3.2",
     "@magicskysword/openfairygui-functions": "0.3.1",
     "@magicskysword/fairygui-dom": "1.2.0",
-    "@magicskysword/fairygui-mcp-headless": "0.2.1"
+    "@magicskysword/fairygui-mcp-headless": "0.2.2"
   },
   "authoring": [
     {
